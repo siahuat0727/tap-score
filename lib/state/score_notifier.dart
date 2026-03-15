@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../models/enums.dart';
+import '../models/key_signature.dart';
 import '../models/note.dart';
 import '../models/score.dart';
 import '../services/audio_service.dart';
@@ -60,11 +61,13 @@ class ScoreNotifier extends ChangeNotifier {
   /// Insert a note at the cursor position.
   /// If [midi] is provided, inserts a pitched note.
   /// If rest mode is on, inserts a rest.
-  void insertNote(int midi) {
+  void insertNote(int rawMidi) {
     final Note note;
     if (_restMode) {
       note = Note.rest(duration: _currentDuration);
     } else {
+      // Auto-apply key signature accidentals to the raw MIDI.
+      final midi = score.keySignature.applyToMidi(rawMidi);
       note = Note(midi: midi, duration: _currentDuration);
     }
 
@@ -75,7 +78,7 @@ class ScoreNotifier extends ChangeNotifier {
     // Play audio feedback for the note.
     if (!note.isRest) {
       _audioService.playNoteWithDuration(
-        midi,
+        note.midi,
         duration: const Duration(milliseconds: 500),
       );
     }
@@ -175,6 +178,41 @@ class ScoreNotifier extends ChangeNotifier {
   void setTempo(double bpm) {
     score.bpm = bpm.clamp(40, 240);
     notifyListeners();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Time signature
+  // ---------------------------------------------------------------------------
+
+  /// Set time signature (e.g. 3/4, 6/8).
+  void setTimeSignature(int beats, int unit) {
+    score.beatsPerMeasure = beats.clamp(1, 16);
+    score.beatUnit = unit;
+    notifyListeners();
+  }
+
+  /// Nudge beats-per-measure up or down by one step.
+  void adjustBeatsPerMeasure(int delta) {
+    setTimeSignature(score.beatsPerMeasure + delta, score.beatUnit);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Key signature
+  // ---------------------------------------------------------------------------
+
+  /// Set key signature explicitly.
+  void setKeySignature(KeySignature key) {
+    score.keySignature = key;
+    notifyListeners();
+  }
+
+  /// Shift key signature one step on the circle of fifths.
+  /// [direction] > 0 = add sharp (clockwise), < 0 = add flat (counter-clockwise).
+  void shiftKeySignature(int direction) {
+    final next = direction > 0
+        ? score.keySignature.nextSharp
+        : score.keySignature.nextFlat;
+    setKeySignature(next);
   }
 
   @override

@@ -1,4 +1,5 @@
 import 'note.dart';
+import 'key_signature.dart';
 
 /// Represents a musical score — a sequence of notes with tempo and time signature.
 class Score {
@@ -6,19 +7,23 @@ class Score {
   final List<Note> notes;
 
   /// Beats per measure (top of time signature). Default: 4.
-  final int beatsPerMeasure;
+  int beatsPerMeasure;
 
   /// Beat unit (bottom of time signature). Default: 4 (quarter note).
-  final int beatUnit;
+  int beatUnit;
 
   /// Tempo in beats per minute.
   double bpm;
+
+  /// Key signature. Default: C major.
+  KeySignature keySignature;
 
   Score({
     List<Note>? notes,
     this.beatsPerMeasure = 4,
     this.beatUnit = 4,
     this.bpm = 120,
+    this.keySignature = KeySignature.cMajor,
   }) : notes = notes ?? [];
 
   /// Total duration of the score in beats.
@@ -90,5 +95,5 @@ class Score {
 
   @override
   String toString() =>
-      'Score(${notes.length} notes, $beatsPerMeasure/$beatUnit, ${bpm}bpm)';
+      'Score(${notes.length} notes, $beatsPerMeasure/$beatUnit, ${bpm}bpm, ${keySignature.displayName})';
 }

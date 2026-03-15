@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../state/score_notifier.dart';
-import '../widgets/staff_view.dart';
+import '../widgets/score_view_widget.dart';
 import '../widgets/piano_keyboard.dart';
 import '../widgets/duration_selector.dart';
 import '../widgets/playback_controls.dart';
@@ -59,23 +59,15 @@ class _ScoreEditorScreenState extends State<ScoreEditorScreen> {
         child: Column(
           children: [
             // Staff takes up the available space
-            const Expanded(
-              child: StaffView(),
-            ),
+            const Expanded(child: ScoreViewWidget()),
             // Divider
-            Container(
-              height: 1,
-              color: const Color(0xFFE0DDD4),
-            ),
+            Container(height: 1, color: const Color(0xFFE0DDD4)),
             // Toolbar: duration selector + playback controls
             Container(
               color: const Color(0xFFF0EDE4),
               child: const Column(
                 mainAxisSize: MainAxisSize.min,
-                children: [
-                  DurationSelector(),
-                  PlaybackControls(),
-                ],
+                children: [DurationSelector(), PlaybackControls()],
               ),
             ),
             // Piano keyboard at the bottom

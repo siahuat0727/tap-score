@@ -1,0 +1,2 @@
+- If anything not clear, ask explicitly
+- Should works on android, ipad and web. The main logic of different platforms should shared. Will use `flutter run -d chrome` for testing.
