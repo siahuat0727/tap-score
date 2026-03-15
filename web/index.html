@@ -33,6 +33,39 @@
   <link rel="manifest" href="manifest.json">
 </head>
 <body>
+  <script src="https://unpkg.com/soundfont-player@0.10.2/dist/soundfont-player.min.js"></script>
+  <script>
+    var _audioCtx = null;
+    var _pianoInstrument = null;
+    var _activeWebNotes = {};
+
+    window.initWebAudio = async function() {
+      if (!_audioCtx) {
+        _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      if (_audioCtx.state === 'suspended') {
+        _audioCtx.resume();
+      }
+      if (!_pianoInstrument) {
+        _pianoInstrument = await Soundfont.instrument(_audioCtx, 'acoustic_grand_piano');
+        console.log("Web Audio Piano Initialized");
+      }
+    };
+
+    window.playWebNote = function(midi, velocity) {
+      if (_pianoInstrument) {
+        var note = _pianoInstrument.play(midi, _audioCtx.currentTime, { gain: velocity / 127.0 });
+        _activeWebNotes[midi] = note;
+      }
+    };
+
+    window.stopWebNote = function(midi) {
+      if (_activeWebNotes[midi]) {
+        _activeWebNotes[midi].stop();
+        delete _activeWebNotes[midi];
+      }
+    };
+  </script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>
