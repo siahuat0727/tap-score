@@ -6,6 +6,9 @@ import '../models/note.dart';
 import '../models/score.dart';
 import '../services/audio_service.dart';
 
+/// What kind of element is currently selected.
+enum SelectionKind { timeSig, keySig, note }
+
 /// Central state manager for the score editor.
 class ScoreNotifier extends ChangeNotifier {
   final Score score = Score();
@@ -15,9 +18,14 @@ class ScoreNotifier extends ChangeNotifier {
   int _cursorIndex = 0;
   int get cursorIndex => _cursorIndex;
 
-  /// Currently selected note index (for editing/deleting). Null if none.
-  int? _selectedIndex;
-  int? get selectedIndex => _selectedIndex;
+  /// What kind of element is selected. Null = cursor at end (input mode).
+  SelectionKind? _selectionKind;
+  SelectionKind? get selectionKind => _selectionKind;
+
+  /// Currently selected note index (valid only when _selectionKind == note).
+  int? _selectedNoteIndex;
+  int? get selectedIndex =>
+      _selectionKind == SelectionKind.note ? _selectedNoteIndex : null;
 
   /// Active duration for the next note to be input.
   NoteDuration _currentDuration = NoteDuration.quarter;
@@ -73,7 +81,8 @@ class ScoreNotifier extends ChangeNotifier {
 
     score.addNote(note, _cursorIndex);
     _cursorIndex++;
-    _selectedIndex = _cursorIndex - 1;
+    _selectionKind = SelectionKind.note;
+    _selectedNoteIndex = _cursorIndex - 1;
 
     // Play audio feedback for the note.
     if (!note.isRest) {
@@ -86,11 +95,12 @@ class ScoreNotifier extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Select a note at the given index.
+  /// Select a note at the given index, or deselect (cursor at end) when null.
   void selectNote(int? index) {
     if (index != null && (index < 0 || index >= score.notes.length)) return;
-    _selectedIndex = index;
     if (index != null) {
+      _selectionKind = SelectionKind.note;
+      _selectedNoteIndex = index;
       _cursorIndex = index + 1;
 
       // Play audio feedback for selected note.
@@ -101,26 +111,136 @@ class ScoreNotifier extends ChangeNotifier {
           duration: const Duration(milliseconds: 500),
         );
       }
+    } else {
+      _selectionKind = null;
+      _selectedNoteIndex = null;
+      _cursorIndex = score.notes.length;
     }
+    notifyListeners();
+  }
+
+  /// Select the time signature element.
+  void selectTimeSig() {
+    _selectionKind = SelectionKind.timeSig;
+    _selectedNoteIndex = null;
+    _cursorIndex = 0;
+    notifyListeners();
+  }
+
+  /// Select the key signature element.
+  void selectKeySig() {
+    _selectionKind = SelectionKind.keySig;
+    _selectedNoteIndex = null;
+    _cursorIndex = 0;
+    notifyListeners();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Navigation (← / →)
+  // ---------------------------------------------------------------------------
+
+  /// Move selection one step to the left.
+  /// Order: cursor(end) → note[n-1] → ... → note[0] → keySig → timeSig
+  void moveSelectionLeft() {
+    switch (_selectionKind) {
+      case null:
+        // At cursor/end — select last note if any, else keySig.
+        if (score.notes.isNotEmpty) {
+          selectNote(score.notes.length - 1);
+        } else {
+          selectKeySig();
+        }
+      case SelectionKind.note:
+        final idx = _selectedNoteIndex ?? 0;
+        if (idx > 0) {
+          selectNote(idx - 1);
+        } else {
+          selectKeySig();
+        }
+      case SelectionKind.keySig:
+        selectTimeSig();
+      case SelectionKind.timeSig:
+        break; // already leftmost
+    }
+  }
+
+  /// Move selection one step to the right.
+  /// Order: timeSig → keySig → note[0] → ... → note[n-1] → cursor(end)
+  void moveSelectionRight() {
+    switch (_selectionKind) {
+      case SelectionKind.timeSig:
+        selectKeySig();
+      case SelectionKind.keySig:
+        if (score.notes.isNotEmpty) {
+          selectNote(0);
+        } else {
+          selectNote(null); // go to cursor/end
+        }
+      case SelectionKind.note:
+        final idx = _selectedNoteIndex ?? 0;
+        if (idx < score.notes.length - 1) {
+          selectNote(idx + 1);
+        } else {
+          selectNote(null); // go to cursor/end
+        }
+      case null:
+        break; // already at end
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Adjust selected element (↑ / ↓)
+  // ---------------------------------------------------------------------------
+
+  /// Adjust the selected element up (+1) or down (-1).
+  void adjustSelection(int direction) {
+    switch (_selectionKind) {
+      case SelectionKind.timeSig:
+        adjustBeatsPerMeasure(direction);
+      case SelectionKind.keySig:
+        shiftKeySignature(direction);
+      case SelectionKind.note:
+        _diatonicStepSelected(direction);
+      case null:
+        break; // cursor at end — nothing to adjust
+    }
+  }
+
+  /// Move the selected note by one diatonic step.
+  void _diatonicStepSelected(int direction) {
+    if (_selectedNoteIndex == null) return;
+    final note = score.notes[_selectedNoteIndex!];
+    if (note.isRest) return;
+    final newMidi = score.keySignature.diatonicStep(note.midi, direction);
+    if (newMidi == note.midi) return;
+    score.replaceAt(_selectedNoteIndex!, note.copyWith(midi: newMidi));
+    _audioService.playNoteWithDuration(
+      newMidi,
+      duration: const Duration(milliseconds: 500),
+    );
     notifyListeners();
   }
 
   /// Delete the currently selected note.
   void deleteSelected() {
-    if (_selectedIndex == null) return;
-    score.removeAt(_selectedIndex!);
+    if (_selectionKind != SelectionKind.note || _selectedNoteIndex == null)
+      return;
+    score.removeAt(_selectedNoteIndex!);
     if (_cursorIndex > 0) _cursorIndex--;
-    if (_selectedIndex! >= score.notes.length) {
-      _selectedIndex = score.notes.isEmpty ? null : score.notes.length - 1;
+    if (_selectedNoteIndex! >= score.notes.length) {
+      _selectedNoteIndex = score.notes.isEmpty ? null : score.notes.length - 1;
     }
+    if (_selectedNoteIndex == null) _selectionKind = null;
     notifyListeners();
   }
 
   /// Change the pitch of the selected note.
   void changeSelectedPitch(int midi) {
-    if (_selectedIndex == null) return;
-    final old = score.notes[_selectedIndex!];
-    score.replaceAt(_selectedIndex!, old.copyWith(midi: midi));
+    if (_selectionKind != SelectionKind.note || _selectedNoteIndex == null) {
+      return;
+    }
+    final old = score.notes[_selectedNoteIndex!];
+    score.replaceAt(_selectedNoteIndex!, old.copyWith(midi: midi));
 
     _audioService.playNoteWithDuration(
       midi,
@@ -132,9 +252,11 @@ class ScoreNotifier extends ChangeNotifier {
 
   /// Change the duration of the selected note.
   void changeSelectedDuration(NoteDuration duration) {
-    if (_selectedIndex == null) return;
-    final old = score.notes[_selectedIndex!];
-    score.replaceAt(_selectedIndex!, old.copyWith(duration: duration));
+    if (_selectionKind != SelectionKind.note || _selectedNoteIndex == null) {
+      return;
+    }
+    final old = score.notes[_selectedNoteIndex!];
+    score.replaceAt(_selectedNoteIndex!, old.copyWith(duration: duration));
     notifyListeners();
   }
 

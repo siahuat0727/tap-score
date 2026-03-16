@@ -31,7 +31,15 @@ enum KeySignature {
   static const List<int> _sharpOrder = [6, 1, 8, 3, 10, 5, 0]; // F C G D A E B
 
   /// Order in which flats are added (by semitone within octave).
-  static const List<int> _flatOrder = [10, 3, 8, 1, 6, 11, 4]; // Bb Eb Ab Db Gb Cb Fb
+  static const List<int> _flatOrder = [
+    10,
+    3,
+    8,
+    1,
+    6,
+    11,
+    4,
+  ]; // Bb Eb Ab Db Gb Cb Fb
 
   /// The pitch classes (mod 12) that are raised by a sharp or lowered by a flat
   /// in this key. Empty for C major.
@@ -48,8 +56,8 @@ enum KeySignature {
   int get accidentalOffset => fifths > 0
       ? 1
       : fifths < 0
-          ? -1
-          : 0;
+      ? -1
+      : 0;
 
   /// Adjust a raw MIDI value so it lands on a diatonic pitch in this key.
   ///
@@ -77,37 +85,37 @@ enum KeySignature {
 
   /// The VexFlow key string (e.g. "C", "G", "D", "F", "Bb").
   String get vexflowKey => switch (this) {
-        KeySignature.cMajor => 'C',
-        KeySignature.gMajor => 'G',
-        KeySignature.dMajor => 'D',
-        KeySignature.aMajor => 'A',
-        KeySignature.eMajor => 'E',
-        KeySignature.bMajor => 'B',
-        KeySignature.fSharpMajor => 'F#',
-        KeySignature.fMajor => 'F',
-        KeySignature.bbMajor => 'Bb',
-        KeySignature.ebMajor => 'Eb',
-        KeySignature.abMajor => 'Ab',
-        KeySignature.dbMajor => 'Db',
-        KeySignature.gbMajor => 'Gb',
-      };
+    KeySignature.cMajor => 'C',
+    KeySignature.gMajor => 'G',
+    KeySignature.dMajor => 'D',
+    KeySignature.aMajor => 'A',
+    KeySignature.eMajor => 'E',
+    KeySignature.bMajor => 'B',
+    KeySignature.fSharpMajor => 'F#',
+    KeySignature.fMajor => 'F',
+    KeySignature.bbMajor => 'Bb',
+    KeySignature.ebMajor => 'Eb',
+    KeySignature.abMajor => 'Ab',
+    KeySignature.dbMajor => 'Db',
+    KeySignature.gbMajor => 'Gb',
+  };
 
   /// Human-readable display name.
   String get displayName => switch (this) {
-        KeySignature.cMajor => 'C major',
-        KeySignature.gMajor => 'G major',
-        KeySignature.dMajor => 'D major',
-        KeySignature.aMajor => 'A major',
-        KeySignature.eMajor => 'E major',
-        KeySignature.bMajor => 'B major',
-        KeySignature.fSharpMajor => 'F♯ major',
-        KeySignature.fMajor => 'F major',
-        KeySignature.bbMajor => 'B♭ major',
-        KeySignature.ebMajor => 'E♭ major',
-        KeySignature.abMajor => 'A♭ major',
-        KeySignature.dbMajor => 'D♭ major',
-        KeySignature.gbMajor => 'G♭ major',
-      };
+    KeySignature.cMajor => 'C major',
+    KeySignature.gMajor => 'G major',
+    KeySignature.dMajor => 'D major',
+    KeySignature.aMajor => 'A major',
+    KeySignature.eMajor => 'E major',
+    KeySignature.bMajor => 'B major',
+    KeySignature.fSharpMajor => 'F♯ major',
+    KeySignature.fMajor => 'F major',
+    KeySignature.bbMajor => 'B♭ major',
+    KeySignature.ebMajor => 'E♭ major',
+    KeySignature.abMajor => 'A♭ major',
+    KeySignature.dbMajor => 'D♭ major',
+    KeySignature.gbMajor => 'G♭ major',
+  };
 
   // ---------------------------------------------------------------------------
   // Circle-of-fifths navigation
@@ -142,5 +150,46 @@ enum KeySignature {
   KeySignature get nextFlat {
     final idx = _circleIndex;
     return _circleOrder[idx > 0 ? idx - 1 : idx];
+  }
+
+  // ---------------------------------------------------------------------------
+  // Diatonic step helpers
+  // ---------------------------------------------------------------------------
+
+  /// Root pitch class (semitone mod 12) of this major scale.
+  int get rootSemitone => switch (this) {
+    cMajor => 0,
+    gMajor => 7,
+    dMajor => 2,
+    aMajor => 9,
+    eMajor => 4,
+    bMajor => 11,
+    fSharpMajor => 6,
+    fMajor => 5,
+    bbMajor => 10,
+    ebMajor => 3,
+    abMajor => 8,
+    dbMajor => 1,
+    gbMajor => 6,
+  };
+
+  /// The 7 pitch classes (mod 12) in this major scale, as a set.
+  Set<int> get scalePitchClasses {
+    const intervals = [0, 2, 4, 5, 7, 9, 11]; // major scale pattern
+    return intervals.map((i) => (rootSemitone + i) % 12).toSet();
+  }
+
+  /// Move [midi] up or down by one diatonic step within this key.
+  ///
+  /// [direction] must be 1 (up) or -1 (down).
+  /// Walks semitones until hitting a scale pitch class (max 3 steps).
+  int diatonicStep(int midi, int direction) {
+    final scale = scalePitchClasses;
+    int result = midi + direction;
+    // Max gap in a major scale is 2 semitones; use 3 for safety.
+    while (!scale.contains(result % 12) && (result - midi).abs() <= 3) {
+      result += direction;
+    }
+    return result.clamp(0, 127);
   }
 }

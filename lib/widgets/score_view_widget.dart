@@ -51,8 +51,10 @@ class _ScoreViewWidgetState extends State<ScoreViewWidget> {
       case 'bgTap':
         notifier.selectNote(null);
       case 'timeSigTap':
+        notifier.selectTimeSig();
         _showTimeSigPicker();
       case 'keySigTap':
+        notifier.selectKeySig();
         _showKeySigPicker();
     }
   }
@@ -87,6 +89,7 @@ class _ScoreViewWidgetState extends State<ScoreViewWidget> {
       'selectedIndex': notifier.selectedIndex ?? -1,
       'cursorIndex': notifier.cursorIndex,
       'playbackIndex': notifier.playbackIndex,
+      'selectionKind': notifier.selectionKind?.name ?? '',
     });
   }
 
@@ -120,7 +123,8 @@ class _ScoreViewWidgetState extends State<ScoreViewWidget> {
                 runSpacing: 10,
                 children: _commonTimeSigs.map((sig) {
                   final (beats, unit) = sig;
-                  final isCurrent = notifier.score.beatsPerMeasure == beats &&
+                  final isCurrent =
+                      notifier.score.beatsPerMeasure == beats &&
                       notifier.score.beatUnit == unit;
                   return GestureDetector(
                     onTap: () {
@@ -150,13 +154,17 @@ class _ScoreViewWidgetState extends State<ScoreViewWidget> {
                               fontSize: 20,
                               fontWeight: FontWeight.bold,
                               height: 1.0,
-                              color: isCurrent ? Colors.white : const Color(0xFF333333),
+                              color: isCurrent
+                                  ? Colors.white
+                                  : const Color(0xFF333333),
                             ),
                           ),
                           Container(
                             height: 1.5,
                             width: 28,
-                            color: isCurrent ? Colors.white70 : const Color(0xFF888888),
+                            color: isCurrent
+                                ? Colors.white70
+                                : const Color(0xFF888888),
                             margin: const EdgeInsets.symmetric(vertical: 2),
                           ),
                           Text(
@@ -165,7 +173,9 @@ class _ScoreViewWidgetState extends State<ScoreViewWidget> {
                               fontSize: 20,
                               fontWeight: FontWeight.bold,
                               height: 1.0,
-                              color: isCurrent ? Colors.white : const Color(0xFF333333),
+                              color: isCurrent
+                                  ? Colors.white
+                                  : const Color(0xFF333333),
                             ),
                           ),
                         ],
@@ -213,7 +223,10 @@ class _ScoreViewWidgetState extends State<ScoreViewWidget> {
                       Navigator.pop(ctx);
                     },
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 10,
+                      ),
                       decoration: BoxDecoration(
                         color: isCurrent
                             ? const Color(0xFF1976d2)
@@ -233,15 +246,17 @@ class _ScoreViewWidgetState extends State<ScoreViewWidget> {
                             style: TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.bold,
-                              color: isCurrent ? Colors.white : const Color(0xFF333333),
+                              color: isCurrent
+                                  ? Colors.white
+                                  : const Color(0xFF333333),
                             ),
                           ),
                           Text(
                             key.fifths == 0
                                 ? '♮'
                                 : key.fifths > 0
-                                    ? '${'♯' * key.fifths.abs()}'
-                                    : '${'♭' * key.fifths.abs()}',
+                                ? '${'♯' * key.fifths.abs()}'
+                                : '${'♭' * key.fifths.abs()}',
                             style: TextStyle(
                               fontSize: 11,
                               color: isCurrent

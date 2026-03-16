@@ -162,4 +162,60 @@ void main() {
       }
     });
   });
+
+  group('diatonicStep', () {
+    test('C major: C4 up → D4 (60 → 62)', () {
+      expect(KeySignature.cMajor.diatonicStep(60, 1), 62);
+    });
+
+    test('C major: E4 up → F4 (64 → 65, half step)', () {
+      expect(KeySignature.cMajor.diatonicStep(64, 1), 65);
+    });
+
+    test('C major: B4 up → C5 (71 → 72, half step)', () {
+      expect(KeySignature.cMajor.diatonicStep(71, 1), 72);
+    });
+
+    test('C major: D4 down → C4 (62 → 60)', () {
+      expect(KeySignature.cMajor.diatonicStep(62, -1), 60);
+    });
+
+    test('G major: F#4 up → G4 (66 → 67)', () {
+      expect(KeySignature.gMajor.diatonicStep(66, 1), 67);
+    });
+
+    test('G major: E4 up → F#4 (64 → 66)', () {
+      expect(KeySignature.gMajor.diatonicStep(64, 1), 66);
+    });
+
+    test('G major: G4 down → F#4 (67 → 66)', () {
+      expect(KeySignature.gMajor.diatonicStep(67, -1), 66);
+    });
+
+    test('F major: A4 up → Bb4 (69 → 70)', () {
+      expect(KeySignature.fMajor.diatonicStep(69, 1), 70);
+    });
+
+    test('F major: Bb4 up → C5 (70 → 72)', () {
+      expect(KeySignature.fMajor.diatonicStep(70, 1), 72);
+    });
+
+    test('F major: C5 down → Bb4 (72 → 70)', () {
+      expect(KeySignature.fMajor.diatonicStep(72, -1), 70);
+    });
+
+    test('scalePitchClasses for C major', () {
+      expect(KeySignature.cMajor.scalePitchClasses, {0, 2, 4, 5, 7, 9, 11});
+    });
+
+    test('scalePitchClasses for G major', () {
+      // G A B C D E F# → 7 9 11 0 2 4 6
+      expect(KeySignature.gMajor.scalePitchClasses, {7, 9, 11, 0, 2, 4, 6});
+    });
+
+    test('scalePitchClasses for F major', () {
+      // F G A Bb C D E → 5 7 9 10 0 2 4
+      expect(KeySignature.fMajor.scalePitchClasses, {5, 7, 9, 10, 0, 2, 4});
+    });
+  });
 }

@@ -3,11 +3,13 @@ import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_midi_pro/flutter_midi_pro.dart';
 import '../models/score.dart';
-import 'web_audio_stub.dart' if (dart.library.js) 'web_audio_impl.dart' as web_audio;
+import 'web_audio_stub.dart'
+    if (dart.library.js) 'web_audio_impl.dart'
+    as web_audio;
 
 /// Service wrapping flutter_midi_pro for SoundFont-based piano playback.
 ///
-/// On Web, audio is not supported (flutter_midi_pro is native-only).
+/// On Web, uses Web Audio API with bundled MP3 samples.
 class AudioService {
   final MidiPro _midiPro = MidiPro();
   int? _sfId;
@@ -16,7 +18,7 @@ class AudioService {
 
   /// Whether this platform supports MIDI playback.
   bool get _platformSupported {
-    if (kIsWeb) return true; // Web uses JS soundfont-player
+    if (kIsWeb) return true; // Web uses Web Audio API
     // macOS is disabled: flutter_midi_pro uses AVAudioUnitSampler which
     // causes native CoreAudio assertion crashes on macOS 26.x.
     // Audio works fine on iOS and Android (the primary targets).
@@ -61,7 +63,7 @@ class AudioService {
     }
 
     if (_sfId == null) return;
-    
+
     try {
       await _midiPro.playNote(
         sfId: _sfId!,
@@ -97,8 +99,10 @@ class AudioService {
   }
 
   /// Play a single note for a fixed duration (for input/selection feedback).
-  void playNoteWithDuration(int midi,
-      {Duration duration = const Duration(milliseconds: 400)}) {
+  void playNoteWithDuration(
+    int midi, {
+    Duration duration = const Duration(milliseconds: 400),
+  }) {
     playNote(midi);
     Timer(duration, () => stopNote(midi));
   }
@@ -121,8 +125,8 @@ class AudioService {
         await playNote(note.midi);
       }
 
-      final durationMs =
-          (note.duration.beats * score.secondsPerBeat * 1000).round();
+      final durationMs = (note.duration.beats * score.secondsPerBeat * 1000)
+          .round();
       await Future.delayed(Duration(milliseconds: durationMs));
 
       if (!note.isRest) {

@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <title>Score Renderer</title>
-  <script src="https://cdn.jsdelivr.net/npm/vexflow@4.2.3/build/cjs/vexflow.js"></script>
+  <script src="../vexflow/vexflow.js"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body {
@@ -36,11 +36,9 @@
     // -------------------------------------------------------------------------
     const { Renderer, Stave, StaveNote, Voice, Formatter,
             Accidental, KeySignature, TimeSignature, Barline,
-            StaveConnector, Beam } = Vex.Flow;
+            StaveConnector, Beam, Fraction } = Vex.Flow;
 
     const container = document.getElementById('score-canvas');
-    let renderer = null;
-    let context = null;
 
     // Current render state
     let currentData = null;
@@ -49,58 +47,28 @@
     // Duration / pitch helpers
     // -------------------------------------------------------------------------
 
-    // Convert our duration string to VexFlow duration key
     function toVfDuration(dur) {
-      const map = {
-        'whole': 'w',
-        'half': 'h',
-        'quarter': 'q',
-        'eighth': '8',
-        'sixteenth': '16',
-      };
+      const map = { 'whole': 'w', 'half': 'h', 'quarter': 'q', 'eighth': '8', 'sixteenth': '16' };
       return map[dur] || 'q';
     }
 
-    // Convert MIDI number to VexFlow pitch string e.g. "C/4"
     function midiToPitch(midi) {
       const names = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
       const octave = Math.floor(midi / 12) - 1;
-      const name = names[midi % 12];
-      // Handle enharmonics for flat keys
-      const flatNames = {
-        'C#': 'Db', 'D#': 'Eb', 'F#': 'Gb', 'G#': 'Ab', 'A#': 'Bb'
-      };
-      return name + '/' + octave;
+      return names[midi % 12] + '/' + octave;
     }
 
-    // Determine the accidental character for a given MIDI in a key.
-    // Returns '#', 'b', 'n', or null.
-    function accidentalForNote(midi, alteredPitches, accidentalOffset, prevAccidentals) {
-      const pc = midi % 12;
-      const key = midi; // use absolute midi as cache key
-
-      if (alteredPitches.includes(pc)) {
-        // This pitch class is altered by the key signature — no extra accidental needed
-        // unless previously shown as natural in the same measure
-        if (prevAccidentals[key] === 'n') {
-          prevAccidentals[key] = accidentalOffset > 0 ? '#' : 'b';
-          return accidentalOffset > 0 ? '#' : 'b';
-        }
-        return null;
-      } else {
-        // This pitch class is natural in key but might have been sharpened by key sig
-        // check if it would have been altered — i.e. pc+1 or pc-1 is in alteredPitches
-        const sharpedVersion = (pc + 1) % 12;
-        const flattedVersion = (pc - 1 + 12) % 12;
-        const needsNatural = alteredPitches.includes(sharpedVersion) || alteredPitches.includes(flattedVersion);
-        if (needsNatural) {
-          if (prevAccidentals[key] !== 'n') {
-            prevAccidentals[key] = 'n';
-            return 'n';
-          }
-        }
-        return null;
+    // -------------------------------------------------------------------------
+    // Beaming groups per time signature
+    // -------------------------------------------------------------------------
+    function beamGroupsFor(beatsPerMeasure, beatUnit) {
+      // Compound meters: 6/8, 9/8, 12/8 → group every 3 eighth-notes
+      if (beatUnit === 8 && beatsPerMeasure % 3 === 0) {
+        const groups = beatsPerMeasure / 3;
+        return Array(groups).fill(new Fraction(3, 8));
       }
+      // Simple meters (x/4, x/2): group per beat
+      return Array(beatsPerMeasure).fill(new Fraction(1, beatUnit));
     }
 
     // -------------------------------------------------------------------------
@@ -111,14 +79,15 @@
       container.innerHTML = '';
 
       const { beatsPerMeasure, beatUnit, keySignatureStr, alteredPitches,
-              accidentalOffset, notes, selectedIndex, cursorIndex, playbackIndex } = data;
+              accidentalOffset, notes, selectedIndex, cursorIndex,
+              playbackIndex, selectionKind } = data;
 
       // ---- Layout constants ------------------------------------------------
-      const staveHeight = 160;          // total height of one row
-      const staveTop = 40;             // top padding to stave lines
-      const noteSpacing = 48;          // pixels per beat
+      const staveHeight = 160;
+      const staveTop = 40;
+      const noteSpacing = 48;
       const minMeasureWidth = 80;
-      const leftPadding = 90;          // room for clef + key sig + time sig
+      const leftPadding = 90;
       const rightPadding = 20;
 
       // ---- Group notes into measures ----------------------------------------
@@ -136,18 +105,14 @@
           beatAcc = 0;
         }
       }
-      if (currentMeasure.length > 0) {
-        measures.push(currentMeasure);
-      }
-      if (measures.length === 0) {
-        measures.push([]); // empty score — show one blank measure
-      }
+      if (currentMeasure.length > 0) measures.push(currentMeasure);
+      if (measures.length === 0) measures.push([]);
 
       // ---- Compute widths ---------------------------------------------------
       const measureWidths = measures.map((m, idx) => {
         const totalBeats = m.reduce((s, n) => s + n.beats, 0);
         let w = Math.max(totalBeats * noteSpacing, minMeasureWidth);
-        if (idx === 0) w += leftPadding; // first measure needs space for clef
+        if (idx === 0) w += leftPadding;
         return w + rightPadding;
       });
 
@@ -159,181 +124,204 @@
       const ctx = svgRenderer.getContext();
       ctx.setFont('Arial', 10);
 
-      // ---- Map to track accidentals within each measure --------------------
-      let prevAccidentals = {};
-
       // ---- Draw each measure -----------------------------------------------
       let xOffset = 0;
-      let noteIndex = 0; // global note index tracker
+      const allVfNotes = [];   // flat array parallel to notes[]
+      const allStaves = [];    // one per measure
 
       for (let mi = 0; mi < measures.length; mi++) {
         const mNotes = measures[mi];
         const mWidth = measureWidths[mi];
-        prevAccidentals = {}; // reset per measure
+        let prevAccidentals = {};
 
-        // Build stave
         const stave = new Stave(xOffset, staveTop, mWidth);
-
         if (mi === 0) {
           stave.addClef('treble');
           stave.addKeySignature(keySignatureStr);
           stave.addTimeSignature(`${beatsPerMeasure}/${beatUnit}`);
-        } else {
-          stave.addKeySignature(keySignatureStr);
         }
-
         stave.setContext(ctx).draw();
+        allStaves.push(stave);
 
-        // Build VexFlow notes for this measure
         if (mNotes.length > 0) {
-          const vfNotes = mNotes.map((n, localIdx) => {
-            const gi = n.globalIndex;
+          const vfNotes = mNotes.map((n) => {
             const dur = toVfDuration(n.duration);
-
             let vfNote;
             if (n.isRest) {
-              vfNote = new StaveNote({
-                keys: ['b/4'],
-                duration: dur + 'r',
-              });
+              vfNote = new StaveNote({ keys: ['b/4'], duration: dur + 'r' });
             } else {
               const pitch = midiToPitch(n.midi);
-              vfNote = new StaveNote({
-                keys: [pitch.toLowerCase()],
-                duration: dur,
-              });
+              vfNote = new StaveNote({ keys: [pitch.toLowerCase()], duration: dur });
 
-              // Determine if we need an explicit accidental
               const pc = n.midi % 12;
               const naturalNote = [0,2,4,5,7,9,11].includes(pc);
               const inAlteredPitches = alteredPitches.includes(pc);
 
-              if (!naturalNote) {
-                // The note itself is a sharp (e.g. C# is pc=1)
-                const accChar = (pc === (alteredPitches.find(a => (a % 12) === pc) ?? -99)) ? null
-                  : '#'; // needs accidental
-                if (!inAlteredPitches) {
-                  const prevAcc = prevAccidentals[n.midi];
-                  if (prevAcc !== '#') {
-                    vfNote.addModifier(new Accidental('#'));
-                    prevAccidentals[n.midi] = '#';
-                  }
+              if (!naturalNote && !inAlteredPitches) {
+                if (prevAccidentals[n.midi] !== '#') {
+                  vfNote.addModifier(new Accidental('#'));
+                  prevAccidentals[n.midi] = '#';
                 }
-              } else if (inAlteredPitches && accidentalOffset !== 0) {
-                // Natural version of a key-altered pitch — need natural sign? 
-                // This shouldn't happen after applyToMidi, but handle gracefully
               }
             }
 
             // Colouring: playback > selected > default
             let color = '#333333';
-            if (gi === playbackIndex) color = '#43a047';
-            else if (gi === selectedIndex) color = '#1976d2';
-
+            if (n.globalIndex === playbackIndex) color = '#43a047';
+            else if (n.globalIndex === selectedIndex) color = '#1976d2';
             vfNote.setStyle({ fillStyle: color, strokeStyle: color });
 
             return vfNote;
           });
 
-          // Create cursor indicator (thin vertical line) before the cursor note
-          // We'll draw it after the formatter so we know the X positions.
-
-          // Fill partial measure with invisible rest if needed
-          const totalBeats = mNotes.reduce((s, n) => s + n.beats, 0);
-          const remainingBeats = beatsPerMeasure - (totalBeats % beatsPerMeasure);
-          const allNotes = [...vfNotes];
+          // Store mapping
+          for (const vf of vfNotes) allVfNotes.push(vf);
 
           try {
             const voice = new Voice({
               num_beats: beatsPerMeasure,
               beat_value: beatUnit,
             }).setMode(Voice.Mode.SOFT);
-            voice.addTickables(allNotes);
+            voice.addTickables(vfNotes);
 
             const formatter = new Formatter();
             formatter.joinVoices([voice]);
             const noteWidth = mWidth - (mi === 0 ? leftPadding : 30) - rightPadding;
             formatter.format([voice], Math.max(noteWidth, 40));
 
+            // Generate beams BEFORE drawing voice so notes know they are
+            // beamed and will not render individual flags.
+            let beams = [];
+            const beamable = vfNotes.filter(vn => {
+              const dur = vn.getDuration();
+              return !vn.isRest() && (dur === '8' || dur === '16');
+            });
+            if (beamable.length >= 2) {
+              try {
+                const groups = beamGroupsFor(beatsPerMeasure, beatUnit);
+                beams = Beam.generateBeams(beamable, { groups });
+              } catch (e) {
+                console.warn('Beam error measure', mi, e);
+              }
+            }
+
             voice.draw(ctx, stave);
+            beams.forEach(b => b.setContext(ctx).draw());
           } catch (e) {
             console.warn('VexFlow render error in measure', mi, e);
           }
-
-          // Draw cursor line
-          const cursorInMeasure = mNotes.findIndex(n => n.globalIndex === cursorIndex || 
-            (cursorIndex > 0 && n.globalIndex === cursorIndex - 1));
-          // We'll draw a simple cursor tick below the stave
         }
 
         xOffset += mWidth;
       }
 
-      // ---- Draw cursor indicator -------------------------------------------
-      // Simple approach: draw a blue triangle/arrow below the clue note
-      _drawCursor(ctx, notes, cursorIndex, measures, measureWidths, staveTop, beatsPerMeasure, noteSpacing);
-
-      // ---- Make SVG tappable -----------------------------------------------
-      _attachTapHandlers(ctx, notes, measures, measureWidths, staveTop, beatsPerMeasure, noteSpacing);
-    }
-
-    // -------------------------------------------------------------------------
-    // Draw cursor (inverted triangle below staff)
-    // -------------------------------------------------------------------------
-    function _drawCursor(ctx, notes, cursorIndex, measures, measureWidths, staveTop, beatsPerMeasure, noteSpacing) {
-      // Find x position of cursor
-      const cursorX = _xForGlobalIndex(cursorIndex, notes, measures, measureWidths, beatsPerMeasure, noteSpacing);
-      if (cursorX === null) return;
-
-      const staffBottom = staveTop + 4 * 10 + 20; // approx
-      ctx.save();
-      ctx.setFillStyle('#1976d2');
-      ctx.setStrokeStyle('#1976d2');
-      ctx.beginPath();
-      ctx.moveTo(cursorX - 5, staffBottom + 8);
-      ctx.lineTo(cursorX + 5, staffBottom + 8);
-      ctx.lineTo(cursorX, staffBottom + 3);
-      ctx.closePath();
-      ctx.fill();
-      ctx.restore();
-    }
-
-    // Compute approximate X position for a note global index
-    function _xForGlobalIndex(globalIndex, notes, measures, measureWidths, beatsPerMeasure, noteSpacing) {
-      if (notes.length === 0) return measureWidths[0] * 0.5;
-      let xOff = 0;
-      let beatAcc = 0;
-      let noteIdx = 0;
-      for (let mi = 0; mi < measures.length; mi++) {
-        const mNotes = measures[mi];
-        const mWidth = measureWidths[mi];
-        const leftPad = mi === 0 ? 90 : 30;
-        for (let li = 0; li < mNotes.length; li++) {
-          if (mNotes[li].globalIndex === globalIndex) {
-            const beatInMeasure = beatAcc % beatsPerMeasure;
-            const totalBeats = mNotes.reduce((s,n)=>s+n.beats,0);
-            // approximate: evenly spaced
-            const frac = totalBeats > 0 ? (mNotes.slice(0,li).reduce((s,n)=>s+n.beats,0)) / totalBeats : 0;
-            return xOff + leftPad + frac * (mWidth - leftPad - 20);
-          }
-          beatAcc += mNotes[li].beats;
-        }
-        // cursor at end of measure
-        if (globalIndex === noteIdx + mNotes.length && mi === measures.length -1) {
-          return xOff + mWidth - 20;
-        }
-        noteIdx += mNotes.length;
-        xOff += mWidth;
-      }
-      return xOff; // end
-    }
-
-    // -------------------------------------------------------------------------
-    // Attach tap handlers to SVG elements
-    // -------------------------------------------------------------------------
-    function _attachTapHandlers(ctx, notes, measures, measureWidths, staveTop, beatsPerMeasure, noteSpacing) {
+      // ---- Draw highlights & cursor ----------------------------------------
       const svg = container.querySelector('svg');
-      if (!svg) return;
+      if (svg) {
+        _drawHighlights(svg, data, allStaves);
+        _drawCursorLine(svg, data, allVfNotes, allStaves, measures, measureWidths);
+        _attachTapHandlers(svg, data, allStaves);
+      }
+    }
+
+    // -------------------------------------------------------------------------
+    // Highlights — blue semi-transparent rect behind selected element
+    // -------------------------------------------------------------------------
+    function _drawHighlights(svg, data, staves) {
+      const { selectionKind, selectedIndex } = data;
+      if (!selectionKind) return;
+      const ns = svg.namespaceURI;
+
+      if (selectionKind === 'timeSig') {
+        const el = svg.querySelector('.vf-timesig');
+        if (el) _highlightElement(svg, el, ns);
+      } else if (selectionKind === 'keySig') {
+        const el = svg.querySelector('.vf-keysignature');
+        if (el) _highlightElement(svg, el, ns);
+      } else if (selectionKind === 'note' && selectedIndex >= 0) {
+        const noteEls = svg.querySelectorAll('.vf-stavenote');
+        if (noteEls[selectedIndex]) _highlightElement(svg, noteEls[selectedIndex], ns);
+      }
+    }
+
+    function _highlightElement(svg, el, ns) {
+      const bbox = el.getBBox();
+      const rect = document.createElementNS(ns, 'rect');
+      rect.setAttribute('x', bbox.x - 4);
+      rect.setAttribute('y', bbox.y - 4);
+      rect.setAttribute('width', bbox.width + 8);
+      rect.setAttribute('height', bbox.height + 8);
+      rect.setAttribute('rx', '4');
+      rect.setAttribute('fill', 'rgba(25, 118, 210, 0.15)');
+      rect.setAttribute('stroke', 'rgba(25, 118, 210, 0.4)');
+      rect.setAttribute('stroke-width', '1');
+      // Insert before the element so it's behind
+      el.parentNode.insertBefore(rect, el);
+    }
+
+    // -------------------------------------------------------------------------
+    // Cursor — blinking vertical line at insert position
+    // -------------------------------------------------------------------------
+    function _drawCursorLine(svg, data, allVfNotes, allStaves, measures, measureWidths) {
+      const { cursorIndex, selectionKind, notes } = data;
+      // Only show cursor when in insert mode (no selection) or note selected
+      if (selectionKind && selectionKind !== 'note') return;
+
+      const ns = svg.namespaceURI;
+      let cursorX;
+
+      if (allVfNotes.length === 0) {
+        // Empty score — cursor in middle of first measure
+        cursorX = measureWidths[0] * 0.5;
+      } else if (cursorIndex < allVfNotes.length) {
+        // Cursor is before an existing note — use that note's X
+        const noteEl = svg.querySelectorAll('.vf-stavenote')[cursorIndex];
+        if (noteEl) {
+          const bbox = noteEl.getBBox();
+          cursorX = bbox.x - 4;
+        }
+      } else {
+        // Cursor at end — place after last note
+        const noteEls = svg.querySelectorAll('.vf-stavenote');
+        const lastEl = noteEls[noteEls.length - 1];
+        if (lastEl) {
+          const bbox = lastEl.getBBox();
+          cursorX = bbox.x + bbox.width + 10;
+        }
+      }
+
+      if (cursorX == null) return;
+
+      // Find stave vertical bounds (first stave top line)
+      const staveY = allStaves[0] ? allStaves[0].getYForLine(0) : 50;
+      const staveYBottom = allStaves[0] ? allStaves[0].getYForLine(4) : 90;
+
+      const line = document.createElementNS(ns, 'line');
+      line.setAttribute('x1', cursorX);
+      line.setAttribute('y1', staveY - 5);
+      line.setAttribute('x2', cursorX);
+      line.setAttribute('y2', staveYBottom + 5);
+      line.setAttribute('stroke', '#1976d2');
+      line.setAttribute('stroke-width', '2');
+      line.setAttribute('opacity', '0.7');
+
+      // Add blinking animation
+      const animate = document.createElementNS(ns, 'animate');
+      animate.setAttribute('attributeName', 'opacity');
+      animate.setAttribute('values', '0.7;0.1;0.7');
+      animate.setAttribute('dur', '1.2s');
+      animate.setAttribute('repeatCount', 'indefinite');
+      line.appendChild(animate);
+
+      svg.appendChild(line);
+    }
+
+    // -------------------------------------------------------------------------
+    // Tap handlers — use real SVG bounding boxes
+    // -------------------------------------------------------------------------
+    function _attachTapHandlers(svg, data, staves) {
+      const staveTop = staves[0] ? staves[0].getYForLine(0) : 40;
+      const staveBottom = staves[0] ? staves[0].getYForLine(4) : 90;
 
       svg.style.touchAction = 'pan-x';
 
@@ -342,32 +330,41 @@
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
 
-        // Check if click is in the clef/time-sig region of measure 0
-        if (x < 50 && y > staveTop && y < staveTop + 50) {
+        // Check time signature element
+        const timeSigEl = svg.querySelector('.vf-timesig');
+        if (timeSigEl && _isClickOnElement(timeSigEl, rect, x, y, 10)) {
           _sendMessage({ type: 'timeSigTap' });
           return;
         }
-        if (x >= 50 && x < 90 && y > staveTop && y < staveTop + 50) {
+
+        // Check key signature element
+        const keySigEl = svg.querySelector('.vf-keysignature');
+        if (keySigEl && _isClickOnElement(keySigEl, rect, x, y, 10)) {
           _sendMessage({ type: 'keySigTap' });
           return;
         }
 
-        // Try to find a note near the click using SVG note positions
-        // VexFlow renders note heads as <path> elements; we'll use bounding box
+        // Check note elements
         const noteEls = svg.querySelectorAll('.vf-stavenote');
         for (let i = 0; i < noteEls.length; i++) {
-          const bbox = noteEls[i].getBoundingClientRect();
-          const elX = bbox.left - rect.left + bbox.width / 2;
-          const elY = bbox.top - rect.top + bbox.height / 2;
-          if (Math.abs(x - elX) < 20 && Math.abs(y - elY) < 24) {
+          if (_isClickOnElement(noteEls[i], rect, x, y, 8)) {
             _sendMessage({ type: 'noteTap', index: i });
             return;
           }
         }
 
-        // Click on staff background — could be moving cursor or inserting
+        // Background tap
         _sendMessage({ type: 'bgTap', x: x, y: y });
       });
+    }
+
+    function _isClickOnElement(el, svgRect, clickX, clickY, padding) {
+      const bbox = el.getBoundingClientRect();
+      const elX1 = bbox.left - svgRect.left - padding;
+      const elX2 = bbox.right - svgRect.left + padding;
+      const elY1 = bbox.top - svgRect.top - padding;
+      const elY2 = bbox.bottom - svgRect.top + padding;
+      return clickX >= elX1 && clickX <= elX2 && clickY >= elY1 && clickY <= elY2;
     }
 
     // -------------------------------------------------------------------------
@@ -376,18 +373,15 @@
     function _sendMessage(obj) {
       const json = JSON.stringify(obj);
       if (window.TapScore) {
-        // Android / iOS JavascriptChannel
         window.TapScore.postMessage(json);
       } else if (window.flutter_inappwebview) {
         window.flutter_inappwebview.callHandler('TapScore', json);
       }
-      // Web (iframe) — always post to parent
       if (window.parent && window.parent !== window) {
         window.parent.postMessage(json, '*');
       }
     }
 
-    // Listen for render commands from Dart
     window.addEventListener('message', function(event) {
       try {
         const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
@@ -399,17 +393,14 @@
       }
     });
 
-    // Also expose a global function for runJavaScript calls
     window.renderFromDart = function(jsonStr) {
       try {
-        const data = JSON.parse(jsonStr);
-        renderScore(data);
+        renderScore(JSON.parse(jsonStr));
       } catch(e) {
         console.error('renderFromDart error', e);
       }
     };
 
-    // Notify Dart we are ready
     window.addEventListener('load', function() {
       _sendMessage({ type: 'ready' });
     });
