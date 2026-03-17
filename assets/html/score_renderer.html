@@ -108,10 +108,75 @@
       if (currentMeasure.length > 0) measures.push(currentMeasure);
       if (measures.length === 0) measures.push([]);
 
-      // ---- Compute widths ---------------------------------------------------
+      // ---- Pass 1: Build VF notes & voices, compute min widths -------------
+      const measureVoiceData = []; // { vfNotes, voice } or null
+
+      for (let mi = 0; mi < measures.length; mi++) {
+        const mNotes = measures[mi];
+        if (mNotes.length === 0) {
+          measureVoiceData.push(null);
+          continue;
+        }
+
+        let prevAccidentals = {};
+        const vfNotes = mNotes.map((n) => {
+          const dur = toVfDuration(n.duration);
+          let vfNote;
+          if (n.isRest) {
+            vfNote = new StaveNote({ keys: ['b/4'], duration: dur + 'r' });
+          } else {
+            const pitch = midiToPitch(n.midi);
+            vfNote = new StaveNote({ keys: [pitch.toLowerCase()], duration: dur });
+
+            const pc = n.midi % 12;
+            const naturalNote = [0,2,4,5,7,9,11].includes(pc);
+            const inAlteredPitches = alteredPitches.includes(pc);
+
+            if (!naturalNote && !inAlteredPitches) {
+              if (prevAccidentals[n.midi] !== '#') {
+                vfNote.addModifier(new Accidental('#'));
+                prevAccidentals[n.midi] = '#';
+              }
+            }
+          }
+
+          // Colouring: playback > selected > default
+          let color = '#333333';
+          if (n.globalIndex === playbackIndex) color = '#43a047';
+          else if (n.globalIndex === selectedIndex) color = '#1976d2';
+          vfNote.setStyle({ fillStyle: color, strokeStyle: color });
+
+          return vfNote;
+        });
+
+        const voice = new Voice({
+          num_beats: beatsPerMeasure,
+          beat_value: beatUnit,
+        }).setMode(Voice.Mode.SOFT);
+        voice.addTickables(vfNotes);
+
+        measureVoiceData.push({ vfNotes, voice });
+      }
+
+      // ---- Compute widths (beat-based + VexFlow min width) -----------------
       const measureWidths = measures.map((m, idx) => {
         const totalBeats = m.reduce((s, n) => s + n.beats, 0);
         let w = Math.max(totalBeats * noteSpacing, minMeasureWidth);
+
+        // Ask VexFlow for the minimum width needed to avoid overlap
+        const mvd = measureVoiceData[idx];
+        if (mvd) {
+          try {
+            const f = new Formatter();
+            f.joinVoices([mvd.voice]);
+            const minW = f.preCalculateMinTotalWidth([mvd.voice]);
+            w = Math.max(w, minW + 20);
+          } catch (e) {
+            // Fallback: ensure minimum space per note
+            w = Math.max(w, m.length * 30);
+          }
+        }
+
         if (idx === 0) w += leftPadding;
         return w + rightPadding;
       });
@@ -124,15 +189,13 @@
       const ctx = svgRenderer.getContext();
       ctx.setFont('Arial', 10);
 
-      // ---- Draw each measure -----------------------------------------------
+      // ---- Pass 2: Draw staves & render notes -------------------------------
       let xOffset = 0;
       const allVfNotes = [];   // flat array parallel to notes[]
       const allStaves = [];    // one per measure
 
       for (let mi = 0; mi < measures.length; mi++) {
-        const mNotes = measures[mi];
         const mWidth = measureWidths[mi];
-        let prevAccidentals = {};
 
         const stave = new Stave(xOffset, staveTop, mWidth);
         if (mi === 0) {
@@ -143,56 +206,20 @@
         stave.setContext(ctx).draw();
         allStaves.push(stave);
 
-        if (mNotes.length > 0) {
-          const vfNotes = mNotes.map((n) => {
-            const dur = toVfDuration(n.duration);
-            let vfNote;
-            if (n.isRest) {
-              vfNote = new StaveNote({ keys: ['b/4'], duration: dur + 'r' });
-            } else {
-              const pitch = midiToPitch(n.midi);
-              vfNote = new StaveNote({ keys: [pitch.toLowerCase()], duration: dur });
-
-              const pc = n.midi % 12;
-              const naturalNote = [0,2,4,5,7,9,11].includes(pc);
-              const inAlteredPitches = alteredPitches.includes(pc);
-
-              if (!naturalNote && !inAlteredPitches) {
-                if (prevAccidentals[n.midi] !== '#') {
-                  vfNote.addModifier(new Accidental('#'));
-                  prevAccidentals[n.midi] = '#';
-                }
-              }
-            }
-
-            // Colouring: playback > selected > default
-            let color = '#333333';
-            if (n.globalIndex === playbackIndex) color = '#43a047';
-            else if (n.globalIndex === selectedIndex) color = '#1976d2';
-            vfNote.setStyle({ fillStyle: color, strokeStyle: color });
-
-            return vfNote;
-          });
-
-          // Store mapping
-          for (const vf of vfNotes) allVfNotes.push(vf);
+        const mvd = measureVoiceData[mi];
+        if (mvd) {
+          for (const vf of mvd.vfNotes) allVfNotes.push(vf);
 
           try {
-            const voice = new Voice({
-              num_beats: beatsPerMeasure,
-              beat_value: beatUnit,
-            }).setMode(Voice.Mode.SOFT);
-            voice.addTickables(vfNotes);
-
             const formatter = new Formatter();
-            formatter.joinVoices([voice]);
+            formatter.joinVoices([mvd.voice]);
             const noteWidth = mWidth - (mi === 0 ? leftPadding : 30) - rightPadding;
-            formatter.format([voice], Math.max(noteWidth, 40));
+            formatter.format([mvd.voice], Math.max(noteWidth, 40));
 
             // Generate beams BEFORE drawing voice so notes know they are
             // beamed and will not render individual flags.
             let beams = [];
-            const beamable = vfNotes.filter(vn => {
+            const beamable = mvd.vfNotes.filter(vn => {
               const dur = vn.getDuration();
               return !vn.isRest() && (dur === '8' || dur === '16');
             });
@@ -205,7 +232,7 @@
               }
             }
 
-            voice.draw(ctx, stave);
+            mvd.voice.draw(ctx, stave);
             beams.forEach(b => b.setContext(ctx).draw());
           } catch (e) {
             console.warn('VexFlow render error in measure', mi, e);

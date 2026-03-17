@@ -49,8 +49,7 @@ class ScoreNotifier extends ChangeNotifier {
 
   /// Initialize the audio service.
   Future<void> init() async {
-    await _audioService.init();
-    _isInitialized = true;
+    _isInitialized = await _audioService.init();
     notifyListeners();
   }
 

@@ -26,15 +26,18 @@ class AudioService {
   }
 
   /// Initialize by loading the bundled SoundFont.
-  Future<void> init() async {
-    if (_initialized || !_platformSupported) return;
+  Future<bool> init() async {
+    if (_initialized) return true;
+    if (!_platformSupported) return false;
 
     if (kIsWeb) {
-      await web_audio.initWebAudio();
-      _initialized = true;
-      // ignore: avoid_print
-      print('AudioService: Web Audio Piano Initialized');
-      return;
+      try {
+        _initialized = await web_audio.initWebAudio();
+      } catch (e) {
+        _initialized = false;
+      }
+
+      return _initialized;
     }
 
     try {
@@ -44,12 +47,10 @@ class AudioService {
         program: 0,
       );
       _initialized = true;
-      // ignore: avoid_print
-      print('AudioService: SoundFont loaded successfully (sfId=$_sfId)');
+      return true;
     } catch (e) {
       _initialized = false;
-      // ignore: avoid_print
-      print('AudioService: Failed to load SoundFont: $e');
+      return false;
     }
   }
 

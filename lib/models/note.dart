@@ -22,11 +22,10 @@ class Note {
   });
 
   /// Create a rest with the given duration.
-  const Note.rest({
-    this.duration = NoteDuration.quarter,
-  })  : midi = 0,
-        accidental = Accidental.none,
-        isRest = true;
+  const Note.rest({this.duration = NoteDuration.quarter})
+    : midi = 0,
+      accidental = Accidental.none,
+      isRest = true;
 
   /// The octave number (C4 = middle C, MIDI 60).
   int get octave => (midi ~/ 12) - 1;
@@ -58,30 +57,6 @@ class Note {
     return '${noteName.name}${accidental.symbol}$octave';
   }
 
-  /// Staff position relative to the bottom line (E4) of the treble clef.
-  /// Each step = one staff line or space.
-  /// E4 = 0, F4 = 1, G4 = 2, A4 = 3, B4 = 4, C5 = 5, D5 = 6, E5 = 7, F5 = 8
-  /// Below: D4 = -1, C4 = -2, B3 = -3, A3 = -4, G3 = -5
-  int get staffPosition {
-    if (isRest) return 4; // Center of staff
-
-    // Map note name to a diatonic step index (C=0, D=1, E=2, F=3, G=4, A=5, B=6)
-    final diatonicStep = switch (noteName) {
-      NoteName.C => 0,
-      NoteName.D => 1,
-      NoteName.E => 2,
-      NoteName.F => 3,
-      NoteName.G => 4,
-      NoteName.A => 5,
-      NoteName.B => 6,
-    };
-
-    // E4 (MIDI 64) is on the bottom line of treble clef (position 0).
-    // E4 has octave=4, diatonicStep=2.
-    // Position = (octave - 4) * 7 + diatonicStep - 2
-    return (octave - 4) * 7 + diatonicStep - 2;
-  }
-
   /// Create a copy with modified fields.
   Note copyWith({
     int? midi,
@@ -95,29 +70,6 @@ class Note {
       accidental: accidental ?? this.accidental,
       isRest: isRest ?? this.isRest,
     );
-  }
-
-  /// Convert a staff position back to MIDI note number.
-  /// Assumes treble clef, no accidentals.
-  static int staffPositionToMidi(int position) {
-    // position 0 = E4 (MIDI 64)
-    // Each position is one diatonic step.
-    // diatonicStep = (position + 2) % 7 maps to note name
-    // octave = 4 + (position + 2) ~/ 7
-
-    final adjusted = position + 2; // offset so C is at 0 in octave 4
-    int octave = 4 + adjusted ~/ 7;
-    int step = adjusted % 7;
-
-    // Handle negative positions
-    if (step < 0) {
-      step += 7;
-      octave -= 1;
-    }
-
-    // Diatonic step to semitone within octave
-    final semitones = [0, 2, 4, 5, 7, 9, 11]; // C D E F G A B
-    return (octave + 1) * 12 + semitones[step];
   }
 
   @override

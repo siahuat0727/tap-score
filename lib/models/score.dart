@@ -26,17 +26,6 @@ class Score {
     this.keySignature = KeySignature.cMajor,
   }) : notes = notes ?? [];
 
-  /// Total duration of the score in beats.
-  double get totalBeats {
-    return notes.fold(0.0, (sum, note) => sum + note.duration.beats);
-  }
-
-  /// Number of measures (rounded up).
-  int get measureCount {
-    if (notes.isEmpty) return 1;
-    return (totalBeats / beatsPerMeasure).ceil().clamp(1, 9999);
-  }
-
   /// Add a note at the given index. If index is null, append to end.
   void addNote(Note note, [int? index]) {
     if (index != null && index <= notes.length) {
@@ -58,36 +47,6 @@ class Score {
     if (index >= 0 && index < notes.length) {
       notes[index] = note;
     }
-  }
-
-  /// Get the beat offset of the note at the given index.
-  double beatOffsetAt(int index) {
-    double offset = 0;
-    for (int i = 0; i < index && i < notes.length; i++) {
-      offset += notes[i].duration.beats;
-    }
-    return offset;
-  }
-
-  /// Get the measure number (0-based) for the note at the given index.
-  int measureForNoteAt(int index) {
-    return (beatOffsetAt(index) / beatsPerMeasure).floor();
-  }
-
-  /// Get all notes within a given measure (0-based).
-  List<Note> notesInMeasure(int measure) {
-    final result = <Note>[];
-    double beatOffset = 0;
-    for (final note in notes) {
-      final noteMeasure = (beatOffset / beatsPerMeasure).floor();
-      if (noteMeasure == measure) {
-        result.add(note);
-      } else if (noteMeasure > measure) {
-        break;
-      }
-      beatOffset += note.duration.beats;
-    }
-    return result;
   }
 
   /// Duration of one beat in seconds at the current tempo.
