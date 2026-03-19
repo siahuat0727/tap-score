@@ -260,7 +260,7 @@
       const ns = svg.namespaceURI;
 
       if (selectionKind === 'timeSig') {
-        const el = svg.querySelector('.vf-timesig');
+        const el = svg.querySelector('.vf-timesignature');
         if (el) _highlightElement(svg, el, ns);
       } else if (selectionKind === 'keySig') {
         const el = svg.querySelector('.vf-keysignature');
@@ -291,8 +291,8 @@
     // -------------------------------------------------------------------------
     function _drawCursorLine(svg, data, allVfNotes, allStaves, measures, measureWidths) {
       const { cursorIndex, selectionKind, notes } = data;
-      // Only show cursor when in insert mode (no selection) or note selected
-      if (selectionKind && selectionKind !== 'note') return;
+      // Only show cursor in pure input mode (no selection)
+      if (selectionKind) return;
 
       const ns = svg.namespaceURI;
       let cursorX;
@@ -358,7 +358,7 @@
         const y = e.clientY - rect.top;
 
         // Check time signature element
-        const timeSigEl = svg.querySelector('.vf-timesig');
+        const timeSigEl = svg.querySelector('.vf-timesignature');
         if (timeSigEl && _isClickOnElement(timeSigEl, rect, x, y, 10)) {
           _sendMessage({ type: 'timeSigTap' });
           return;
@@ -430,6 +430,16 @@
 
     window.addEventListener('load', function() {
       _sendMessage({ type: 'ready' });
+    });
+
+    // Forward keyboard events to Dart so arrow keys work even when
+    // the iframe has focus (e.g. after clicking a note on web).
+    document.addEventListener('keydown', function(e) {
+      const forwarded = ['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Delete','Backspace'];
+      if (forwarded.includes(e.key)) {
+        e.preventDefault();
+        _sendMessage({ type: 'keydown', key: e.key });
+      }
     });
   </script>
 </body>

@@ -1,6 +1,18 @@
 import 'note.dart';
 import 'key_signature.dart';
 
+/// Common time signatures for cycling and picker UI.
+const List<(int, int)> commonTimeSignatures = [
+  (2, 4),
+  (3, 4),
+  (4, 4),
+  (3, 8),
+  (6, 8),
+  (5, 4),
+  (7, 8),
+  (12, 8),
+];
+
 /// Represents a musical score — a sequence of notes with tempo and time signature.
 class Score {
   /// The notes in order.

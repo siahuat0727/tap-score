@@ -80,8 +80,8 @@ class ScoreNotifier extends ChangeNotifier {
 
     score.addNote(note, _cursorIndex);
     _cursorIndex++;
-    _selectionKind = SelectionKind.note;
-    _selectedNoteIndex = _cursorIndex - 1;
+    _selectionKind = null;
+    _selectedNoteIndex = null;
 
     // Play audio feedback for the note.
     if (!note.isRest) {
@@ -139,37 +139,37 @@ class ScoreNotifier extends ChangeNotifier {
   // ---------------------------------------------------------------------------
 
   /// Move selection one step to the left.
-  /// Order: cursor(end) → note[n-1] → ... → note[0] → keySig → timeSig
+  /// Order: cursor(end) → note[n-1] → ... → note[0] → timeSig → keySig
   void moveSelectionLeft() {
     switch (_selectionKind) {
       case null:
-        // At cursor/end — select last note if any, else keySig.
+        // At cursor/end — select last note if any, else timeSig.
         if (score.notes.isNotEmpty) {
           selectNote(score.notes.length - 1);
         } else {
-          selectKeySig();
+          selectTimeSig();
         }
       case SelectionKind.note:
         final idx = _selectedNoteIndex ?? 0;
         if (idx > 0) {
           selectNote(idx - 1);
         } else {
-          selectKeySig();
+          selectTimeSig();
         }
-      case SelectionKind.keySig:
-        selectTimeSig();
       case SelectionKind.timeSig:
+        selectKeySig();
+      case SelectionKind.keySig:
         break; // already leftmost
     }
   }
 
   /// Move selection one step to the right.
-  /// Order: timeSig → keySig → note[0] → ... → note[n-1] → cursor(end)
+  /// Order: keySig → timeSig → note[0] → ... → note[n-1] → cursor(end)
   void moveSelectionRight() {
     switch (_selectionKind) {
-      case SelectionKind.timeSig:
-        selectKeySig();
       case SelectionKind.keySig:
+        selectTimeSig();
+      case SelectionKind.timeSig:
         if (score.notes.isNotEmpty) {
           selectNote(0);
         } else {
@@ -195,7 +195,7 @@ class ScoreNotifier extends ChangeNotifier {
   void adjustSelection(int direction) {
     switch (_selectionKind) {
       case SelectionKind.timeSig:
-        adjustBeatsPerMeasure(direction);
+        cycleTimeSignature(direction);
       case SelectionKind.keySig:
         shiftKeySignature(direction);
       case SelectionKind.note:
@@ -312,9 +312,15 @@ class ScoreNotifier extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Nudge beats-per-measure up or down by one step.
-  void adjustBeatsPerMeasure(int delta) {
-    setTimeSignature(score.beatsPerMeasure + delta, score.beatUnit);
+  /// Cycle through common time signatures.
+  void cycleTimeSignature(int direction) {
+    final current = (score.beatsPerMeasure, score.beatUnit);
+    final idx = commonTimeSignatures.indexOf(current);
+    final next = idx < 0
+        ? 0
+        : (idx + direction).clamp(0, commonTimeSignatures.length - 1);
+    final (beats, unit) = commonTimeSignatures[next];
+    setTimeSignature(beats, unit);
   }
 
   // ---------------------------------------------------------------------------

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/key_signature.dart';
+import '../models/score.dart';
 import '../state/score_notifier.dart';
 
 import 'score_renderer_stub.dart'
@@ -25,16 +26,7 @@ class _ScoreViewWidgetState extends State<ScoreViewWidget> {
   void Function(Map<String, dynamic> payload)? _sendRender;
 
   /// Common time signatures shown in the picker.
-  static const List<(int, int)> _commonTimeSigs = [
-    (2, 4),
-    (3, 4),
-    (4, 4),
-    (3, 8),
-    (6, 8),
-    (5, 4),
-    (7, 8),
-    (12, 8),
-  ];
+  static const List<(int, int)> _commonTimeSigs = commonTimeSignatures;
 
   // ---------------------------------------------------------------------------
   // JS → Dart message handler
@@ -51,11 +43,31 @@ class _ScoreViewWidgetState extends State<ScoreViewWidget> {
       case 'bgTap':
         notifier.selectNote(null);
       case 'timeSigTap':
-        notifier.selectTimeSig();
-        _showTimeSigPicker();
+        if (notifier.selectionKind == SelectionKind.timeSig) {
+          _showTimeSigPicker();
+        } else {
+          notifier.selectTimeSig();
+        }
       case 'keySigTap':
-        notifier.selectKeySig();
-        _showKeySigPicker();
+        if (notifier.selectionKind == SelectionKind.keySig) {
+          _showKeySigPicker();
+        } else {
+          notifier.selectKeySig();
+        }
+      case 'keydown':
+        final key = data['key'] as String?;
+        switch (key) {
+          case 'ArrowLeft':
+            notifier.moveSelectionLeft();
+          case 'ArrowRight':
+            notifier.moveSelectionRight();
+          case 'ArrowUp':
+            notifier.adjustSelection(1);
+          case 'ArrowDown':
+            notifier.adjustSelection(-1);
+          case 'Delete' || 'Backspace':
+            notifier.deleteSelected();
+        }
     }
   }
 
@@ -94,7 +106,7 @@ class _ScoreViewWidgetState extends State<ScoreViewWidget> {
   }
 
   // ---------------------------------------------------------------------------
-  // Pickers
+  // Pickers (opened on tap-again when already selected)
   // ---------------------------------------------------------------------------
 
   void _showTimeSigPicker() {
