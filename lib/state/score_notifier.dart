@@ -35,6 +35,21 @@ class ScoreNotifier extends ChangeNotifier {
   bool _restMode = false;
   bool get restMode => _restMode;
 
+  /// Whether dotted mode is active (next input creates a dotted note).
+  bool _dottedMode = false;
+  bool get dottedMode => _dottedMode;
+
+  /// Whether triplet input mode is active.
+  /// When active, the next 3 notes form a triplet group.
+  bool _tripletMode = false;
+  bool get tripletMode => _tripletMode;
+
+  /// Counter tracking how many notes remain in the current triplet group.
+  int _tripletRemaining = 0;
+
+  /// Auto-incrementing triplet group ID.
+  int _nextTripletGroupId = 1;
+
   /// Playback state.
   bool _isPlaying = false;
   bool get isPlaying => _isPlaying;
@@ -65,17 +80,54 @@ class ScoreNotifier extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Toggle dotted mode.
+  void toggleDottedMode() {
+    _dottedMode = !_dottedMode;
+    notifyListeners();
+  }
+
+  /// Toggle triplet input mode.
+  /// When activated, the next 3 notes will share a triplet group.
+  void toggleTripletMode() {
+    _tripletMode = !_tripletMode;
+    if (!_tripletMode) {
+      _tripletRemaining = 0;
+    }
+    notifyListeners();
+  }
+
   /// Insert a note at the cursor position.
   /// If [midi] is provided, inserts a pitched note.
   /// If rest mode is on, inserts a rest.
   void insertNote(int rawMidi) {
+    // Determine triplet group ID for this note.
+    int? tripletId;
+    if (_tripletMode) {
+      if (_tripletRemaining <= 0) {
+        _tripletRemaining = 3;
+        tripletId = _nextTripletGroupId++;
+      } else {
+        // Use the same group ID as the previous note in this group.
+        tripletId = _nextTripletGroupId - 1;
+      }
+      _tripletRemaining--;
+      if (_tripletRemaining <= 0) {
+        _tripletMode = false;
+      }
+    }
+
     final Note note;
     if (_restMode) {
-      note = Note.rest(duration: _currentDuration);
+      note = Note.rest(duration: _currentDuration, isDotted: _dottedMode);
     } else {
       // Auto-apply key signature accidentals to the raw MIDI.
       final midi = score.keySignature.applyToMidi(rawMidi);
-      note = Note(midi: midi, duration: _currentDuration);
+      note = Note(
+        midi: midi,
+        duration: _currentDuration,
+        isDotted: _dottedMode,
+        tripletGroupId: tripletId,
+      );
     }
 
     score.addNote(note, _cursorIndex);
@@ -256,6 +308,16 @@ class ScoreNotifier extends ChangeNotifier {
     }
     final old = score.notes[_selectedNoteIndex!];
     score.replaceAt(_selectedNoteIndex!, old.copyWith(duration: duration));
+    notifyListeners();
+  }
+
+  /// Toggle the dotted flag on the selected note.
+  void toggleSelectedDotted() {
+    if (_selectionKind != SelectionKind.note || _selectedNoteIndex == null) {
+      return;
+    }
+    final old = score.notes[_selectedNoteIndex!];
+    score.replaceAt(_selectedNoteIndex!, old.copyWith(isDotted: !old.isDotted));
     notifyListeners();
   }
 

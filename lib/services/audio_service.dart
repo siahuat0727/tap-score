@@ -126,7 +126,7 @@ class AudioService {
         await playNote(note.midi);
       }
 
-      final durationMs = (note.duration.beats * score.secondsPerBeat * 1000)
+      final durationMs = (note.effectiveBeats * score.secondsPerBeat * 1000)
           .round();
       await Future.delayed(Duration(milliseconds: durationMs));
 

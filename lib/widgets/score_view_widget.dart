@@ -85,8 +85,10 @@ class _ScoreViewWidgetState extends State<ScoreViewWidget> {
       return {
         'midi': note.midi,
         'duration': note.duration.name,
-        'beats': note.duration.beats,
+        'beats': note.effectiveBeats,
         'isRest': note.isRest,
+        'isDotted': note.isDotted,
+        'tripletGroupId': note.tripletGroupId,
       };
     }).toList();
 

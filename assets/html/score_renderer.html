@@ -36,7 +36,7 @@
     // -------------------------------------------------------------------------
     const { Renderer, Stave, StaveNote, Voice, Formatter,
             Accidental, KeySignature, TimeSignature, Barline,
-            StaveConnector, Beam, Fraction, StaveTie } = Vex.Flow;
+            StaveConnector, Beam, Fraction, StaveTie, Tuplet, Dot } = Vex.Flow;
 
     const container = document.getElementById('score-canvas');
 
@@ -53,13 +53,36 @@
       return names[midi % 12] + '/' + octave;
     }
 
+    // Map beat count to VexFlow duration code.
+    // Returns { dur, dotted } where dur is VexFlow string and dotted
+    // indicates whether a dot modifier is needed.
+    const _durationTable = [
+      { beats: 6.0,   dur: 'w',  dotted: true  },
+      { beats: 4.0,   dur: 'w',  dotted: false },
+      { beats: 3.0,   dur: 'h',  dotted: true  },
+      { beats: 2.0,   dur: 'h',  dotted: false },
+      { beats: 1.5,   dur: 'q',  dotted: true  },
+      { beats: 1.0,   dur: 'q',  dotted: false },
+      { beats: 0.75,  dur: '8',  dotted: true  },
+      { beats: 0.5,   dur: '8',  dotted: false },
+      { beats: 0.375, dur: '16', dotted: true  },
+      { beats: 0.25,  dur: '16', dotted: false },
+    ];
+
+    function beatsToDurationInfo(beats) {
+      let best = _durationTable[_durationTable.length - 1];
+      let bestDiff = Infinity;
+      for (const entry of _durationTable) {
+        const diff = Math.abs(beats - entry.beats);
+        if (diff < 0.001) return { dur: entry.dur, dotted: entry.dotted };
+        if (diff < bestDiff) { bestDiff = diff; best = entry; }
+      }
+      console.warn(`No exact duration for ${beats} beats, using ${best.dur}`);
+      return { dur: best.dur, dotted: best.dotted };
+    }
+
     function beatsToDuration(beats) {
-      if (Math.abs(beats - 4.0) < 0.001) return 'w';
-      if (Math.abs(beats - 2.0) < 0.001) return 'h';
-      if (Math.abs(beats - 1.0) < 0.001) return 'q';
-      if (Math.abs(beats - 0.5) < 0.001) return '8';
-      if (Math.abs(beats - 0.25) < 0.001) return '16';
-      throw new Error(`No standard duration for ${beats} beats`);
+      return beatsToDurationInfo(beats).dur;
     }
 
     // -------------------------------------------------------------------------
@@ -71,14 +94,67 @@
       const measureDuration = beatsPerMeasure * (4 / beatUnit);
       const isCompound = beatUnit === 8 && beatsPerMeasure % 3 === 0;
       const effectiveBeatDur = isCompound ? 3 * (4 / beatUnit) : (4 / beatUnit);
-      const standardBeats = [4.0, 2.0, 1.0, 0.5, 0.25];
+      // Include dotted durations in the lookup table (sorted descending).
+      const allBeats = [6.0, 4.0, 3.0, 2.0, 1.5, 1.0, 0.75, 0.5, 0.375, 0.25];
 
       const measures = [];
       let currentMeasure = [];
       let position = 0.0;
 
+      // Identify triplet groups: collect consecutive indices sharing the same
+      // tripletGroupId so we can emit them as an atomic unit.
+      const tripletGroups = new Map(); // groupId -> [noteIndex, ...]
       for (let i = 0; i < notes.length; i++) {
+        const gid = notes[i].tripletGroupId;
+        if (gid != null) {
+          if (!tripletGroups.has(gid)) tripletGroups.set(gid, []);
+          tripletGroups.get(gid).push(i);
+        }
+      }
+
+      let i = 0;
+      while (i < notes.length) {
         const note = notes[i];
+
+        // --- Triplet group handling ---
+        // Emit all notes in a triplet group without splitting.
+        if (note.tripletGroupId != null) {
+          const group = tripletGroups.get(note.tripletGroupId);
+          for (const gi of group) {
+            const tn = notes[gi];
+            // Dart sends effectiveBeats which already includes the 2/3 factor.
+            // The VexFlow duration should be the *written* duration (without
+            // the 2/3 factor). Written beats = effectiveBeats × 3/2.
+            const writtenBeats = tn.beats * 1.5;
+            const durInfo = beatsToDurationInfo(writtenBeats);
+
+            currentMeasure.push({
+              globalIndex: gi,
+              midi: tn.midi,
+              isRest: tn.isRest,
+              beats: tn.beats,
+              duration: durInfo.dur,
+              isDotted: durInfo.dotted,
+              tieStart: false,
+              tieEnd: false,
+              tripletGroupId: tn.tripletGroupId,
+            });
+            position += tn.beats;
+          }
+          // Skip past all notes in this group.
+          i = group[group.length - 1] + 1;
+
+          // Check measure boundary after triplet group.
+          const measIdx = Math.floor((position - 0.0001) / measureDuration + 0.0001);
+          const measureEnd = (measIdx + 1) * measureDuration;
+          if (position >= measureEnd - 0.001) {
+            measures.push(currentMeasure);
+            currentMeasure = [];
+          }
+          continue;
+        }
+
+        // --- Normal / dotted note handling ---
         let remaining = note.beats;
         const noteStartPos = position;
 
@@ -93,7 +169,6 @@
 
           let maxSpace;
           if (!isOnBeat) {
-            // Off-beat: constrain to next beat boundary
             const currentBeatIdx = Math.floor(posInMeasure / effectiveBeatDur + 0.0001);
             const nextBeatBoundary = (currentBeatIdx + 1) * effectiveBeatDur;
             const spaceToBeat = nextBeatBoundary - posInMeasure;
@@ -102,13 +177,22 @@
             maxSpace = Math.min(spaceInMeasure, remaining);
           }
 
-          // Find largest standard duration <= maxSpace
+          // Find largest duration (including dotted) that fits.
           let chunk = null;
-          for (const d of standardBeats) {
+          let chunkDotted = false;
+          for (const d of allBeats) {
             if (d <= maxSpace + 0.001) {
               chunk = d;
+              const info = beatsToDurationInfo(d);
+              chunkDotted = info.dotted;
               break;
             }
+          }
+
+          // Remaining space too small for any standard duration — skip it.
+          if (chunk == null) {
+            remaining = 0;
+            break;
           }
 
           const isTieStart = !note.isRest && (remaining - chunk > 0.001);
@@ -120,8 +204,10 @@
             isRest: note.isRest,
             beats: chunk,
             duration: beatsToDuration(chunk),
+            isDotted: chunkDotted,
             tieStart: isTieStart,
             tieEnd: isTieEnd,
+            tripletGroupId: null,
           });
 
           position += chunk;
@@ -133,6 +219,7 @@
             currentMeasure = [];
           }
         }
+        i++;
       }
 
       if (currentMeasure.length > 0) measures.push(currentMeasure);
@@ -209,7 +296,10 @@
     // -------------------------------------------------------------------------
     function renderScore(data) {
       currentData = data;
+      const previousContent = container.innerHTML;
       container.innerHTML = '';
+
+      try {
 
       const { beatsPerMeasure, beatUnit, keySignatureStr, alteredPitches,
               accidentalOffset, notes, selectedIndex, cursorIndex,
@@ -238,7 +328,8 @@
 
         let prevAccidentals = {};
         const vfNotes = mNotes.map((dn) => {
-          const dur = dn.duration;
+          // For dotted notes, append 'd' to the VexFlow duration string.
+          const dur = dn.isDotted ? dn.duration + 'd' : dn.duration;
           let vfNote;
           if (dn.isRest) {
             vfNote = new StaveNote({ keys: ['b/4'], duration: dur + 'r' });
@@ -256,6 +347,11 @@
                 prevAccidentals[dn.midi] = '#';
               }
             }
+          }
+
+          // Add dot modifier for dotted notes.
+          if (dn.isDotted) {
+            Dot.buildAndAttach([vfNote], { all: true });
           }
 
           // Colouring: playback > selected > default
@@ -339,8 +435,28 @@
             // Beat-aware beam grouping
             const beams = beamNotesInMeasure(mvd.vfNotes, mvd.displayNotes, beatsPerMeasure, beatUnit);
 
+            // Tuplet brackets: group display notes by tripletGroupId
+            const tupletMap = new Map();
+            for (let ni = 0; ni < mvd.displayNotes.length; ni++) {
+              const gid = mvd.displayNotes[ni].tripletGroupId;
+              if (gid != null) {
+                if (!tupletMap.has(gid)) tupletMap.set(gid, []);
+                tupletMap.get(gid).push(mvd.vfNotes[ni]);
+              }
+            }
+
             mvd.voice.draw(ctx, stave);
             beams.forEach(b => b.setContext(ctx).draw());
+
+            // Draw tuplet brackets after voice so they overlay correctly.
+            for (const [, tupNotes] of tupletMap) {
+              if (tupNotes.length >= 2) {
+                new Tuplet(tupNotes, {
+                  num_notes: tupNotes.length,
+                  notes_occupied: 2,
+                }).setContext(ctx).draw();
+              }
+            }
           } catch (e) {
             console.warn('VexFlow render error in measure', mi, e);
           }
@@ -367,6 +483,12 @@
         _drawHighlights(svg, data, allStaves, allDisplayNotes);
         _drawCursorLine(svg, data, allVfNotes, allStaves, allDisplayNotes, measureWidths);
         _attachTapHandlers(svg, data, allStaves, allDisplayNotes);
+      }
+
+      } catch (e) {
+        console.warn('Score render error:', e);
+        container.innerHTML = previousContent
+          || '<p style="color:#b71c1c;padding:16px">Unable to render score</p>';
       }
     }
 

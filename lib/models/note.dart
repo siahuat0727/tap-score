@@ -14,18 +14,36 @@ class Note {
   /// Whether this is a rest (silence) rather than a pitched note.
   final bool isRest;
 
+  /// Whether this note is dotted (duration × 1.5).
+  final bool isDotted;
+
+  /// Triplet group ID. Notes sharing the same non-null ID form a triplet
+  /// (3 equal notes in the time of 2).
+  final int? tripletGroupId;
+
   const Note({
     required this.midi,
     this.duration = NoteDuration.quarter,
     this.accidental = Accidental.none,
     this.isRest = false,
+    this.isDotted = false,
+    this.tripletGroupId,
   });
 
   /// Create a rest with the given duration.
-  const Note.rest({this.duration = NoteDuration.quarter})
+  const Note.rest({this.duration = NoteDuration.quarter, this.isDotted = false})
     : midi = 0,
       accidental = Accidental.none,
-      isRest = true;
+      isRest = true,
+      tripletGroupId = null;
+
+  /// Actual beat count accounting for dot and triplet modifiers.
+  double get effectiveBeats {
+    var beats = duration.beats;
+    if (isDotted) beats *= 1.5;
+    if (tripletGroupId != null) beats *= 2.0 / 3.0;
+    return beats;
+  }
 
   /// The octave number (C4 = middle C, MIDI 60).
   int get octave => (midi ~/ 12) - 1;
@@ -63,12 +81,18 @@ class Note {
     NoteDuration? duration,
     Accidental? accidental,
     bool? isRest,
+    bool? isDotted,
+    int? Function()? tripletGroupId,
   }) {
     return Note(
       midi: midi ?? this.midi,
       duration: duration ?? this.duration,
       accidental: accidental ?? this.accidental,
       isRest: isRest ?? this.isRest,
+      isDotted: isDotted ?? this.isDotted,
+      tripletGroupId: tripletGroupId != null
+          ? tripletGroupId()
+          : this.tripletGroupId,
     );
   }
 
@@ -82,8 +106,11 @@ class Note {
           midi == other.midi &&
           duration == other.duration &&
           accidental == other.accidental &&
-          isRest == other.isRest;
+          isRest == other.isRest &&
+          isDotted == other.isDotted &&
+          tripletGroupId == other.tripletGroupId;
 
   @override
-  int get hashCode => Object.hash(midi, duration, accidental, isRest);
+  int get hashCode =>
+      Object.hash(midi, duration, accidental, isRest, isDotted, tripletGroupId);
 }
