@@ -36,7 +36,7 @@
     // -------------------------------------------------------------------------
     const { Renderer, Stave, StaveNote, Voice, Formatter,
             Accidental, KeySignature, TimeSignature, Barline,
-            StaveConnector, Beam, Fraction } = Vex.Flow;
+            StaveConnector, Beam, Fraction, StaveTie } = Vex.Flow;
 
     const container = document.getElementById('score-canvas');
 
@@ -47,28 +47,161 @@
     // Duration / pitch helpers
     // -------------------------------------------------------------------------
 
-    function toVfDuration(dur) {
-      const map = { 'whole': 'w', 'half': 'h', 'quarter': 'q', 'eighth': '8', 'sixteenth': '16' };
-      return map[dur] || 'q';
-    }
-
     function midiToPitch(midi) {
       const names = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
       const octave = Math.floor(midi / 12) - 1;
       return names[midi % 12] + '/' + octave;
     }
 
+    function beatsToDuration(beats) {
+      if (Math.abs(beats - 4.0) < 0.001) return 'w';
+      if (Math.abs(beats - 2.0) < 0.001) return 'h';
+      if (Math.abs(beats - 1.0) < 0.001) return 'q';
+      if (Math.abs(beats - 0.5) < 0.001) return '8';
+      if (Math.abs(beats - 0.25) < 0.001) return '16';
+      throw new Error(`No standard duration for ${beats} beats`);
+    }
+
     // -------------------------------------------------------------------------
-    // Beaming groups per time signature
+    // Split notes at beat/measure boundaries and group into measures.
+    // Only notes starting off-beat are split at beat boundaries;
+    // on-beat notes are only split at measure boundaries.
     // -------------------------------------------------------------------------
-    function beamGroupsFor(beatsPerMeasure, beatUnit) {
-      // Compound meters: 6/8, 9/8, 12/8 → group every 3 eighth-notes
-      if (beatUnit === 8 && beatsPerMeasure % 3 === 0) {
-        const groups = beatsPerMeasure / 3;
-        return Array(groups).fill(new Fraction(3, 8));
+    function splitAndGroup(notes, beatsPerMeasure, beatUnit) {
+      const measureDuration = beatsPerMeasure * (4 / beatUnit);
+      const isCompound = beatUnit === 8 && beatsPerMeasure % 3 === 0;
+      const effectiveBeatDur = isCompound ? 3 * (4 / beatUnit) : (4 / beatUnit);
+      const standardBeats = [4.0, 2.0, 1.0, 0.5, 0.25];
+
+      const measures = [];
+      let currentMeasure = [];
+      let position = 0.0;
+
+      for (let i = 0; i < notes.length; i++) {
+        const note = notes[i];
+        let remaining = note.beats;
+        const noteStartPos = position;
+
+        while (remaining > 0.001) {
+          const measIdx = Math.floor(position / measureDuration + 0.0001);
+          const measureStart = measIdx * measureDuration;
+          const posInMeasure = position - measureStart;
+          const spaceInMeasure = measureDuration - posInMeasure;
+
+          const posInBeat = posInMeasure % effectiveBeatDur;
+          const isOnBeat = posInBeat < 0.001 || posInBeat > effectiveBeatDur - 0.001;
+
+          let maxSpace;
+          if (!isOnBeat) {
+            // Off-beat: constrain to next beat boundary
+            const currentBeatIdx = Math.floor(posInMeasure / effectiveBeatDur + 0.0001);
+            const nextBeatBoundary = (currentBeatIdx + 1) * effectiveBeatDur;
+            const spaceToBeat = nextBeatBoundary - posInMeasure;
+            maxSpace = Math.min(spaceToBeat, spaceInMeasure, remaining);
+          } else {
+            maxSpace = Math.min(spaceInMeasure, remaining);
+          }
+
+          // Find largest standard duration <= maxSpace
+          let chunk = null;
+          for (const d of standardBeats) {
+            if (d <= maxSpace + 0.001) {
+              chunk = d;
+              break;
+            }
+          }
+
+          const isTieStart = !note.isRest && (remaining - chunk > 0.001);
+          const isTieEnd = !note.isRest && (position - noteStartPos > 0.001);
+
+          currentMeasure.push({
+            globalIndex: i,
+            midi: note.midi,
+            isRest: note.isRest,
+            beats: chunk,
+            duration: beatsToDuration(chunk),
+            tieStart: isTieStart,
+            tieEnd: isTieEnd,
+          });
+
+          position += chunk;
+          remaining -= chunk;
+
+          const newPosInMeasure = position - measureStart;
+          if (newPosInMeasure >= measureDuration - 0.001) {
+            measures.push(currentMeasure);
+            currentMeasure = [];
+          }
+        }
       }
-      // Simple meters (x/4, x/2): group per beat
-      return Array(beatsPerMeasure).fill(new Fraction(1, beatUnit));
+
+      if (currentMeasure.length > 0) measures.push(currentMeasure);
+      if (measures.length === 0) measures.push([]);
+
+      return measures;
+    }
+
+    // -------------------------------------------------------------------------
+    // Beat-aware beam grouping with secondary beam breaks
+    // -------------------------------------------------------------------------
+    function beamNotesInMeasure(vfNotes, displayNotes, beatsPerMeasure, beatUnit) {
+      const isCompound = beatUnit === 8 && beatsPerMeasure % 3 === 0;
+      const effectiveBeatDur = isCompound ? 3 * (4 / beatUnit) : (4 / beatUnit);
+      const eighthDur = 0.5;
+
+      // Compute onset of each note within the measure
+      const onsets = [];
+      let onset = 0.0;
+      for (const dn of displayNotes) {
+        onsets.push(onset);
+        onset += dn.beats;
+      }
+
+      // Group beamable notes by beat
+      const beatMap = new Map();
+      for (let i = 0; i < displayNotes.length; i++) {
+        const dur = vfNotes[i].getDuration();
+        const isBeamable = !vfNotes[i].isRest() && (dur === '8' || dur === '16');
+        if (!isBeamable) continue;
+
+        const beatIdx = Math.floor(onsets[i] / effectiveBeatDur + 0.0001);
+        if (!beatMap.has(beatIdx)) {
+          beatMap.set(beatIdx, { vfNotes: [], onsets: [] });
+        }
+        beatMap.get(beatIdx).vfNotes.push(vfNotes[i]);
+        beatMap.get(beatIdx).onsets.push(onsets[i]);
+      }
+
+      const beams = [];
+      for (const [beatIdx, group] of beatMap) {
+        if (group.vfNotes.length < 2) continue;
+
+        const beam = new Beam(group.vfNotes);
+
+        // In compound meters (6/8, 9/8, 12/8), break secondary beams at
+        // eighth-note boundaries to show the sub-beat grouping.
+        // In simple meters (4/4, 3/4, 2/4), VexFlow automatically handles
+        // secondary beams based on note durations — no manual breaks needed.
+        if (isCompound) {
+          const beatStart = beatIdx * effectiveBeatDur;
+          const breakIndices = [];
+          for (let j = 1; j < group.vfNotes.length; j++) {
+            const relOnset = group.onsets[j] - beatStart;
+            if (relOnset > 0.001) {
+              const mod = relOnset % eighthDur;
+              if (mod < 0.001 || mod > eighthDur - 0.001) {
+                breakIndices.push(j);
+              }
+            }
+          }
+          if (breakIndices.length > 0) {
+            beam.breakSecondaryAt(breakIndices);
+          }
+        }
+        beams.push(beam);
+      }
+
+      return beams;
     }
 
     // -------------------------------------------------------------------------
@@ -90,26 +223,11 @@
       const leftPadding = 90;
       const rightPadding = 20;
 
-      // ---- Group notes into measures ----------------------------------------
-      const measures = [];
-      let currentMeasure = [];
-      let beatAcc = 0;
-
-      for (let i = 0; i < notes.length; i++) {
-        const n = notes[i];
-        currentMeasure.push({ ...n, globalIndex: i });
-        beatAcc += n.beats;
-        if (Math.abs(beatAcc % beatsPerMeasure) < 0.001) {
-          measures.push(currentMeasure);
-          currentMeasure = [];
-          beatAcc = 0;
-        }
-      }
-      if (currentMeasure.length > 0) measures.push(currentMeasure);
-      if (measures.length === 0) measures.push([]);
+      // ---- Split notes at beat/measure boundaries & group into measures -----
+      const measures = splitAndGroup(notes, beatsPerMeasure, beatUnit);
 
       // ---- Pass 1: Build VF notes & voices, compute min widths -------------
-      const measureVoiceData = []; // { vfNotes, voice } or null
+      const measureVoiceData = []; // { vfNotes, voice, displayNotes } or null
 
       for (let mi = 0; mi < measures.length; mi++) {
         const mNotes = measures[mi];
@@ -119,31 +237,31 @@
         }
 
         let prevAccidentals = {};
-        const vfNotes = mNotes.map((n) => {
-          const dur = toVfDuration(n.duration);
+        const vfNotes = mNotes.map((dn) => {
+          const dur = dn.duration;
           let vfNote;
-          if (n.isRest) {
+          if (dn.isRest) {
             vfNote = new StaveNote({ keys: ['b/4'], duration: dur + 'r' });
           } else {
-            const pitch = midiToPitch(n.midi);
+            const pitch = midiToPitch(dn.midi);
             vfNote = new StaveNote({ keys: [pitch.toLowerCase()], duration: dur });
 
-            const pc = n.midi % 12;
+            const pc = dn.midi % 12;
             const naturalNote = [0,2,4,5,7,9,11].includes(pc);
             const inAlteredPitches = alteredPitches.includes(pc);
 
             if (!naturalNote && !inAlteredPitches) {
-              if (prevAccidentals[n.midi] !== '#') {
+              if (prevAccidentals[dn.midi] !== '#') {
                 vfNote.addModifier(new Accidental('#'));
-                prevAccidentals[n.midi] = '#';
+                prevAccidentals[dn.midi] = '#';
               }
             }
           }
 
           // Colouring: playback > selected > default
           let color = '#333333';
-          if (n.globalIndex === playbackIndex) color = '#43a047';
-          else if (n.globalIndex === selectedIndex) color = '#1976d2';
+          if (dn.globalIndex === playbackIndex) color = '#43a047';
+          else if (dn.globalIndex === selectedIndex) color = '#1976d2';
           vfNote.setStyle({ fillStyle: color, strokeStyle: color });
 
           return vfNote;
@@ -155,7 +273,7 @@
         }).setMode(Voice.Mode.SOFT);
         voice.addTickables(vfNotes);
 
-        measureVoiceData.push({ vfNotes, voice });
+        measureVoiceData.push({ vfNotes, voice, displayNotes: mNotes });
       }
 
       // ---- Compute widths (beat-based + VexFlow min width) -----------------
@@ -191,8 +309,9 @@
 
       // ---- Pass 2: Draw staves & render notes -------------------------------
       let xOffset = 0;
-      const allVfNotes = [];   // flat array parallel to notes[]
-      const allStaves = [];    // one per measure
+      const allVfNotes = [];      // flat array of VF note objects
+      const allDisplayNotes = []; // flat array of display notes (for index mapping)
+      const allStaves = [];       // one per measure
 
       for (let mi = 0; mi < measures.length; mi++) {
         const mWidth = measureWidths[mi];
@@ -209,6 +328,7 @@
         const mvd = measureVoiceData[mi];
         if (mvd) {
           for (const vf of mvd.vfNotes) allVfNotes.push(vf);
+          for (const dn of mvd.displayNotes) allDisplayNotes.push(dn);
 
           try {
             const formatter = new Formatter();
@@ -216,21 +336,8 @@
             const noteWidth = mWidth - (mi === 0 ? leftPadding : 30) - rightPadding;
             formatter.format([mvd.voice], Math.max(noteWidth, 40));
 
-            // Generate beams BEFORE drawing voice so notes know they are
-            // beamed and will not render individual flags.
-            let beams = [];
-            const beamable = mvd.vfNotes.filter(vn => {
-              const dur = vn.getDuration();
-              return !vn.isRest() && (dur === '8' || dur === '16');
-            });
-            if (beamable.length >= 2) {
-              try {
-                const groups = beamGroupsFor(beatsPerMeasure, beatUnit);
-                beams = Beam.generateBeams(beamable, { groups });
-              } catch (e) {
-                console.warn('Beam error measure', mi, e);
-              }
-            }
+            // Beat-aware beam grouping
+            const beams = beamNotesInMeasure(mvd.vfNotes, mvd.displayNotes, beatsPerMeasure, beatUnit);
 
             mvd.voice.draw(ctx, stave);
             beams.forEach(b => b.setContext(ctx).draw());
@@ -242,19 +349,31 @@
         xOffset += mWidth;
       }
 
+      // ---- Render ties ------------------------------------------------------
+      for (let i = 0; i < allDisplayNotes.length - 1; i++) {
+        if (allDisplayNotes[i].tieStart && allDisplayNotes[i + 1].tieEnd) {
+          new StaveTie({
+            first_note: allVfNotes[i],
+            last_note: allVfNotes[i + 1],
+            first_indices: [0],
+            last_indices: [0],
+          }).setContext(ctx).draw();
+        }
+      }
+
       // ---- Draw highlights & cursor ----------------------------------------
       const svg = container.querySelector('svg');
       if (svg) {
-        _drawHighlights(svg, data, allStaves);
-        _drawCursorLine(svg, data, allVfNotes, allStaves, measures, measureWidths);
-        _attachTapHandlers(svg, data, allStaves);
+        _drawHighlights(svg, data, allStaves, allDisplayNotes);
+        _drawCursorLine(svg, data, allVfNotes, allStaves, allDisplayNotes, measureWidths);
+        _attachTapHandlers(svg, data, allStaves, allDisplayNotes);
       }
     }
 
     // -------------------------------------------------------------------------
     // Highlights — blue semi-transparent rect behind selected element
     // -------------------------------------------------------------------------
-    function _drawHighlights(svg, data, staves) {
+    function _drawHighlights(svg, data, staves, allDisplayNotes) {
       const { selectionKind, selectedIndex } = data;
       if (!selectionKind) return;
       const ns = svg.namespaceURI;
@@ -267,7 +386,11 @@
         if (el) _highlightElement(svg, el, ns);
       } else if (selectionKind === 'note' && selectedIndex >= 0) {
         const noteEls = svg.querySelectorAll('.vf-stavenote');
-        if (noteEls[selectedIndex]) _highlightElement(svg, noteEls[selectedIndex], ns);
+        for (let i = 0; i < allDisplayNotes.length; i++) {
+          if (allDisplayNotes[i].globalIndex === selectedIndex && noteEls[i]) {
+            _highlightElement(svg, noteEls[i], ns);
+          }
+        }
       }
     }
 
@@ -289,31 +412,38 @@
     // -------------------------------------------------------------------------
     // Cursor — blinking vertical line at insert position
     // -------------------------------------------------------------------------
-    function _drawCursorLine(svg, data, allVfNotes, allStaves, measures, measureWidths) {
-      const { cursorIndex, selectionKind, notes } = data;
+    function _drawCursorLine(svg, data, allVfNotes, allStaves, allDisplayNotes, measureWidths) {
+      const { cursorIndex, selectionKind } = data;
       // Only show cursor in pure input mode (no selection)
       if (selectionKind) return;
 
       const ns = svg.namespaceURI;
+      const noteEls = svg.querySelectorAll('.vf-stavenote');
       let cursorX;
 
       if (allVfNotes.length === 0) {
         // Empty score — cursor in middle of first measure
         cursorX = measureWidths[0] * 0.5;
-      } else if (cursorIndex < allVfNotes.length) {
-        // Cursor is before an existing note — use that note's X
-        const noteEl = svg.querySelectorAll('.vf-stavenote')[cursorIndex];
-        if (noteEl) {
-          const bbox = noteEl.getBBox();
-          cursorX = bbox.x - 4;
-        }
       } else {
-        // Cursor at end — place after last note
-        const noteEls = svg.querySelectorAll('.vf-stavenote');
-        const lastEl = noteEls[noteEls.length - 1];
-        if (lastEl) {
-          const bbox = lastEl.getBBox();
-          cursorX = bbox.x + bbox.width + 10;
+        // Find first display note whose globalIndex >= cursorIndex
+        let displayIdx = -1;
+        for (let i = 0; i < allDisplayNotes.length; i++) {
+          if (allDisplayNotes[i].globalIndex >= cursorIndex) {
+            displayIdx = i;
+            break;
+          }
+        }
+
+        if (displayIdx >= 0 && noteEls[displayIdx]) {
+          const bbox = noteEls[displayIdx].getBBox();
+          cursorX = bbox.x - 4;
+        } else {
+          // Cursor at end — place after last note
+          const lastEl = noteEls[noteEls.length - 1];
+          if (lastEl) {
+            const bbox = lastEl.getBBox();
+            cursorX = bbox.x + bbox.width + 10;
+          }
         }
       }
 
@@ -346,7 +476,7 @@
     // -------------------------------------------------------------------------
     // Tap handlers — use real SVG bounding boxes
     // -------------------------------------------------------------------------
-    function _attachTapHandlers(svg, data, staves) {
+    function _attachTapHandlers(svg, data, staves, allDisplayNotes) {
       const staveTop = staves[0] ? staves[0].getYForLine(0) : 40;
       const staveBottom = staves[0] ? staves[0].getYForLine(4) : 90;
 
@@ -375,7 +505,7 @@
         const noteEls = svg.querySelectorAll('.vf-stavenote');
         for (let i = 0; i < noteEls.length; i++) {
           if (_isClickOnElement(noteEls[i], rect, x, y, 8)) {
-            _sendMessage({ type: 'noteTap', index: i });
+            _sendMessage({ type: 'noteTap', index: allDisplayNotes[i].globalIndex });
             return;
           }
         }
