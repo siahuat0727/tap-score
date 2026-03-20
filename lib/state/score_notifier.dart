@@ -48,6 +48,10 @@ class ScoreNotifier extends ChangeNotifier {
   bool _dottedMode = false;
   bool get dottedMode => _dottedMode;
 
+  /// Whether the next inserted pitched note should slur to its successor.
+  bool _slurMode = false;
+  bool get slurMode => _slurMode;
+
   /// Whether the next inserted input should become a complete triplet.
   bool _tripletMode = false;
   bool get tripletMode => _tripletMode;
@@ -75,11 +79,30 @@ class ScoreNotifier extends ChangeNotifier {
     null => _dottedMode,
     _ => false,
   };
+  bool get toolbarSlurSelected => switch (_selectionKind) {
+    SelectionKind.note => selectedNote?.slurToNext ?? false,
+    null => _slurMode,
+    _ => false,
+  };
   bool get toolbarTripletSelected => switch (_selectionKind) {
     SelectionKind.note => _selectedValidTripletGroupIndices != null,
     null => _tripletMode,
     _ => false,
   };
+  bool get slurButtonEnabled {
+    if (_selectionKind == null) {
+      return _cursorIndex >= score.notes.length ||
+          !score.notes[_cursorIndex].isRest;
+    }
+    if (_selectionKind != SelectionKind.note || _selectedNoteIndex == null) {
+      return false;
+    }
+    final selected = score.notes[_selectedNoteIndex!];
+    if (selected.isRest) return false;
+    if (_selectedNoteIndex! >= score.notes.length - 1) return true;
+    return !score.notes[_selectedNoteIndex! + 1].isRest;
+  }
+
   bool get tripletButtonEnabled {
     if (_selectionKind == null) return true;
     if (_selectionKind != SelectionKind.note || _selectedNoteIndex == null) {
@@ -87,6 +110,15 @@ class ScoreNotifier extends ChangeNotifier {
     }
     return _selectedValidTripletGroupIndices != null ||
         _canCreateTripletFromSelection(_selectedNoteIndex!);
+  }
+
+  bool get deleteButtonEnabled {
+    if (_selectionKind == SelectionKind.note && _selectedNoteIndex != null) {
+      return true;
+    }
+    return _selectionKind == null &&
+        _cursorIndex == score.notes.length &&
+        score.notes.isNotEmpty;
   }
 
   /// Playback state.
@@ -147,6 +179,7 @@ class ScoreNotifier extends ChangeNotifier {
           ? old.asPitched(defaultMidi: _defaultRestoreMidi)
           : old.asRest();
       score.replaceAt(index, updated);
+      _sanitizeSlursInRange(index - 1, index);
       _currentDuration = updated.duration;
       _dottedMode = updated.isDotted;
 
@@ -182,6 +215,26 @@ class ScoreNotifier extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Toggle slur input mode or edit the selected note.
+  void toggleSlurMode() {
+    if (_selectionKind == SelectionKind.note && _selectedNoteIndex != null) {
+      if (!slurButtonEnabled) return;
+      final index = _selectedNoteIndex!;
+      final note = score.notes[index];
+      score.replaceAt(index, note.copyWith(slurToNext: !note.slurToNext));
+      _sanitizeSlursInRange(index - 1, index);
+      notifyListeners();
+      return;
+    }
+
+    if (_selectionKind != null || !slurButtonEnabled) {
+      return;
+    }
+
+    _slurMode = !_slurMode;
+    notifyListeners();
+  }
+
   /// Toggle triplet input mode or edit the selected note group.
   void toggleTripletMode() {
     if (_selectionKind == SelectionKind.note && _selectedNoteIndex != null) {
@@ -189,8 +242,12 @@ class ScoreNotifier extends ChangeNotifier {
       if (selectedTriplet != null) {
         for (final index in selectedTriplet) {
           final note = score.notes[index];
-          score.replaceAt(index, note.copyWith(tripletGroupId: () => null));
+          score.replaceAt(
+            index,
+            note.copyWith(tripletGroupId: () => null, slurToNext: false),
+          );
         }
+        _sanitizeSlursInRange(selectedTriplet.first - 1, selectedTriplet.last);
         notifyListeners();
         return;
       }
@@ -213,10 +270,12 @@ class ScoreNotifier extends ChangeNotifier {
   }
 
   void _insertNotesAtCursor(List<Note> notes) {
+    final startIndex = _cursorIndex;
     for (final note in notes) {
       score.addNote(note, _cursorIndex);
       _cursorIndex++;
     }
+    _sanitizeSlursInRange(startIndex - 1, _cursorIndex - 1);
 
     _selectionKind = null;
     _selectedNoteIndex = null;
@@ -244,11 +303,12 @@ class ScoreNotifier extends ChangeNotifier {
     final tripletGroupId = _nextTripletGroupId++;
     _tripletMode = false;
 
-    return List<Note>.generate(
-      3,
-      (_) => prototype.copyWith(tripletGroupId: () => tripletGroupId),
-      growable: false,
-    );
+    return List<Note>.generate(3, (index) {
+      return prototype.copyWith(
+        tripletGroupId: () => tripletGroupId,
+        slurToNext: prototype.slurToNext && index == 2,
+      );
+    }, growable: false);
   }
 
   void _insertRestAtCursor({NoteDuration? duration}) {
@@ -270,7 +330,9 @@ class ScoreNotifier extends ChangeNotifier {
       midi: midi,
       duration: _currentDuration,
       isDotted: _dottedMode,
+      slurToNext: _slurMode,
     );
+    _slurMode = false;
 
     _insertNotesAtCursor(_expandForPendingTriplet(prototype));
     notifyListeners();
@@ -407,14 +469,28 @@ class ScoreNotifier extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Delete the currently selected note.
+  /// Delete the currently selected note, or the last note in end-input mode.
   void deleteSelected() {
-    if (_selectionKind != SelectionKind.note || _selectedNoteIndex == null) {
+    if (_selectionKind == SelectionKind.note && _selectedNoteIndex != null) {
+      _deleteNoteAtIndex(_selectedNoteIndex!, keepSelection: true);
+      notifyListeners();
       return;
     }
 
-    final removedIndex = _selectedNoteIndex!;
-    final tripletGroup = _selectedValidTripletGroupIndices;
+    if (_selectionKind == null &&
+        _cursorIndex == score.notes.length &&
+        score.notes.isNotEmpty) {
+      _deleteNoteAtIndex(score.notes.length - 1, keepSelection: false);
+      notifyListeners();
+    }
+  }
+
+  void _deleteNoteAtIndex(int removedIndex, {required bool keepSelection}) {
+    final previousIndex = removedIndex - 1;
+    final tripletGroupId = score.notes[removedIndex].tripletGroupId;
+    final tripletGroup = tripletGroupId == null
+        ? null
+        : _validTripletGroupIndices(tripletGroupId);
     score.removeAt(removedIndex);
 
     if (tripletGroup != null) {
@@ -428,25 +504,42 @@ class ScoreNotifier extends ChangeNotifier {
           final note = score.notes[shiftedIndex];
           score.replaceAt(
             shiftedIndex,
-            note.copyWith(tripletGroupId: () => null),
+            note.copyWith(tripletGroupId: () => null, slurToNext: false),
           );
         }
       }
     }
+    if (previousIndex >= 0 && previousIndex < score.notes.length) {
+      final previous = score.notes[previousIndex];
+      if (previous.slurToNext) {
+        score.replaceAt(previousIndex, previous.copyWith(slurToNext: false));
+      }
+    }
+    _sanitizeSlursInRange(removedIndex - 1, removedIndex);
 
     if (_cursorIndex > removedIndex) {
       _cursorIndex--;
     }
 
-    if (removedIndex >= score.notes.length) {
-      _selectedNoteIndex = score.notes.isEmpty ? null : score.notes.length - 1;
-    }
-
-    if (_selectedNoteIndex == null) {
+    if (!keepSelection) {
       _selectionKind = null;
+      _selectedNoteIndex = null;
+      _cursorIndex = score.notes.length;
+      return;
     }
 
-    notifyListeners();
+    if (score.notes.isEmpty) {
+      _selectionKind = null;
+      _selectedNoteIndex = null;
+      _cursorIndex = 0;
+      return;
+    }
+
+    _selectionKind = SelectionKind.note;
+    _selectedNoteIndex = removedIndex >= score.notes.length
+        ? score.notes.length - 1
+        : removedIndex;
+    _cursorIndex = _selectedNoteIndex! + 1;
   }
 
   /// Change the pitch of the selected note.
@@ -507,6 +600,26 @@ class ScoreNotifier extends ChangeNotifier {
     final index = _selectedNoteIndex;
     if (index == null) return;
     score.replaceAt(index, transform(score.notes[index]));
+  }
+
+  void _sanitizeSlursInRange(int start, int end) {
+    if (score.notes.isEmpty) return;
+    final lower = start.clamp(0, score.notes.length - 1);
+    final upper = end.clamp(0, score.notes.length - 1);
+    if (lower > upper) return;
+    for (var index = lower; index <= upper; index++) {
+      _sanitizeSlurAt(index);
+    }
+  }
+
+  void _sanitizeSlurAt(int index) {
+    if (index < 0 || index >= score.notes.length) return;
+    final note = score.notes[index];
+    final hasNext = index + 1 < score.notes.length;
+    final nextIsRest = hasNext && score.notes[index + 1].isRest;
+    if (note.slurToNext && (note.isRest || nextIsRest)) {
+      score.replaceAt(index, note.copyWith(slurToNext: false));
+    }
   }
 
   int? _nextTripletStartIndex(int selectedIndex) {
@@ -596,21 +709,32 @@ class ScoreNotifier extends ChangeNotifier {
 
     score.replaceAt(
       selectedIndex,
-      source.copyWith(tripletGroupId: () => tripletGroupId),
+      source.copyWith(tripletGroupId: () => tripletGroupId, slurToNext: false),
     );
 
     if (selectedIndex == score.notes.length - 1) {
-      final cloneA = source.copyWith(tripletGroupId: () => tripletGroupId);
-      final cloneB = source.copyWith(tripletGroupId: () => tripletGroupId);
+      final cloneA = source.copyWith(
+        tripletGroupId: () => tripletGroupId,
+        slurToNext: false,
+      );
+      final cloneB = source.copyWith(
+        tripletGroupId: () => tripletGroupId,
+        slurToNext: false,
+      );
       score.addNote(cloneA, selectedIndex + 1);
       score.addNote(cloneB, selectedIndex + 2);
+      _sanitizeSlursInRange(selectedIndex - 1, selectedIndex + 2);
       return;
     }
 
     for (var i = selectedIndex + 1; i <= selectedIndex + 2; i++) {
       final note = score.notes[i];
-      score.replaceAt(i, note.copyWith(tripletGroupId: () => tripletGroupId));
+      score.replaceAt(
+        i,
+        note.copyWith(tripletGroupId: () => tripletGroupId, slurToNext: false),
+      );
     }
+    _sanitizeSlursInRange(selectedIndex - 1, selectedIndex + 2);
   }
 
   /// Move cursor to a specific index.

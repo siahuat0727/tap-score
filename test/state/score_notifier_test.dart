@@ -4,6 +4,10 @@ import 'package:tap_score/models/note.dart';
 import 'package:tap_score/state/score_notifier.dart';
 
 void main() {
+  test('thirty-second note duration reports the expected beats', () {
+    expect(NoteDuration.thirtySecond.beats, 0.125);
+  });
+
   test('rest mode inserts a rest when duration is chosen', () {
     final notifier = ScoreNotifier();
 
@@ -234,4 +238,91 @@ void main() {
       );
     },
   );
+
+  test('slur input applies to the next pitched note and resets', () {
+    final notifier = ScoreNotifier();
+
+    notifier.toggleSlurMode();
+    expect(notifier.slurMode, isTrue);
+
+    notifier.insertPitchedNote(60);
+
+    expect(notifier.slurMode, isFalse);
+    expect(notifier.score.notes.single.slurToNext, isTrue);
+  });
+
+  test('selected pitched note toggles slur to next', () {
+    final notifier = ScoreNotifier();
+    notifier.score.notes.addAll([
+      const Note(midi: 60, duration: NoteDuration.quarter),
+      const Note(midi: 62, duration: NoteDuration.quarter),
+    ]);
+    notifier.selectNote(0);
+
+    expect(notifier.slurButtonEnabled, isTrue);
+    notifier.toggleSlurMode();
+    expect(notifier.score.notes.first.slurToNext, isTrue);
+
+    notifier.toggleSlurMode();
+    expect(notifier.score.notes.first.slurToNext, isFalse);
+  });
+
+  test('rest cannot be marked with a slur', () {
+    final notifier = ScoreNotifier();
+    notifier.score.notes.addAll([
+      const Note.rest(duration: NoteDuration.quarter),
+      const Note(midi: 62, duration: NoteDuration.quarter),
+    ]);
+    notifier.selectNote(0);
+
+    expect(notifier.slurButtonEnabled, isFalse);
+    notifier.toggleSlurMode();
+
+    expect(notifier.score.notes.first.slurToNext, isFalse);
+  });
+
+  test('delete removes the last note in end-input mode', () {
+    final notifier = ScoreNotifier();
+    notifier.score.notes.addAll([
+      const Note(midi: 60, duration: NoteDuration.quarter),
+      const Note(midi: 62, duration: NoteDuration.quarter),
+    ]);
+    notifier.selectNote(null);
+
+    expect(notifier.deleteButtonEnabled, isTrue);
+    notifier.deleteSelected();
+
+    expect(notifier.score.notes, hasLength(1));
+    expect(notifier.score.notes.single.midi, 60);
+    expect(notifier.selectionKind, isNull);
+    expect(notifier.cursorIndex, 1);
+  });
+
+  test('deleting a slurred target clears the previous slur', () {
+    final notifier = ScoreNotifier();
+    notifier.score.notes.addAll([
+      const Note(midi: 60, duration: NoteDuration.quarter, slurToNext: true),
+      const Note(midi: 62, duration: NoteDuration.quarter),
+    ]);
+    notifier.selectNote(1);
+
+    notifier.deleteSelected();
+
+    expect(notifier.score.notes, hasLength(1));
+    expect(notifier.score.notes.single.slurToNext, isFalse);
+  });
+
+  test('turning a slurred note into a rest clears adjacent slurs', () {
+    final notifier = ScoreNotifier();
+    notifier.score.notes.addAll([
+      const Note(midi: 60, duration: NoteDuration.quarter, slurToNext: true),
+      const Note(midi: 62, duration: NoteDuration.quarter),
+    ]);
+    notifier.selectNote(1);
+
+    notifier.handleRestAction();
+
+    expect(notifier.score.notes[0].slurToNext, isFalse);
+    expect(notifier.score.notes[1].isRest, isTrue);
+  });
 }

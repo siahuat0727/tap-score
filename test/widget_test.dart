@@ -63,6 +63,8 @@ void main() {
     expect(restX, lessThan(dotX));
     expect(find.text('1'), findsOneWidget);
     expect(find.text('6'), findsOneWidget);
+    expect(find.text('7'), findsOneWidget);
+    expect(find.text('8'), findsOneWidget);
     expect(find.text('9'), findsOneWidget);
 
     notifier.handleRestAction();
@@ -71,6 +73,7 @@ void main() {
     expect(find.text('𝄻'), findsOneWidget);
     expect(find.text('𝄼'), findsOneWidget);
     expect(find.text('𝄽'), findsOneWidget);
+    expect(find.text('𝅀'), findsOneWidget);
   });
 
   testWidgets('duration selector reflects the selected rest timing state', (
@@ -177,15 +180,54 @@ void main() {
       isNull,
     );
 
-    await tester.tap(find.byKey(const ValueKey('triplet-tool')));
-    await tester.pump();
-
     expect(
       notifier.score.notes.every((note) => note.tripletGroupId == null),
       isTrue,
     );
 
     await tester.pump(const Duration(milliseconds: 600));
+  });
+
+  testWidgets('duration selector disables slur on a selected rest', (
+    WidgetTester tester,
+  ) async {
+    final notifier = ScoreNotifier();
+    notifier.score.notes.addAll([
+      const Note.rest(duration: NoteDuration.quarter),
+      const Note(midi: 62, duration: NoteDuration.quarter),
+    ]);
+    notifier.selectNote(0);
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider.value(
+        value: notifier,
+        child: const MaterialApp(home: Scaffold(body: DurationSelector())),
+      ),
+    );
+
+    expect(_buttonInkWell(tester, const ValueKey('slur-tool')).onTap, isNull);
+  });
+
+  testWidgets('duration selector enables delete in end-input mode', (
+    WidgetTester tester,
+  ) async {
+    final notifier = ScoreNotifier();
+    notifier.score.addNote(
+      const Note(midi: 60, duration: NoteDuration.quarter),
+    );
+    notifier.selectNote(null);
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider.value(
+        value: notifier,
+        child: const MaterialApp(home: Scaffold(body: DurationSelector())),
+      ),
+    );
+
+    expect(
+      _buttonInkWell(tester, const ValueKey('delete-tool')).onTap,
+      isNotNull,
+    );
   });
 
   testWidgets('piano keyboard shows mapped key hints on C4-B4', (
@@ -233,4 +275,35 @@ void main() {
 
     await tester.pump(const Duration(milliseconds: 600));
   });
+
+  testWidgets(
+    'keyboard shortcuts support thirty-second notes, slurs, and end delete',
+    (WidgetTester tester) async {
+      await tester.pumpWidget(const TapScoreApp());
+      await tester.pump();
+
+      final context = tester.element(find.byType(ScoreEditorScreen));
+      final notifier = Provider.of<ScoreNotifier>(context, listen: false);
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.digit6);
+      await tester.pump();
+      expect(notifier.currentDuration, NoteDuration.thirtySecond);
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.digit8);
+      await tester.pump();
+      expect(notifier.slurMode, isTrue);
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.keyD);
+      await tester.pump();
+      expect(notifier.score.notes.single.duration, NoteDuration.thirtySecond);
+      expect(notifier.score.notes.single.slurToNext, isTrue);
+      expect(notifier.slurMode, isFalse);
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.delete);
+      await tester.pump();
+      expect(notifier.score.notes, isEmpty);
+
+      await tester.pump(const Duration(milliseconds: 600));
+    },
+  );
 }

@@ -37,6 +37,7 @@
     const { Renderer, Stave, StaveNote, Voice, Formatter,
             Accidental, KeySignature, TimeSignature, Barline,
             StaveConnector, Beam, Fraction, StaveTie, Tuplet, Dot } = Vex.Flow;
+    const { Curve } = Vex.Flow;
 
     const container = document.getElementById('score-canvas');
 
@@ -67,6 +68,8 @@
       { beats: 0.5,   dur: '8',  dotted: false },
       { beats: 0.375, dur: '16', dotted: true  },
       { beats: 0.25,  dur: '16', dotted: false },
+      { beats: 0.1875, dur: '32', dotted: true  },
+      { beats: 0.125, dur: '32', dotted: false },
     ];
 
     function beatsToDurationInfo(beats) {
@@ -95,7 +98,7 @@
       const isCompound = beatUnit === 8 && beatsPerMeasure % 3 === 0;
       const effectiveBeatDur = isCompound ? 3 * (4 / beatUnit) : (4 / beatUnit);
       // Include dotted durations in the lookup table (sorted descending).
-      const allBeats = [6.0, 4.0, 3.0, 2.0, 1.5, 1.0, 0.75, 0.5, 0.375, 0.25];
+      const allBeats = [6.0, 4.0, 3.0, 2.0, 1.5, 1.0, 0.75, 0.5, 0.375, 0.25, 0.1875, 0.125];
 
       const measures = [];
       let currentMeasure = [];
@@ -248,7 +251,7 @@
       const beatMap = new Map();
       for (let i = 0; i < displayNotes.length; i++) {
         const dur = vfNotes[i].getDuration();
-        const isBeamable = !vfNotes[i].isRest() && (dur === '8' || dur === '16');
+        const isBeamable = !vfNotes[i].isRest() && (dur === '8' || dur === '16' || dur === '32');
         if (!isBeamable) continue;
 
         const beatIdx = Math.floor(onsets[i] / effectiveBeatDur + 0.0001);
@@ -526,6 +529,34 @@
         }
       }
 
+      // ---- Render slurs -----------------------------------------------------
+      const logicalNoteMap = new Map();
+      for (let i = 0; i < allDisplayNotes.length; i++) {
+        const globalIndex = allDisplayNotes[i].globalIndex;
+        if (!logicalNoteMap.has(globalIndex)) {
+          logicalNoteMap.set(globalIndex, []);
+        }
+        logicalNoteMap.get(globalIndex).push(allVfNotes[i]);
+      }
+
+      for (let i = 0; i < notes.length - 1; i++) {
+        const source = notes[i];
+        const target = notes[i + 1];
+        if (!source.slurToNext || source.isRest || target.isRest) continue;
+
+        const sourceNotes = logicalNoteMap.get(i);
+        const targetNotes = logicalNoteMap.get(i + 1);
+        if (!sourceNotes || !targetNotes) continue;
+
+        new Curve(sourceNotes[sourceNotes.length - 1], targetNotes[0], {
+          cps: [
+            { x: 0, y: 18 },
+            { x: 0, y: 18 },
+          ],
+          invert: false,
+        }).setContext(ctx).draw();
+      }
+
       // ---- Draw highlights & cursor ----------------------------------------
       const svg = container.querySelector('svg');
       if (svg) {
@@ -763,7 +794,8 @@
         'Delete', 'Backspace',
         'KeyD', 'KeyF', 'KeyG', 'KeyH', 'KeyJ', 'KeyK', 'KeyL',
         'Backquote',
-        'Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit9',
+        'Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6',
+        'Digit7', 'Digit8', 'Digit9',
       ];
       if (forwardedCodes.includes(e.code)) {
         e.preventDefault();

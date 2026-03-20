@@ -24,6 +24,9 @@ class Note {
   /// Original pitch to restore when toggling a rest back into a note.
   final int? sourceMidi;
 
+  /// Whether this note draws a slur to the next logical note.
+  final bool slurToNext;
+
   const Note({
     required this.midi,
     this.duration = NoteDuration.quarter,
@@ -32,6 +35,7 @@ class Note {
     this.isDotted = false,
     this.tripletGroupId,
     this.sourceMidi,
+    this.slurToNext = false,
   });
 
   /// Create a rest with the given duration.
@@ -40,6 +44,7 @@ class Note {
     this.isDotted = false,
     this.tripletGroupId,
     this.sourceMidi,
+    this.slurToNext = false,
   }) : midi = 0,
        accidental = Accidental.none,
        isRest = true;
@@ -97,6 +102,7 @@ class Note {
     bool? isDotted,
     int? Function()? tripletGroupId,
     int? Function()? sourceMidi,
+    bool? slurToNext,
   }) {
     return Note(
       midi: midi ?? this.midi,
@@ -108,6 +114,7 @@ class Note {
           ? tripletGroupId()
           : this.tripletGroupId,
       sourceMidi: sourceMidi != null ? sourceMidi() : this.sourceMidi,
+      slurToNext: slurToNext ?? this.slurToNext,
     );
   }
 
@@ -118,6 +125,7 @@ class Note {
       isDotted: isDotted,
       tripletGroupId: tripletGroupId,
       sourceMidi: sourceMidi ?? (isRest ? null : midi),
+      slurToNext: false,
     );
   }
 
@@ -128,6 +136,7 @@ class Note {
       duration: duration,
       isDotted: isDotted,
       tripletGroupId: tripletGroupId,
+      slurToNext: false,
     );
   }
 
@@ -144,7 +153,8 @@ class Note {
           isRest == other.isRest &&
           isDotted == other.isDotted &&
           tripletGroupId == other.tripletGroupId &&
-          sourceMidi == other.sourceMidi;
+          sourceMidi == other.sourceMidi &&
+          slurToNext == other.slurToNext;
 
   @override
   int get hashCode => Object.hash(
@@ -155,5 +165,6 @@ class Note {
     isDotted,
     tripletGroupId,
     sourceMidi,
+    slurToNext,
   );
 }

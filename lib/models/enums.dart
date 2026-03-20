@@ -4,7 +4,8 @@ enum NoteDuration {
   half, // 2 beats
   quarter, // 1 beat
   eighth, // 0.5 beats
-  sixteenth; // 0.25 beats
+  sixteenth, // 0.25 beats
+  thirtySecond; // 0.125 beats
 
   /// Number of beats this duration represents in 4/4 time.
   double get beats {
@@ -14,6 +15,7 @@ enum NoteDuration {
       NoteDuration.quarter => 1.0,
       NoteDuration.eighth => 0.5,
       NoteDuration.sixteenth => 0.25,
+      NoteDuration.thirtySecond => 0.125,
     };
   }
 
@@ -25,6 +27,7 @@ enum NoteDuration {
       NoteDuration.quarter => '♩',
       NoteDuration.eighth => '♪',
       NoteDuration.sixteenth => '𝅘𝅥𝅯',
+      NoteDuration.thirtySecond => '𝅘𝅥𝅰',
     };
   }
 
@@ -36,6 +39,7 @@ enum NoteDuration {
       NoteDuration.quarter => '𝄽',
       NoteDuration.eighth => '𝄾',
       NoteDuration.sixteenth => '𝄿',
+      NoteDuration.thirtySecond => '𝅀',
     };
   }
 }

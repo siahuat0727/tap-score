@@ -46,7 +46,9 @@ class PlaybackControls extends StatelessWidget {
                     thumbColor: const Color(0xFF2196F3),
                     overlayColor: const Color(0xFF2196F3).withAlpha(51),
                     trackHeight: 4,
-                    thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
+                    thumbShape: const RoundSliderThumbShape(
+                      enabledThumbRadius: 8,
+                    ),
                   ),
                   child: Slider(
                     value: notifier.score.bpm,
@@ -95,9 +97,10 @@ class _PlayButtonState extends State<_PlayButton>
       duration: const Duration(milliseconds: 150),
       vsync: this,
     );
-    _scaleAnimation = Tween<double>(begin: 1.0, end: 0.9).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
-    );
+    _scaleAnimation = Tween<double>(
+      begin: 1.0,
+      end: 0.9,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
   }
 
   @override
@@ -129,15 +132,16 @@ class _PlayButtonState extends State<_PlayButton>
               colors: widget.isPlaying
                   ? [const Color(0xFFF44336), const Color(0xFFD32F2F)]
                   : widget.enabled
-                      ? [const Color(0xFF4CAF50), const Color(0xFF388E3C)]
-                      : [const Color(0xFFBDBDBD), const Color(0xFF9E9E9E)],
+                  ? [const Color(0xFF4CAF50), const Color(0xFF388E3C)]
+                  : [const Color(0xFFBDBDBD), const Color(0xFF9E9E9E)],
             ),
             boxShadow: [
               BoxShadow(
-                color: (widget.isPlaying
-                        ? const Color(0xFFF44336)
-                        : const Color(0xFF4CAF50))
-                    .withAlpha(widget.enabled ? 102 : 0),
+                color:
+                    (widget.isPlaying
+                            ? const Color(0xFFF44336)
+                            : const Color(0xFF4CAF50))
+                        .withAlpha(widget.enabled ? 102 : 0),
                 blurRadius: 12,
                 offset: const Offset(0, 4),
               ),

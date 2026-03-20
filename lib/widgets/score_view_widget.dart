@@ -69,6 +69,8 @@ class _ScoreViewWidgetState extends State<ScoreViewWidget> {
               notifier.setDuration(shortcut.duration!);
             case EditorShortcutKind.toggleDotted:
               notifier.toggleDottedMode();
+            case EditorShortcutKind.toggleSlur:
+              notifier.toggleSlurMode();
             case EditorShortcutKind.toggleTriplet:
               notifier.toggleTripletMode();
           }
@@ -106,6 +108,7 @@ class _ScoreViewWidgetState extends State<ScoreViewWidget> {
         'beats': note.effectiveBeats,
         'isRest': note.isRest,
         'isDotted': note.isDotted,
+        'slurToNext': note.slurToNext,
         'tripletGroupId': note.tripletGroupId,
       };
     }).toList();

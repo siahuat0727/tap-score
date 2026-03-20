@@ -17,10 +17,7 @@ class _WebScoreRenderer extends StatefulWidget {
   final OnScoreMessage onMessage;
   final OnRendererReady onReady;
 
-  const _WebScoreRenderer({
-    required this.onMessage,
-    required this.onReady,
-  });
+  const _WebScoreRenderer({required this.onMessage, required this.onReady});
 
   @override
   State<_WebScoreRenderer> createState() => _WebScoreRendererState();
@@ -38,20 +35,20 @@ class _WebScoreRendererState extends State<_WebScoreRenderer> {
     super.initState();
     _viewType = 'score-renderer-${_nextId++}';
 
-    ui_web.platformViewRegistry.registerViewFactory(
-      _viewType,
-      (int viewId, {Object? params}) {
-        final iframe = web.document.createElement('iframe')
-            as web.HTMLIFrameElement;
-        iframe.src = 'assets/assets/html/score_renderer.html';
-        iframe.style
-          ..border = 'none'
-          ..width = '100%'
-          ..height = '100%';
-        _iframe = iframe;
-        return iframe;
-      },
-    );
+    ui_web.platformViewRegistry.registerViewFactory(_viewType, (
+      int viewId, {
+      Object? params,
+    }) {
+      final iframe =
+          web.document.createElement('iframe') as web.HTMLIFrameElement;
+      iframe.src = 'assets/assets/html/score_renderer.html';
+      iframe.style
+        ..border = 'none'
+        ..width = '100%'
+        ..height = '100%';
+      _iframe = iframe;
+      return iframe;
+    });
 
     // Store the JS function reference so we can remove it later.
     _jsMessageHandler = _onWindowMessage.toJS;

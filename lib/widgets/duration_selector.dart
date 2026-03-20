@@ -58,6 +58,18 @@ class DurationSelector extends StatelessWidget {
                 ),
                 const SizedBox(width: 4),
                 _ToolButton(
+                  buttonKey: const ValueKey('slur-tool'),
+                  icon: Icons.show_chart,
+                  label: 'Slur',
+                  shortcutLabel: slurShortcutLabel,
+                  isSelected: notifier.toolbarSlurSelected,
+                  onTap: notifier.slurButtonEnabled
+                      ? notifier.toggleSlurMode
+                      : null,
+                  activeColor: const Color(0xFF5E35B1),
+                ),
+                const SizedBox(width: 4),
+                _ToolButton(
                   buttonKey: const ValueKey('triplet-tool'),
                   icon: Icons.looks_3,
                   label: 'Trip',
@@ -74,7 +86,7 @@ class DurationSelector extends StatelessWidget {
                   icon: Icons.delete_outline,
                   label: 'Delete',
                   isSelected: false,
-                  onTap: notifier.selectedIndex != null
+                  onTap: notifier.deleteButtonEnabled
                       ? notifier.deleteSelected
                       : null,
                   activeColor: const Color(0xFFF44336),

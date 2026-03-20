@@ -20,8 +20,16 @@ void main() {
       NoteDuration.sixteenth,
     );
     expect(
-      resolveEditorShortcut(LogicalKeyboardKey.digit6)?.kind,
+      resolveEditorShortcut(LogicalKeyboardKey.digit6)?.duration,
+      NoteDuration.thirtySecond,
+    );
+    expect(
+      resolveEditorShortcut(LogicalKeyboardKey.digit7)?.kind,
       EditorShortcutKind.toggleDotted,
+    );
+    expect(
+      resolveEditorShortcut(LogicalKeyboardKey.digit8)?.kind,
+      EditorShortcutKind.toggleSlur,
     );
     expect(
       resolveEditorShortcut(LogicalKeyboardKey.digit9)?.kind,
@@ -38,8 +46,16 @@ void main() {
     expect(resolveEditorShortcutCode('KeyL')?.midi, 71);
     expect(resolveEditorShortcutCode('Digit1')?.duration, NoteDuration.whole);
     expect(
-      resolveEditorShortcutCode('Digit6')?.kind,
+      resolveEditorShortcutCode('Digit6')?.duration,
+      NoteDuration.thirtySecond,
+    );
+    expect(
+      resolveEditorShortcutCode('Digit7')?.kind,
       EditorShortcutKind.toggleDotted,
+    );
+    expect(
+      resolveEditorShortcutCode('Digit8')?.kind,
+      EditorShortcutKind.toggleSlur,
     );
     expect(
       resolveEditorShortcutCode('Digit9')?.kind,

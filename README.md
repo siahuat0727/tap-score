@@ -6,7 +6,8 @@ A lightweight, mobile-first score editor and playback tool built with Flutter. D
 
 - **Piano keyboard input** — tap notes on a visual keyboard to build melodies
 - **Playback** — hear your score instantly with cursor tracking
-- **Note durations** — whole, half, quarter, eighth, sixteenth notes and rests
+- **Note durations** — whole through thirty-second notes and rests
+- **Notation editing** — dot, triplet, and forward slur shortcuts in the editor
 - **Time signatures** — 2/4, 3/4, 4/4, 3/8, 6/8, 5/4, 7/8, 12/8
 - **Key signatures** — all 13 major keys with automatic accidentals, circle-of-fifths navigation
 - **Professional rendering** — powered by VexFlow

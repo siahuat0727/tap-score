@@ -15,10 +15,7 @@ class _NativeScoreRenderer extends StatefulWidget {
   final OnScoreMessage onMessage;
   final OnRendererReady onReady;
 
-  const _NativeScoreRenderer({
-    required this.onMessage,
-    required this.onReady,
-  });
+  const _NativeScoreRenderer({required this.onMessage, required this.onReady});
 
   @override
   State<_NativeScoreRenderer> createState() => _NativeScoreRendererState();

@@ -7,6 +7,7 @@ enum EditorShortcutKind {
   restAction,
   setDuration,
   toggleDotted,
+  toggleSlur,
   toggleTriplet,
 }
 
@@ -29,12 +30,16 @@ class EditorShortcutIntent {
   const EditorShortcutIntent.toggleDotted()
     : this._(kind: EditorShortcutKind.toggleDotted);
 
+  const EditorShortcutIntent.toggleSlur()
+    : this._(kind: EditorShortcutKind.toggleSlur);
+
   const EditorShortcutIntent.toggleTriplet()
     : this._(kind: EditorShortcutKind.toggleTriplet);
 }
 
 const String restShortcutLabel = '`';
-const String dottedShortcutLabel = '6';
+const String dottedShortcutLabel = '7';
+const String slurShortcutLabel = '8';
 const String tripletShortcutLabel = '9';
 
 const Map<NoteDuration, String> durationShortcutLabels = {
@@ -43,6 +48,7 @@ const Map<NoteDuration, String> durationShortcutLabels = {
   NoteDuration.quarter: '3',
   NoteDuration.eighth: '4',
   NoteDuration.sixteenth: '5',
+  NoteDuration.thirtySecond: '6',
 };
 
 const Map<int, String> pianoShortcutLabels = {
@@ -80,7 +86,11 @@ EditorShortcutIntent? resolveEditorShortcut(LogicalKeyboardKey key) {
     LogicalKeyboardKey.digit5 => const EditorShortcutIntent.setDuration(
       NoteDuration.sixteenth,
     ),
-    LogicalKeyboardKey.digit6 => const EditorShortcutIntent.toggleDotted(),
+    LogicalKeyboardKey.digit6 => const EditorShortcutIntent.setDuration(
+      NoteDuration.thirtySecond,
+    ),
+    LogicalKeyboardKey.digit7 => const EditorShortcutIntent.toggleDotted(),
+    LogicalKeyboardKey.digit8 => const EditorShortcutIntent.toggleSlur(),
     LogicalKeyboardKey.digit9 => const EditorShortcutIntent.toggleTriplet(),
     _ => null,
   };
@@ -101,7 +111,11 @@ EditorShortcutIntent? resolveEditorShortcutCode(String code) {
     'Digit3' => const EditorShortcutIntent.setDuration(NoteDuration.quarter),
     'Digit4' => const EditorShortcutIntent.setDuration(NoteDuration.eighth),
     'Digit5' => const EditorShortcutIntent.setDuration(NoteDuration.sixteenth),
-    'Digit6' => const EditorShortcutIntent.toggleDotted(),
+    'Digit6' => const EditorShortcutIntent.setDuration(
+      NoteDuration.thirtySecond,
+    ),
+    'Digit7' => const EditorShortcutIntent.toggleDotted(),
+    'Digit8' => const EditorShortcutIntent.toggleSlur(),
     'Digit9' => const EditorShortcutIntent.toggleTriplet(),
     _ => null,
   };

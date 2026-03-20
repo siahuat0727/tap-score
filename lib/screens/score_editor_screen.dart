@@ -73,6 +73,8 @@ class _ScoreEditorScreenState extends State<ScoreEditorScreen> {
         notifier.setDuration(shortcut.duration!);
       case EditorShortcutKind.toggleDotted:
         notifier.toggleDottedMode();
+      case EditorShortcutKind.toggleSlur:
+        notifier.toggleSlurMode();
       case EditorShortcutKind.toggleTriplet:
         notifier.toggleTripletMode();
     }

@@ -60,6 +60,8 @@ Arrow keys and Delete/Backspace work even after clicking inside the score area o
 - `` ` `` enters rest mode when in input mode. The next duration choice inserts a rest and exits rest mode.
 - In rest mode, the duration buttons display rest symbols instead of note symbols.
 - If a note is selected, pressing `` ` `` converts that selected note into a rest while preserving its timing.
-- `1 2 3 4 5` select whole, half, quarter, eighth, and sixteenth durations.
-- `6` toggles dotted mode.
+- `1 2 3 4 5 6` select whole, half, quarter, eighth, sixteenth, and thirty-second durations.
+- `7` toggles dotted mode.
+- `8` toggles a forward slur on the selected note, or arms the next inserted pitched note to slur into its successor.
 - `9` toggles triplet mode.
+- `Delete` / `Backspace` delete the selected note, or the last note when the cursor is at the end in input mode.
