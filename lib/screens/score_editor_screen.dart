@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+
+import '../input/editor_shortcuts.dart';
 import '../state/score_notifier.dart';
 import '../widgets/score_view_widget.dart';
 import '../widgets/piano_keyboard.dart';
@@ -56,7 +58,26 @@ class _ScoreEditorScreenState extends State<ScoreEditorScreen> {
       notifier.deleteSelected();
       return KeyEventResult.handled;
     }
-    return KeyEventResult.ignored;
+
+    final shortcut = resolveEditorShortcut(key);
+    if (shortcut == null) {
+      return KeyEventResult.ignored;
+    }
+
+    switch (shortcut.kind) {
+      case EditorShortcutKind.insertPitch:
+        notifier.insertPitchedNote(shortcut.midi!);
+      case EditorShortcutKind.restAction:
+        notifier.handleRestAction();
+      case EditorShortcutKind.setDuration:
+        notifier.setDuration(shortcut.duration!);
+      case EditorShortcutKind.toggleDotted:
+        notifier.toggleDottedMode();
+      case EditorShortcutKind.toggleTriplet:
+        notifier.toggleTripletMode();
+    }
+
+    return KeyEventResult.handled;
   }
 
   @override
@@ -65,58 +86,58 @@ class _ScoreEditorScreenState extends State<ScoreEditorScreen> {
       focusNode: _focusNode,
       autofocus: true,
       onKeyEvent: _handleKeyEvent,
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.music_note_rounded,
-                size: 24,
-                color: Color(0xFF3F51B5),
+      child: Listener(
+        behavior: HitTestBehavior.translucent,
+        onPointerDown: (_) => _focusNode.requestFocus(),
+        child: Scaffold(
+          appBar: AppBar(
+            title: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.music_note_rounded,
+                  size: 24,
+                  color: Color(0xFF3F51B5),
+                ),
+                SizedBox(width: 8),
+                Text('Tap Score'),
+              ],
+            ),
+            actions: [
+              Consumer<ScoreNotifier>(
+                builder: (context, notifier, _) {
+                  if (notifier.score.notes.isEmpty)
+                    return const SizedBox.shrink();
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: Chip(
+                      label: Text(
+                        '${notifier.score.notes.length} notes',
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                      backgroundColor: const Color(0xFFE8E4D8),
+                      side: BorderSide.none,
+                    ),
+                  );
+                },
               ),
-              SizedBox(width: 8),
-              Text('Tap Score'),
             ],
           ),
-          actions: [
-            Consumer<ScoreNotifier>(
-              builder: (context, notifier, _) {
-                if (notifier.score.notes.isEmpty)
-                  return const SizedBox.shrink();
-                return Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: Chip(
-                    label: Text(
-                      '${notifier.score.notes.length} notes',
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                    backgroundColor: const Color(0xFFE8E4D8),
-                    side: BorderSide.none,
+          body: SafeArea(
+            child: Column(
+              children: [
+                const Expanded(child: ScoreViewWidget()),
+                Container(height: 1, color: const Color(0xFFE0DDD4)),
+                Container(
+                  color: const Color(0xFFF0EDE4),
+                  child: const Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [DurationSelector(), PlaybackControls()],
                   ),
-                );
-              },
-            ),
-          ],
-        ),
-        body: SafeArea(
-          child: Column(
-            children: [
-              // Staff takes up the available space
-              const Expanded(child: ScoreViewWidget()),
-              // Divider
-              Container(height: 1, color: const Color(0xFFE0DDD4)),
-              // Toolbar: duration selector + playback controls
-              Container(
-                color: const Color(0xFFF0EDE4),
-                child: const Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [DurationSelector(), PlaybackControls()],
                 ),
-              ),
-              // Piano keyboard at the bottom
-              const PianoKeyboard(),
-            ],
+                const PianoKeyboard(),
+              ],
+            ),
           ),
         ),
       ),

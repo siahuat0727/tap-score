@@ -31,11 +31,13 @@ class Note {
   });
 
   /// Create a rest with the given duration.
-  const Note.rest({this.duration = NoteDuration.quarter, this.isDotted = false})
-    : midi = 0,
-      accidental = Accidental.none,
-      isRest = true,
-      tripletGroupId = null;
+  const Note.rest({
+    this.duration = NoteDuration.quarter,
+    this.isDotted = false,
+    this.tripletGroupId,
+  }) : midi = 0,
+       accidental = Accidental.none,
+       isRest = true;
 
   /// Actual beat count accounting for dot and triplet modifiers.
   double get effectiveBeats {
@@ -93,6 +95,15 @@ class Note {
       tripletGroupId: tripletGroupId != null
           ? tripletGroupId()
           : this.tripletGroupId,
+    );
+  }
+
+  /// Convert this note to a rest while preserving timing modifiers.
+  Note asRest() {
+    return Note.rest(
+      duration: duration,
+      isDotted: isDotted,
+      tripletGroupId: tripletGroupId,
     );
   }
 

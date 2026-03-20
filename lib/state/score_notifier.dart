@@ -71,11 +71,28 @@ class ScoreNotifier extends ChangeNotifier {
   /// Set the active duration for future note input.
   void setDuration(NoteDuration duration) {
     _currentDuration = duration;
+
+    if (_restMode && _selectionKind == null) {
+      _insertRestAtCursor(duration: duration);
+      _restMode = false;
+    }
+
     notifyListeners();
   }
 
-  /// Toggle rest mode.
-  void toggleRestMode() {
+  /// Enter rest mode in input state or convert the selected note to a rest.
+  void handleRestAction() {
+    if (_selectionKind == SelectionKind.note && _selectedNoteIndex != null) {
+      final old = score.notes[_selectedNoteIndex!];
+      score.replaceAt(_selectedNoteIndex!, old.asRest());
+      notifyListeners();
+      return;
+    }
+
+    if (_selectionKind != null) {
+      return;
+    }
+
     _restMode = !_restMode;
     notifyListeners();
   }
@@ -96,12 +113,9 @@ class ScoreNotifier extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Insert a note at the cursor position.
-  /// If [midi] is provided, inserts a pitched note.
-  /// If rest mode is on, inserts a rest.
-  void insertNote(int rawMidi) {
-    // Determine triplet group ID for this note.
+  int? _takeTripletGroupId() {
     int? tripletId;
+
     if (_tripletMode) {
       if (_tripletRemaining <= 0) {
         _tripletRemaining = 3;
@@ -116,32 +130,48 @@ class ScoreNotifier extends ChangeNotifier {
       }
     }
 
-    final Note note;
-    if (_restMode) {
-      note = Note.rest(duration: _currentDuration, isDotted: _dottedMode);
-    } else {
-      // Auto-apply key signature accidentals to the raw MIDI.
-      final midi = score.keySignature.applyToMidi(rawMidi);
-      note = Note(
-        midi: midi,
-        duration: _currentDuration,
-        isDotted: _dottedMode,
-        tripletGroupId: tripletId,
-      );
-    }
+    return tripletId;
+  }
 
+  void _insertAtCursor(Note note) {
     score.addNote(note, _cursorIndex);
     _cursorIndex++;
     _selectionKind = null;
     _selectedNoteIndex = null;
 
-    // Play audio feedback for the note.
     if (!note.isRest) {
       _audioService.playNoteWithDuration(
         note.midi,
         duration: const Duration(milliseconds: 500),
       );
     }
+  }
+
+  void _insertRestAtCursor({NoteDuration? duration}) {
+    _insertAtCursor(
+      Note.rest(
+        duration: duration ?? _currentDuration,
+        isDotted: _dottedMode,
+        tripletGroupId: _takeTripletGroupId(),
+      ),
+    );
+  }
+
+  /// Insert a pitched note at the cursor position.
+  void insertPitchedNote(int rawMidi) {
+    if (_restMode) {
+      _restMode = false;
+    }
+
+    final midi = score.keySignature.applyToMidi(rawMidi);
+    final note = Note(
+      midi: midi,
+      duration: _currentDuration,
+      isDotted: _dottedMode,
+      tripletGroupId: _takeTripletGroupId(),
+    );
+
+    _insertAtCursor(note);
 
     notifyListeners();
   }
@@ -149,6 +179,8 @@ class ScoreNotifier extends ChangeNotifier {
   /// Select a note at the given index, or deselect (cursor at end) when null.
   void selectNote(int? index) {
     if (index != null && (index < 0 || index >= score.notes.length)) return;
+    _restMode = false;
+
     if (index != null) {
       _selectionKind = SelectionKind.note;
       _selectedNoteIndex = index;
@@ -172,6 +204,7 @@ class ScoreNotifier extends ChangeNotifier {
 
   /// Select the time signature element.
   void selectTimeSig() {
+    _restMode = false;
     _selectionKind = SelectionKind.timeSig;
     _selectedNoteIndex = null;
     _cursorIndex = 0;
@@ -180,6 +213,7 @@ class ScoreNotifier extends ChangeNotifier {
 
   /// Select the key signature element.
   void selectKeySig() {
+    _restMode = false;
     _selectionKind = SelectionKind.keySig;
     _selectedNoteIndex = null;
     _cursorIndex = 0;

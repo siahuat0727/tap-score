@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
+import '../input/editor_shortcuts.dart';
 import '../models/enums.dart';
 import '../state/score_notifier.dart';
 
-/// A toolbar row showing note duration buttons and a rest toggle.
+/// A toolbar row showing note duration buttons and editing tools.
 class DurationSelector extends StatelessWidget {
   const DurationSelector({super.key});
 
@@ -13,55 +15,59 @@ class DurationSelector extends StatelessWidget {
       builder: (context, notifier, child) {
         return Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: Row(
-            children: [
-              // Duration buttons
-              ...NoteDuration.values.map(
-                (duration) => _DurationButton(
-                  duration: duration,
-                  isSelected: notifier.currentDuration == duration,
-                  onTap: () => notifier.setDuration(duration),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                _ToolButton(
+                  icon: Icons.hotel,
+                  label: 'Rest',
+                  shortcutLabel: restShortcutLabel,
+                  isSelected: notifier.restMode,
+                  onTap: notifier.handleRestAction,
+                  activeColor: const Color(0xFF9C27B0),
                 ),
-              ),
-              const SizedBox(width: 8),
-              // Dotted toggle
-              _ToolButton(
-                icon: Icons.fiber_manual_record,
-                label: 'Dot',
-                isSelected: notifier.dottedMode,
-                onTap: notifier.toggleDottedMode,
-                activeColor: const Color(0xFFFF9800),
-              ),
-              const SizedBox(width: 4),
-              // Triplet toggle
-              _ToolButton(
-                icon: Icons.looks_3,
-                label: 'Trip',
-                isSelected: notifier.tripletMode,
-                onTap: notifier.toggleTripletMode,
-                activeColor: const Color(0xFF00897B),
-              ),
-              const SizedBox(width: 8),
-              // Rest toggle
-              _ToolButton(
-                icon: Icons.hotel,
-                label: 'Rest',
-                isSelected: notifier.restMode,
-                onTap: notifier.toggleRestMode,
-                activeColor: const Color(0xFF9C27B0),
-              ),
-              const SizedBox(width: 8),
-              // Delete button
-              _ToolButton(
-                icon: Icons.delete_outline,
-                label: 'Delete',
-                isSelected: false,
-                onTap: notifier.selectedIndex != null
-                    ? notifier.deleteSelected
-                    : null,
-                activeColor: const Color(0xFFF44336),
-              ),
-            ],
+                const SizedBox(width: 8),
+                ...NoteDuration.values.map(
+                  (duration) => _DurationButton(
+                    displayLabel: notifier.restMode
+                        ? duration.restLabel
+                        : duration.label,
+                    shortcutLabel: durationShortcutLabels[duration]!,
+                    isSelected: notifier.currentDuration == duration,
+                    onTap: () => notifier.setDuration(duration),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                _ToolButton(
+                  icon: Icons.fiber_manual_record,
+                  label: 'Dot',
+                  shortcutLabel: dottedShortcutLabel,
+                  isSelected: notifier.dottedMode,
+                  onTap: notifier.toggleDottedMode,
+                  activeColor: const Color(0xFFFF9800),
+                ),
+                const SizedBox(width: 4),
+                _ToolButton(
+                  icon: Icons.looks_3,
+                  label: 'Trip',
+                  shortcutLabel: tripletShortcutLabel,
+                  isSelected: notifier.tripletMode,
+                  onTap: notifier.toggleTripletMode,
+                  activeColor: const Color(0xFF00897B),
+                ),
+                const SizedBox(width: 8),
+                _ToolButton(
+                  icon: Icons.delete_outline,
+                  label: 'Delete',
+                  isSelected: false,
+                  onTap: notifier.selectedIndex != null
+                      ? notifier.deleteSelected
+                      : null,
+                  activeColor: const Color(0xFFF44336),
+                ),
+              ],
+            ),
           ),
         );
       },
@@ -70,12 +76,14 @@ class DurationSelector extends StatelessWidget {
 }
 
 class _DurationButton extends StatelessWidget {
-  final NoteDuration duration;
+  final String displayLabel;
+  final String shortcutLabel;
   final bool isSelected;
   final VoidCallback onTap;
 
   const _DurationButton({
-    required this.duration,
+    required this.displayLabel,
+    required this.shortcutLabel,
     required this.isSelected,
     required this.onTap,
   });
@@ -105,13 +113,25 @@ class _DurationButton extends StatelessWidget {
                 width: isSelected ? 2 : 1,
               ),
             ),
-            alignment: Alignment.center,
-            child: Text(
-              duration.label,
-              style: TextStyle(
-                fontSize: 22,
-                color: isSelected ? const Color(0xFF2196F3) : Colors.grey[600],
-              ),
+            child: Stack(
+              children: [
+                Center(
+                  child: Text(
+                    displayLabel,
+                    style: TextStyle(
+                      fontSize: 22,
+                      color: isSelected
+                          ? const Color(0xFF2196F3)
+                          : Colors.grey[600],
+                    ),
+                  ),
+                ),
+                Positioned(
+                  top: 4,
+                  right: 4,
+                  child: _ShortcutBadge(label: shortcutLabel),
+                ),
+              ],
             ),
           ),
         ),
@@ -123,6 +143,7 @@ class _DurationButton extends StatelessWidget {
 class _ToolButton extends StatelessWidget {
   final IconData icon;
   final String label;
+  final String? shortcutLabel;
   final bool isSelected;
   final VoidCallback? onTap;
   final Color activeColor;
@@ -130,6 +151,7 @@ class _ToolButton extends StatelessWidget {
   const _ToolButton({
     required this.icon,
     required this.label,
+    this.shortcutLabel,
     required this.isSelected,
     required this.onTap,
     required this.activeColor,
@@ -138,6 +160,7 @@ class _ToolButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final enabled = onTap != null;
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 3),
       child: Material(
@@ -189,9 +212,39 @@ class _ToolButton extends StatelessWidget {
                         : FontWeight.normal,
                   ),
                 ),
+                if (shortcutLabel != null) ...[
+                  const SizedBox(width: 8),
+                  _ShortcutBadge(label: shortcutLabel!),
+                ],
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ShortcutBadge extends StatelessWidget {
+  final String label;
+
+  const _ShortcutBadge({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+      decoration: BoxDecoration(
+        color: const Color(0xFF2F4156),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          fontSize: 10,
+          height: 1,
+          color: Colors.white,
+          fontWeight: FontWeight.w700,
         ),
       ),
     );

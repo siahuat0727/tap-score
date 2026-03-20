@@ -27,6 +27,17 @@ enum NoteDuration {
       NoteDuration.sixteenth => '𝅘𝅥𝅯',
     };
   }
+
+  /// Display label for a rest of this duration.
+  String get restLabel {
+    return switch (this) {
+      NoteDuration.whole => '𝄻',
+      NoteDuration.half => '𝄼',
+      NoteDuration.quarter => '𝄽',
+      NoteDuration.eighth => '𝄾',
+      NoteDuration.sixteenth => '𝄿',
+    };
+  }
 }
 
 /// Accidental applied to a note.

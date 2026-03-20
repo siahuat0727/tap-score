@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
+import '../input/editor_shortcuts.dart';
 import '../state/score_notifier.dart';
 
 /// A scrollable piano keyboard widget for note input.
@@ -10,11 +12,7 @@ class PianoKeyboard extends StatelessWidget {
   /// End MIDI note (default C6 = 84).
   final int endMidi;
 
-  const PianoKeyboard({
-    super.key,
-    this.startMidi = 48,
-    this.endMidi = 84,
-  });
+  const PianoKeyboard({super.key, this.startMidi = 48, this.endMidi = 84});
 
   @override
   Widget build(BuildContext context) {
@@ -33,12 +31,20 @@ class PianoKeyboard extends StatelessWidget {
       ),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
-        child: _buildKeyboard(context),
+        child: _KeyboardContent(startMidi: startMidi, endMidi: endMidi),
       ),
     );
   }
+}
 
-  Widget _buildKeyboard(BuildContext context) {
+class _KeyboardContent extends StatelessWidget {
+  final int startMidi;
+  final int endMidi;
+
+  const _KeyboardContent({required this.startMidi, required this.endMidi});
+
+  @override
+  Widget build(BuildContext context) {
     final notifier = context.read<ScoreNotifier>();
     final whiteKeys = <Widget>[];
     final blackKeyOverlays = <Widget>[];
@@ -55,37 +61,35 @@ class PianoKeyboard extends StatelessWidget {
       final isBlack = [1, 3, 6, 8, 10].contains(semitone);
 
       if (!isBlack) {
-        // White key
         whiteKeys.add(
           _WhiteKey(
-            midi: midi,
             x: xOffset,
             width: whiteKeyWidth,
             height: whiteKeyHeight,
-            onTap: () => notifier.insertNote(midi),
+            onTap: () => notifier.insertPitchedNote(midi),
             label: _midiToLabel(midi),
+            shortcutLabel: pianoShortcutLabels[midi],
           ),
         );
         xOffset += whiteKeyWidth + 2;
       }
     }
 
-    // Second pass for black keys
+    final totalWidth = xOffset;
+
     xOffset = 0;
     for (int midi = startMidi; midi <= endMidi; midi++) {
       final semitone = midi % 12;
       final isBlack = [1, 3, 6, 8, 10].contains(semitone);
 
       if (!isBlack) {
-        // Check if next semitone is a black key
         if (midi + 1 <= endMidi && [1, 3, 6, 8, 10].contains((midi + 1) % 12)) {
           blackKeyOverlays.add(
             _BlackKey(
-              midi: midi + 1,
               x: xOffset + whiteKeyWidth - blackKeyWidth / 2 + 1,
               width: blackKeyWidth,
               height: blackKeyHeight,
-              onTap: () => notifier.insertNote(midi + 1),
+              onTap: () => notifier.insertPitchedNote(midi + 1),
             ),
           );
         }
@@ -93,51 +97,55 @@ class PianoKeyboard extends StatelessWidget {
       }
     }
 
-    final totalWidth = xOffset;
-
     return SizedBox(
       width: totalWidth,
       height: whiteKeyHeight,
-      child: Stack(
-        children: [
-          // White keys
-          ...whiteKeys,
-          // Black keys on top
-          ...blackKeyOverlays,
-        ],
-      ),
+      child: Stack(children: [...whiteKeys, ...blackKeyOverlays]),
     );
   }
 
   String _midiToLabel(int midi) {
-    const names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+    const names = [
+      'C',
+      'C#',
+      'D',
+      'D#',
+      'E',
+      'F',
+      'F#',
+      'G',
+      'G#',
+      'A',
+      'A#',
+      'B',
+    ];
     final octave = (midi ~/ 12) - 1;
     return '${names[midi % 12]}$octave';
   }
 }
 
 class _WhiteKey extends StatefulWidget {
-  final int midi;
   final double x;
   final double width;
   final double height;
   final VoidCallback onTap;
   final String label;
+  final String? shortcutLabel;
 
   const _WhiteKey({
-    required this.midi,
     required this.x,
     required this.width,
     required this.height,
     required this.onTap,
     required this.label,
+    required this.shortcutLabel,
   });
 
   @override
   State<_WhiteKey> createState() => _WhiteKeyState();
 }
 
-class _WhiteKeyState extends State<_WhiteKey> with SingleTickerProviderStateMixin {
+class _WhiteKeyState extends State<_WhiteKey> {
   bool _isPressed = false;
 
   @override
@@ -164,7 +172,9 @@ class _WhiteKeyState extends State<_WhiteKey> with SingleTickerProviderStateMixi
                   ? [const Color(0xFFE8E4D8), const Color(0xFFD0CCC0)]
                   : [Colors.white, const Color(0xFFF0EDE4)],
             ),
-            borderRadius: const BorderRadius.vertical(bottom: Radius.circular(6)),
+            borderRadius: const BorderRadius.vertical(
+              bottom: Radius.circular(6),
+            ),
             border: Border.all(color: const Color(0xFFBBB8B0), width: 1),
             boxShadow: _isPressed
                 ? []
@@ -176,15 +186,49 @@ class _WhiteKeyState extends State<_WhiteKey> with SingleTickerProviderStateMixi
                     ),
                   ],
           ),
-          alignment: Alignment.bottomCenter,
-          padding: const EdgeInsets.only(bottom: 8),
-          child: Text(
-            widget.label,
-            style: TextStyle(
-              fontSize: 10,
-              color: Colors.grey[500],
-              fontWeight: FontWeight.w500,
-            ),
+          child: Stack(
+            children: [
+              if (widget.shortcutLabel != null)
+                Positioned(
+                  top: 8,
+                  left: 0,
+                  right: 0,
+                  child: Center(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF2F4156),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        widget.shortcutLabel!,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              Align(
+                alignment: Alignment.bottomCenter,
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Text(
+                    widget.label,
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: Colors.grey[500],
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -193,14 +237,12 @@ class _WhiteKeyState extends State<_WhiteKey> with SingleTickerProviderStateMixi
 }
 
 class _BlackKey extends StatefulWidget {
-  final int midi;
   final double x;
   final double width;
   final double height;
   final VoidCallback onTap;
 
   const _BlackKey({
-    required this.midi,
     required this.x,
     required this.width,
     required this.height,
@@ -238,7 +280,9 @@ class _BlackKeyState extends State<_BlackKey> {
                   ? [const Color(0xFF444444), const Color(0xFF333333)]
                   : [const Color(0xFF2A2A2A), const Color(0xFF111111)],
             ),
-            borderRadius: const BorderRadius.vertical(bottom: Radius.circular(4)),
+            borderRadius: const BorderRadius.vertical(
+              bottom: Radius.circular(4),
+            ),
             boxShadow: _isPressed
                 ? []
                 : [
