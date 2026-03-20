@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../input/editor_shortcuts.dart';
 import '../models/key_signature.dart';
 import '../models/score.dart';
 import '../state/score_notifier.dart';
@@ -56,6 +57,23 @@ class _ScoreViewWidgetState extends State<ScoreViewWidget> {
         }
       case 'keydown':
         final key = data['key'] as String?;
+        final code = data['code'] as String?;
+        final shortcut = code == null ? null : resolveEditorShortcutCode(code);
+        if (shortcut != null) {
+          switch (shortcut.kind) {
+            case EditorShortcutKind.insertPitch:
+              notifier.insertPitchedNote(shortcut.midi!);
+            case EditorShortcutKind.restAction:
+              notifier.handleRestAction();
+            case EditorShortcutKind.setDuration:
+              notifier.setDuration(shortcut.duration!);
+            case EditorShortcutKind.toggleDotted:
+              notifier.toggleDottedMode();
+            case EditorShortcutKind.toggleTriplet:
+              notifier.toggleTripletMode();
+          }
+          return;
+        }
         switch (key) {
           case 'ArrowLeft':
             notifier.moveSelectionLeft();
@@ -269,8 +287,8 @@ class _ScoreViewWidgetState extends State<ScoreViewWidget> {
                             key.fifths == 0
                                 ? '♮'
                                 : key.fifths > 0
-                                ? '${'♯' * key.fifths.abs()}'
-                                : '${'♭' * key.fifths.abs()}',
+                                ? '♯' * key.fifths.abs()
+                                : '♭' * key.fifths.abs(),
                             style: TextStyle(
                               fontSize: 11,
                               color: isCurrent

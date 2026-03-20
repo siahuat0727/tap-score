@@ -85,3 +85,24 @@ EditorShortcutIntent? resolveEditorShortcut(LogicalKeyboardKey key) {
     _ => null,
   };
 }
+
+EditorShortcutIntent? resolveEditorShortcutCode(String code) {
+  return switch (code) {
+    'KeyD' => const EditorShortcutIntent.insertPitch(60),
+    'KeyF' => const EditorShortcutIntent.insertPitch(62),
+    'KeyG' => const EditorShortcutIntent.insertPitch(64),
+    'KeyH' => const EditorShortcutIntent.insertPitch(65),
+    'KeyJ' => const EditorShortcutIntent.insertPitch(67),
+    'KeyK' => const EditorShortcutIntent.insertPitch(69),
+    'KeyL' => const EditorShortcutIntent.insertPitch(71),
+    'Backquote' => const EditorShortcutIntent.restAction(),
+    'Digit1' => const EditorShortcutIntent.setDuration(NoteDuration.whole),
+    'Digit2' => const EditorShortcutIntent.setDuration(NoteDuration.half),
+    'Digit3' => const EditorShortcutIntent.setDuration(NoteDuration.quarter),
+    'Digit4' => const EditorShortcutIntent.setDuration(NoteDuration.eighth),
+    'Digit5' => const EditorShortcutIntent.setDuration(NoteDuration.sixteenth),
+    'Digit6' => const EditorShortcutIntent.toggleDotted(),
+    'Digit9' => const EditorShortcutIntent.toggleTriplet(),
+    _ => null,
+  };
+}

@@ -106,8 +106,9 @@ class _ScoreEditorScreenState extends State<ScoreEditorScreen> {
             actions: [
               Consumer<ScoreNotifier>(
                 builder: (context, notifier, _) {
-                  if (notifier.score.notes.isEmpty)
+                  if (notifier.score.notes.isEmpty) {
                     return const SizedBox.shrink();
+                  }
                   return Padding(
                     padding: const EdgeInsets.only(right: 8),
                     child: Chip(

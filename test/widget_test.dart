@@ -1,14 +1,36 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:tap_score/main.dart';
+import 'package:tap_score/models/enums.dart';
+import 'package:tap_score/models/note.dart';
 import 'package:tap_score/screens/score_editor_screen.dart';
 import 'package:tap_score/state/score_notifier.dart';
 import 'package:tap_score/widgets/duration_selector.dart';
 import 'package:tap_score/widgets/piano_keyboard.dart';
-import 'package:flutter/services.dart';
 import 'package:webview_flutter_platform_interface/webview_flutter_platform_interface.dart';
 import 'helpers/fake_webview_platform.dart';
+
+BoxDecoration _buttonDecoration(WidgetTester tester, Key key) {
+  final finder = find.descendant(
+    of: find.byKey(key),
+    matching: find.byType(AnimatedContainer),
+  );
+  return tester.widget<AnimatedContainer>(finder).decoration! as BoxDecoration;
+}
+
+Color _borderColor(BoxDecoration decoration) {
+  return (decoration.border! as Border).top.color;
+}
+
+InkWell _buttonInkWell(WidgetTester tester, Key key) {
+  final finder = find.descendant(
+    of: find.byKey(key),
+    matching: find.byType(InkWell),
+  );
+  return tester.widget<InkWell>(finder);
+}
 
 void main() {
   setUpAll(() {
@@ -49,6 +71,121 @@ void main() {
     expect(find.text('𝄻'), findsOneWidget);
     expect(find.text('𝄼'), findsOneWidget);
     expect(find.text('𝄽'), findsOneWidget);
+  });
+
+  testWidgets('duration selector reflects the selected rest timing state', (
+    WidgetTester tester,
+  ) async {
+    final notifier = ScoreNotifier();
+    notifier.score.addNote(const Note.rest(duration: NoteDuration.half));
+    notifier.selectNote(0);
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider.value(
+        value: notifier,
+        child: const MaterialApp(home: Scaffold(body: DurationSelector())),
+      ),
+    );
+
+    expect(find.text('𝄼'), findsOneWidget);
+    expect(
+      _borderColor(_buttonDecoration(tester, const ValueKey('rest-tool'))),
+      const Color(0xFF9C27B0),
+    );
+    expect(
+      _borderColor(_buttonDecoration(tester, const ValueKey('duration-half'))),
+      const Color(0xFF2196F3),
+    );
+
+    await tester.pump(const Duration(milliseconds: 600));
+  });
+
+  testWidgets('duration selector edits the selected note duration', (
+    WidgetTester tester,
+  ) async {
+    final notifier = ScoreNotifier();
+    notifier.score.addNote(
+      const Note(midi: 60, duration: NoteDuration.quarter),
+    );
+    notifier.selectNote(0);
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider.value(
+        value: notifier,
+        child: const MaterialApp(home: Scaffold(body: DurationSelector())),
+      ),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('duration-half')));
+    await tester.pump();
+
+    expect(notifier.score.notes.single.duration, NoteDuration.half);
+    expect(
+      _borderColor(_buttonDecoration(tester, const ValueKey('duration-half'))),
+      const Color(0xFF2196F3),
+    );
+
+    await tester.pump(const Duration(milliseconds: 600));
+  });
+
+  testWidgets('duration selector highlights a selected valid triplet', (
+    WidgetTester tester,
+  ) async {
+    final notifier = ScoreNotifier();
+    notifier.score.notes.addAll([
+      const Note(midi: 60, duration: NoteDuration.quarter, tripletGroupId: 3),
+      const Note(midi: 62, duration: NoteDuration.quarter, tripletGroupId: 3),
+      const Note(midi: 64, duration: NoteDuration.quarter, tripletGroupId: 3),
+    ]);
+    notifier.selectNote(1);
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider.value(
+        value: notifier,
+        child: const MaterialApp(home: Scaffold(body: DurationSelector())),
+      ),
+    );
+
+    expect(
+      _borderColor(_buttonDecoration(tester, const ValueKey('triplet-tool'))),
+      const Color(0xFF00897B),
+    );
+
+    await tester.pump(const Duration(milliseconds: 600));
+  });
+
+  testWidgets('duration selector disables invalid triplet actions', (
+    WidgetTester tester,
+  ) async {
+    final notifier = ScoreNotifier();
+    notifier.score.notes.addAll([
+      const Note(midi: 60, duration: NoteDuration.quarter),
+      const Note(midi: 62, duration: NoteDuration.half),
+      const Note(midi: 64, duration: NoteDuration.quarter),
+    ]);
+    notifier.selectNote(0);
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider.value(
+        value: notifier,
+        child: const MaterialApp(home: Scaffold(body: DurationSelector())),
+      ),
+    );
+
+    expect(
+      _buttonInkWell(tester, const ValueKey('triplet-tool')).onTap,
+      isNull,
+    );
+
+    await tester.tap(find.byKey(const ValueKey('triplet-tool')));
+    await tester.pump();
+
+    expect(
+      notifier.score.notes.every((note) => note.tripletGroupId == null),
+      isTrue,
+    );
+
+    await tester.pump(const Duration(milliseconds: 600));
   });
 
   testWidgets('piano keyboard shows mapped key hints on C4-B4', (

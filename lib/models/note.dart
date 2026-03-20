@@ -21,6 +21,9 @@ class Note {
   /// (3 equal notes in the time of 2).
   final int? tripletGroupId;
 
+  /// Original pitch to restore when toggling a rest back into a note.
+  final int? sourceMidi;
+
   const Note({
     required this.midi,
     this.duration = NoteDuration.quarter,
@@ -28,6 +31,7 @@ class Note {
     this.isRest = false,
     this.isDotted = false,
     this.tripletGroupId,
+    this.sourceMidi,
   });
 
   /// Create a rest with the given duration.
@@ -35,14 +39,21 @@ class Note {
     this.duration = NoteDuration.quarter,
     this.isDotted = false,
     this.tripletGroupId,
+    this.sourceMidi,
   }) : midi = 0,
        accidental = Accidental.none,
        isRest = true;
 
-  /// Actual beat count accounting for dot and triplet modifiers.
-  double get effectiveBeats {
+  /// Beat count before tuplets are applied.
+  double get writtenBeats {
     var beats = duration.beats;
     if (isDotted) beats *= 1.5;
+    return beats;
+  }
+
+  /// Actual beat count accounting for dot and triplet modifiers.
+  double get effectiveBeats {
+    var beats = writtenBeats;
     if (tripletGroupId != null) beats *= 2.0 / 3.0;
     return beats;
   }
@@ -85,6 +96,7 @@ class Note {
     bool? isRest,
     bool? isDotted,
     int? Function()? tripletGroupId,
+    int? Function()? sourceMidi,
   }) {
     return Note(
       midi: midi ?? this.midi,
@@ -95,12 +107,24 @@ class Note {
       tripletGroupId: tripletGroupId != null
           ? tripletGroupId()
           : this.tripletGroupId,
+      sourceMidi: sourceMidi != null ? sourceMidi() : this.sourceMidi,
     );
   }
 
   /// Convert this note to a rest while preserving timing modifiers.
   Note asRest() {
     return Note.rest(
+      duration: duration,
+      isDotted: isDotted,
+      tripletGroupId: tripletGroupId,
+      sourceMidi: sourceMidi ?? (isRest ? null : midi),
+    );
+  }
+
+  /// Convert this rest back to a pitched note.
+  Note asPitched({int defaultMidi = 60}) {
+    return Note(
+      midi: sourceMidi ?? defaultMidi,
       duration: duration,
       isDotted: isDotted,
       tripletGroupId: tripletGroupId,
@@ -119,9 +143,17 @@ class Note {
           accidental == other.accidental &&
           isRest == other.isRest &&
           isDotted == other.isDotted &&
-          tripletGroupId == other.tripletGroupId;
+          tripletGroupId == other.tripletGroupId &&
+          sourceMidi == other.sourceMidi;
 
   @override
-  int get hashCode =>
-      Object.hash(midi, duration, accidental, isRest, isDotted, tripletGroupId);
+  int get hashCode => Object.hash(
+    midi,
+    duration,
+    accidental,
+    isRest,
+    isDotted,
+    tripletGroupId,
+    sourceMidi,
+  );
 }

@@ -291,6 +291,41 @@
       return beams;
     }
 
+    function measureFirstMeasureLeadingWidth(staveHeight, staveTop, beatsPerMeasure, beatUnit, keySignatureStr) {
+      const measurementHost = document.createElement('div');
+      measurementHost.style.position = 'absolute';
+      measurementHost.style.visibility = 'hidden';
+      measurementHost.style.pointerEvents = 'none';
+      measurementHost.style.left = '-10000px';
+      measurementHost.style.top = '0';
+      document.body.appendChild(measurementHost);
+
+      try {
+        const measurementRenderer = new Renderer(measurementHost, Renderer.Backends.SVG);
+        measurementRenderer.resize(280, staveHeight);
+        const measurementCtx = measurementRenderer.getContext();
+        const measurementStave = new Stave(0, staveTop, 240);
+        measurementStave.addClef('treble');
+        measurementStave.addKeySignature(keySignatureStr);
+        measurementStave.addTimeSignature(`${beatsPerMeasure}/${beatUnit}`);
+        measurementStave.setContext(measurementCtx).draw();
+
+        if (typeof measurementStave.getNoteStartX === 'function') {
+          return Math.max(measurementStave.getNoteStartX() - measurementStave.getX(), 0);
+        }
+
+        const modifierEls = measurementHost.querySelectorAll('.vf-clef, .vf-keysignature, .vf-timesignature');
+        let rightEdge = 0;
+        modifierEls.forEach((el) => {
+          const bbox = el.getBBox();
+          rightEdge = Math.max(rightEdge, bbox.x + bbox.width);
+        });
+        return Math.max(rightEdge + 24, 90);
+      } finally {
+        measurementHost.remove();
+      }
+    }
+
     // -------------------------------------------------------------------------
     // Main render function
     // -------------------------------------------------------------------------
@@ -310,7 +345,13 @@
       const staveTop = 40;
       const noteSpacing = 48;
       const minMeasureWidth = 80;
-      const leftPadding = 90;
+      const firstMeasureLeadingWidth = measureFirstMeasureLeadingWidth(
+        staveHeight,
+        staveTop,
+        beatsPerMeasure,
+        beatUnit,
+        keySignatureStr,
+      );
       const rightPadding = 20;
 
       // ---- Split notes at beat/measure boundaries & group into measures -----
@@ -391,7 +432,7 @@
           }
         }
 
-        if (idx === 0) w += leftPadding;
+        if (idx === 0) w += firstMeasureLeadingWidth;
         return w + rightPadding;
       });
 
@@ -429,7 +470,15 @@
           try {
             const formatter = new Formatter();
             formatter.joinVoices([mvd.voice]);
-            const noteWidth = mWidth - (mi === 0 ? leftPadding : 30) - rightPadding;
+            const leadingWidth = mi === 0
+              ? firstMeasureLeadingWidth
+              : Math.max(
+                  typeof stave.getNoteStartX === 'function'
+                    ? stave.getNoteStartX() - stave.getX()
+                    : 30,
+                  30,
+                );
+            const noteWidth = mWidth - leadingWidth - rightPadding;
             formatter.format([mvd.voice], Math.max(noteWidth, 40));
 
             // Beat-aware beam grouping
@@ -481,7 +530,16 @@
       const svg = container.querySelector('svg');
       if (svg) {
         _drawHighlights(svg, data, allStaves, allDisplayNotes);
-        _drawCursorLine(svg, data, allVfNotes, allStaves, allDisplayNotes, measureWidths);
+        _drawCursorLine(
+          svg,
+          data,
+          allVfNotes,
+          allStaves,
+          allDisplayNotes,
+          measureWidths,
+          firstMeasureLeadingWidth,
+          rightPadding,
+        );
         _attachTapHandlers(svg, data, allStaves, allDisplayNotes);
       }
 
@@ -534,7 +592,16 @@
     // -------------------------------------------------------------------------
     // Cursor — blinking vertical line at insert position
     // -------------------------------------------------------------------------
-    function _drawCursorLine(svg, data, allVfNotes, allStaves, allDisplayNotes, measureWidths) {
+    function _drawCursorLine(
+      svg,
+      data,
+      allVfNotes,
+      allStaves,
+      allDisplayNotes,
+      measureWidths,
+      firstMeasureLeadingWidth,
+      rightPadding,
+    ) {
       const { cursorIndex, selectionKind } = data;
       // Only show cursor in pure input mode (no selection)
       if (selectionKind) return;
@@ -544,8 +611,12 @@
       let cursorX;
 
       if (allVfNotes.length === 0) {
-        // Empty score — cursor in middle of first measure
-        cursorX = measureWidths[0] * 0.5;
+        // Empty score — cursor in the editable note area of the first measure.
+        const noteAreaWidth = Math.max(
+          measureWidths[0] - firstMeasureLeadingWidth - rightPadding,
+          40,
+        );
+        cursorX = firstMeasureLeadingWidth + noteAreaWidth * 0.5;
       } else {
         // Find first display note whose globalIndex >= cursorIndex
         let displayIdx = -1;
@@ -687,10 +758,16 @@
     // Forward keyboard events to Dart so arrow keys work even when
     // the iframe has focus (e.g. after clicking a note on web).
     document.addEventListener('keydown', function(e) {
-      const forwarded = ['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Delete','Backspace'];
-      if (forwarded.includes(e.key)) {
+      const forwardedCodes = [
+        'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown',
+        'Delete', 'Backspace',
+        'KeyD', 'KeyF', 'KeyG', 'KeyH', 'KeyJ', 'KeyK', 'KeyL',
+        'Backquote',
+        'Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit9',
+      ];
+      if (forwardedCodes.includes(e.code)) {
         e.preventDefault();
-        _sendMessage({ type: 'keydown', key: e.key });
+        _sendMessage({ type: 'keydown', key: e.key, code: e.code });
       }
     });
   </script>

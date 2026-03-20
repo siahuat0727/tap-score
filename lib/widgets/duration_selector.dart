@@ -20,44 +20,57 @@ class DurationSelector extends StatelessWidget {
             child: Row(
               children: [
                 _ToolButton(
+                  buttonKey: const ValueKey('rest-tool'),
                   icon: Icons.hotel,
                   label: 'Rest',
                   shortcutLabel: restShortcutLabel,
-                  isSelected: notifier.restMode,
-                  onTap: notifier.handleRestAction,
+                  isSelected: notifier.toolbarRestSelected,
+                  onTap: notifier.timingControlsEnabled
+                      ? notifier.handleRestAction
+                      : null,
                   activeColor: const Color(0xFF9C27B0),
                 ),
                 const SizedBox(width: 8),
                 ...NoteDuration.values.map(
                   (duration) => _DurationButton(
-                    displayLabel: notifier.restMode
+                    buttonKey: ValueKey('duration-${duration.name}'),
+                    displayLabel: notifier.toolbarShowsRestDurations
                         ? duration.restLabel
                         : duration.label,
                     shortcutLabel: durationShortcutLabels[duration]!,
-                    isSelected: notifier.currentDuration == duration,
-                    onTap: () => notifier.setDuration(duration),
+                    isSelected: notifier.toolbarDuration == duration,
+                    onTap: notifier.timingControlsEnabled
+                        ? () => notifier.setDuration(duration)
+                        : null,
                   ),
                 ),
                 const SizedBox(width: 8),
                 _ToolButton(
+                  buttonKey: const ValueKey('dot-tool'),
                   icon: Icons.fiber_manual_record,
                   label: 'Dot',
                   shortcutLabel: dottedShortcutLabel,
-                  isSelected: notifier.dottedMode,
-                  onTap: notifier.toggleDottedMode,
+                  isSelected: notifier.toolbarDottedSelected,
+                  onTap: notifier.timingControlsEnabled
+                      ? notifier.toggleDottedMode
+                      : null,
                   activeColor: const Color(0xFFFF9800),
                 ),
                 const SizedBox(width: 4),
                 _ToolButton(
+                  buttonKey: const ValueKey('triplet-tool'),
                   icon: Icons.looks_3,
                   label: 'Trip',
                   shortcutLabel: tripletShortcutLabel,
-                  isSelected: notifier.tripletMode,
-                  onTap: notifier.toggleTripletMode,
+                  isSelected: notifier.toolbarTripletSelected,
+                  onTap: notifier.tripletButtonEnabled
+                      ? notifier.toggleTripletMode
+                      : null,
                   activeColor: const Color(0xFF00897B),
                 ),
                 const SizedBox(width: 8),
                 _ToolButton(
+                  buttonKey: const ValueKey('delete-tool'),
                   icon: Icons.delete_outline,
                   label: 'Delete',
                   isSelected: false,
@@ -76,12 +89,14 @@ class DurationSelector extends StatelessWidget {
 }
 
 class _DurationButton extends StatelessWidget {
+  final Key? buttonKey;
   final String displayLabel;
   final String shortcutLabel;
   final bool isSelected;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   const _DurationButton({
+    this.buttonKey,
     required this.displayLabel,
     required this.shortcutLabel,
     required this.isSelected,
@@ -90,9 +105,12 @@ class _DurationButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final enabled = onTap != null;
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 3),
       child: Material(
+        key: buttonKey,
         color: Colors.transparent,
         child: InkWell(
           borderRadius: BorderRadius.circular(10),
@@ -109,7 +127,9 @@ class _DurationButton extends StatelessWidget {
               border: Border.all(
                 color: isSelected
                     ? const Color(0xFF2196F3)
-                    : Colors.grey.withAlpha(77),
+                    : enabled
+                    ? Colors.grey.withAlpha(77)
+                    : Colors.grey.withAlpha(38),
                 width: isSelected ? 2 : 1,
               ),
             ),
@@ -122,7 +142,9 @@ class _DurationButton extends StatelessWidget {
                       fontSize: 22,
                       color: isSelected
                           ? const Color(0xFF2196F3)
-                          : Colors.grey[600],
+                          : enabled
+                          ? Colors.grey[600]
+                          : Colors.grey[300],
                     ),
                   ),
                 ),
@@ -141,6 +163,7 @@ class _DurationButton extends StatelessWidget {
 }
 
 class _ToolButton extends StatelessWidget {
+  final Key? buttonKey;
   final IconData icon;
   final String label;
   final String? shortcutLabel;
@@ -149,6 +172,7 @@ class _ToolButton extends StatelessWidget {
   final Color activeColor;
 
   const _ToolButton({
+    this.buttonKey,
     required this.icon,
     required this.label,
     this.shortcutLabel,
@@ -164,6 +188,7 @@ class _ToolButton extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 3),
       child: Material(
+        key: buttonKey,
         color: Colors.transparent,
         child: InkWell(
           borderRadius: BorderRadius.circular(10),

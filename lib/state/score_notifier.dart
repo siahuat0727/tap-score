@@ -11,6 +11,9 @@ enum SelectionKind { timeSig, keySig, note }
 
 /// Central state manager for the score editor.
 class ScoreNotifier extends ChangeNotifier {
+  static const int _defaultRestoreMidi = 60;
+  static const double _epsilon = 0.001;
+
   final Score score = Score();
   final AudioService _audioService = AudioService();
 
@@ -22,33 +25,69 @@ class ScoreNotifier extends ChangeNotifier {
   SelectionKind? _selectionKind;
   SelectionKind? get selectionKind => _selectionKind;
 
-  /// Currently selected note index (valid only when _selectionKind == note).
+  /// Currently selected note index (valid only when [_selectionKind] == note).
   int? _selectedNoteIndex;
   int? get selectedIndex =>
       _selectionKind == SelectionKind.note ? _selectedNoteIndex : null;
 
-  /// Active duration for the next note to be input.
+  Note? get selectedNote {
+    final index = selectedIndex;
+    if (index == null) return null;
+    return score.notes[index];
+  }
+
+  /// Active duration for future note input.
   NoteDuration _currentDuration = NoteDuration.quarter;
   NoteDuration get currentDuration => _currentDuration;
 
-  /// Whether rest mode is active (next input creates a rest).
+  /// Whether rest mode is active for the next input.
   bool _restMode = false;
   bool get restMode => _restMode;
 
-  /// Whether dotted mode is active (next input creates a dotted note).
+  /// Whether dotted mode is active for the next input.
   bool _dottedMode = false;
   bool get dottedMode => _dottedMode;
 
-  /// Whether triplet input mode is active.
-  /// When active, the next 3 notes form a triplet group.
+  /// Whether the next inserted input should become a complete triplet.
   bool _tripletMode = false;
   bool get tripletMode => _tripletMode;
 
-  /// Counter tracking how many notes remain in the current triplet group.
-  int _tripletRemaining = 0;
-
   /// Auto-incrementing triplet group ID.
   int _nextTripletGroupId = 1;
+
+  /// Selection-aware toolbar state.
+  bool get timingControlsEnabled =>
+      _selectionKind == null || _selectionKind == SelectionKind.note;
+  NoteDuration get toolbarDuration =>
+      selectedNote?.duration ?? _currentDuration;
+  bool get toolbarShowsRestDurations => switch (_selectionKind) {
+    SelectionKind.note => selectedNote?.isRest ?? false,
+    null => _restMode,
+    _ => false,
+  };
+  bool get toolbarRestSelected => switch (_selectionKind) {
+    SelectionKind.note => selectedNote?.isRest ?? false,
+    null => _restMode,
+    _ => false,
+  };
+  bool get toolbarDottedSelected => switch (_selectionKind) {
+    SelectionKind.note => selectedNote?.isDotted ?? false,
+    null => _dottedMode,
+    _ => false,
+  };
+  bool get toolbarTripletSelected => switch (_selectionKind) {
+    SelectionKind.note => _selectedValidTripletGroupIndices != null,
+    null => _tripletMode,
+    _ => false,
+  };
+  bool get tripletButtonEnabled {
+    if (_selectionKind == null) return true;
+    if (_selectionKind != SelectionKind.note || _selectedNoteIndex == null) {
+      return false;
+    }
+    return _selectedValidTripletGroupIndices != null ||
+        _canCreateTripletFromSelection(_selectedNoteIndex!);
+  }
 
   /// Playback state.
   bool _isPlaying = false;
@@ -68,11 +107,30 @@ class ScoreNotifier extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Set the active duration for future note input.
+  double get _measureDuration => score.beatsPerMeasure * (4.0 / score.beatUnit);
+
+  List<int>? get _selectedValidTripletGroupIndices {
+    final index = selectedIndex;
+    if (index == null) return null;
+    final groupId = score.notes[index].tripletGroupId;
+    if (groupId == null) return null;
+    final indices = _validTripletGroupIndices(groupId);
+    if (indices == null || !indices.contains(index)) return null;
+    return indices;
+  }
+
+  /// Set the active duration for future input, or edit the selected note/rest.
   void setDuration(NoteDuration duration) {
+    if (!timingControlsEnabled) return;
+
     _currentDuration = duration;
 
-    if (_restMode && _selectionKind == null) {
+    if (_selectionKind == SelectionKind.note && _selectedNoteIndex != null) {
+      changeSelectedDuration(duration);
+      return;
+    }
+
+    if (_restMode) {
       _insertRestAtCursor(duration: duration);
       _restMode = false;
     }
@@ -80,11 +138,25 @@ class ScoreNotifier extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Enter rest mode in input state or convert the selected note to a rest.
+  /// Enter rest mode in input state or toggle the selected note/rest.
   void handleRestAction() {
     if (_selectionKind == SelectionKind.note && _selectedNoteIndex != null) {
-      final old = score.notes[_selectedNoteIndex!];
-      score.replaceAt(_selectedNoteIndex!, old.asRest());
+      final index = _selectedNoteIndex!;
+      final old = score.notes[index];
+      final updated = old.isRest
+          ? old.asPitched(defaultMidi: _defaultRestoreMidi)
+          : old.asRest();
+      score.replaceAt(index, updated);
+      _currentDuration = updated.duration;
+      _dottedMode = updated.isDotted;
+
+      if (!updated.isRest) {
+        _audioService.playNoteWithDuration(
+          updated.midi,
+          duration: const Duration(milliseconds: 500),
+        );
+      }
+
       notifyListeners();
       return;
     }
@@ -97,64 +169,94 @@ class ScoreNotifier extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Toggle dotted mode.
+  /// Toggle dotted mode for the next input or the selected note/triplet group.
   void toggleDottedMode() {
+    if (!timingControlsEnabled) return;
+
+    if (_selectionKind == SelectionKind.note && _selectedNoteIndex != null) {
+      toggleSelectedDotted();
+      return;
+    }
+
     _dottedMode = !_dottedMode;
     notifyListeners();
   }
 
-  /// Toggle triplet input mode.
-  /// When activated, the next 3 notes will share a triplet group.
+  /// Toggle triplet input mode or edit the selected note group.
   void toggleTripletMode() {
-    _tripletMode = !_tripletMode;
-    if (!_tripletMode) {
-      _tripletRemaining = 0;
+    if (_selectionKind == SelectionKind.note && _selectedNoteIndex != null) {
+      final selectedTriplet = _selectedValidTripletGroupIndices;
+      if (selectedTriplet != null) {
+        for (final index in selectedTriplet) {
+          final note = score.notes[index];
+          score.replaceAt(index, note.copyWith(tripletGroupId: () => null));
+        }
+        notifyListeners();
+        return;
+      }
+
+      if (!tripletButtonEnabled) {
+        return;
+      }
+
+      _createTripletFromSelection(_selectedNoteIndex!);
+      notifyListeners();
+      return;
     }
+
+    if (_selectionKind != null) {
+      return;
+    }
+
+    _tripletMode = !_tripletMode;
     notifyListeners();
   }
 
-  int? _takeTripletGroupId() {
-    int? tripletId;
-
-    if (_tripletMode) {
-      if (_tripletRemaining <= 0) {
-        _tripletRemaining = 3;
-        tripletId = _nextTripletGroupId++;
-      } else {
-        // Use the same group ID as the previous note in this group.
-        tripletId = _nextTripletGroupId - 1;
-      }
-      _tripletRemaining--;
-      if (_tripletRemaining <= 0) {
-        _tripletMode = false;
-      }
+  void _insertNotesAtCursor(List<Note> notes) {
+    for (final note in notes) {
+      score.addNote(note, _cursorIndex);
+      _cursorIndex++;
     }
 
-    return tripletId;
-  }
-
-  void _insertAtCursor(Note note) {
-    score.addNote(note, _cursorIndex);
-    _cursorIndex++;
     _selectionKind = null;
     _selectedNoteIndex = null;
 
-    if (!note.isRest) {
+    Note? soundedNote;
+    for (final note in notes) {
+      if (!note.isRest) {
+        soundedNote = note;
+        break;
+      }
+    }
+    if (soundedNote != null) {
       _audioService.playNoteWithDuration(
-        note.midi,
+        soundedNote.midi,
         duration: const Duration(milliseconds: 500),
       );
     }
   }
 
-  void _insertRestAtCursor({NoteDuration? duration}) {
-    _insertAtCursor(
-      Note.rest(
-        duration: duration ?? _currentDuration,
-        isDotted: _dottedMode,
-        tripletGroupId: _takeTripletGroupId(),
-      ),
+  List<Note> _expandForPendingTriplet(Note prototype) {
+    if (!_tripletMode) {
+      return [prototype];
+    }
+
+    final tripletGroupId = _nextTripletGroupId++;
+    _tripletMode = false;
+
+    return List<Note>.generate(
+      3,
+      (_) => prototype.copyWith(tripletGroupId: () => tripletGroupId),
+      growable: false,
     );
+  }
+
+  void _insertRestAtCursor({NoteDuration? duration}) {
+    final prototype = Note.rest(
+      duration: duration ?? _currentDuration,
+      isDotted: _dottedMode,
+    );
+    _insertNotesAtCursor(_expandForPendingTriplet(prototype));
   }
 
   /// Insert a pitched note at the cursor position.
@@ -164,15 +266,13 @@ class ScoreNotifier extends ChangeNotifier {
     }
 
     final midi = score.keySignature.applyToMidi(rawMidi);
-    final note = Note(
+    final prototype = Note(
       midi: midi,
       duration: _currentDuration,
       isDotted: _dottedMode,
-      tripletGroupId: _takeTripletGroupId(),
     );
 
-    _insertAtCursor(note);
-
+    _insertNotesAtCursor(_expandForPendingTriplet(prototype));
     notifyListeners();
   }
 
@@ -186,7 +286,6 @@ class ScoreNotifier extends ChangeNotifier {
       _selectedNoteIndex = index;
       _cursorIndex = index + 1;
 
-      // Play audio feedback for selected note.
       final note = score.notes[index];
       if (!note.isRest) {
         _audioService.playNoteWithDuration(
@@ -229,7 +328,6 @@ class ScoreNotifier extends ChangeNotifier {
   void moveSelectionLeft() {
     switch (_selectionKind) {
       case null:
-        // At cursor/end — select last note if any, else timeSig.
         if (score.notes.isNotEmpty) {
           selectNote(score.notes.length - 1);
         } else {
@@ -245,7 +343,7 @@ class ScoreNotifier extends ChangeNotifier {
       case SelectionKind.timeSig:
         selectKeySig();
       case SelectionKind.keySig:
-        break; // already leftmost
+        break;
     }
   }
 
@@ -259,17 +357,17 @@ class ScoreNotifier extends ChangeNotifier {
         if (score.notes.isNotEmpty) {
           selectNote(0);
         } else {
-          selectNote(null); // go to cursor/end
+          selectNote(null);
         }
       case SelectionKind.note:
         final idx = _selectedNoteIndex ?? 0;
         if (idx < score.notes.length - 1) {
           selectNote(idx + 1);
         } else {
-          selectNote(null); // go to cursor/end
+          selectNote(null);
         }
       case null:
-        break; // already at end
+        break;
     }
   }
 
@@ -287,7 +385,7 @@ class ScoreNotifier extends ChangeNotifier {
       case SelectionKind.note:
         _diatonicStepSelected(direction);
       case null:
-        break; // cursor at end — nothing to adjust
+        break;
     }
   }
 
@@ -298,7 +396,10 @@ class ScoreNotifier extends ChangeNotifier {
     if (note.isRest) return;
     final newMidi = score.keySignature.diatonicStep(note.midi, direction);
     if (newMidi == note.midi) return;
-    score.replaceAt(_selectedNoteIndex!, note.copyWith(midi: newMidi));
+    score.replaceAt(
+      _selectedNoteIndex!,
+      note.copyWith(midi: newMidi, sourceMidi: () => null),
+    );
     _audioService.playNoteWithDuration(
       newMidi,
       duration: const Duration(milliseconds: 500),
@@ -308,14 +409,43 @@ class ScoreNotifier extends ChangeNotifier {
 
   /// Delete the currently selected note.
   void deleteSelected() {
-    if (_selectionKind != SelectionKind.note || _selectedNoteIndex == null)
+    if (_selectionKind != SelectionKind.note || _selectedNoteIndex == null) {
       return;
-    score.removeAt(_selectedNoteIndex!);
-    if (_cursorIndex > 0) _cursorIndex--;
-    if (_selectedNoteIndex! >= score.notes.length) {
+    }
+
+    final removedIndex = _selectedNoteIndex!;
+    final tripletGroup = _selectedValidTripletGroupIndices;
+    score.removeAt(removedIndex);
+
+    if (tripletGroup != null) {
+      for (final originalIndex in tripletGroup.where(
+        (i) => i != removedIndex,
+      )) {
+        final shiftedIndex = originalIndex > removedIndex
+            ? originalIndex - 1
+            : originalIndex;
+        if (shiftedIndex >= 0 && shiftedIndex < score.notes.length) {
+          final note = score.notes[shiftedIndex];
+          score.replaceAt(
+            shiftedIndex,
+            note.copyWith(tripletGroupId: () => null),
+          );
+        }
+      }
+    }
+
+    if (_cursorIndex > removedIndex) {
+      _cursorIndex--;
+    }
+
+    if (removedIndex >= score.notes.length) {
       _selectedNoteIndex = score.notes.isEmpty ? null : score.notes.length - 1;
     }
-    if (_selectedNoteIndex == null) _selectionKind = null;
+
+    if (_selectedNoteIndex == null) {
+      _selectionKind = null;
+    }
+
     notifyListeners();
   }
 
@@ -325,7 +455,10 @@ class ScoreNotifier extends ChangeNotifier {
       return;
     }
     final old = score.notes[_selectedNoteIndex!];
-    score.replaceAt(_selectedNoteIndex!, old.copyWith(midi: midi));
+    score.replaceAt(
+      _selectedNoteIndex!,
+      old.copyWith(midi: midi, sourceMidi: () => null),
+    );
 
     _audioService.playNoteWithDuration(
       midi,
@@ -340,8 +473,11 @@ class ScoreNotifier extends ChangeNotifier {
     if (_selectionKind != SelectionKind.note || _selectedNoteIndex == null) {
       return;
     }
-    final old = score.notes[_selectedNoteIndex!];
-    score.replaceAt(_selectedNoteIndex!, old.copyWith(duration: duration));
+
+    _currentDuration = duration;
+    _applyDurationOrDotToSelectedGroup(
+      (note) => note.copyWith(duration: duration),
+    );
     notifyListeners();
   }
 
@@ -350,9 +486,131 @@ class ScoreNotifier extends ChangeNotifier {
     if (_selectionKind != SelectionKind.note || _selectedNoteIndex == null) {
       return;
     }
-    final old = score.notes[_selectedNoteIndex!];
-    score.replaceAt(_selectedNoteIndex!, old.copyWith(isDotted: !old.isDotted));
+
+    final nextValue = !score.notes[_selectedNoteIndex!].isDotted;
+    _dottedMode = nextValue;
+    _applyDurationOrDotToSelectedGroup(
+      (note) => note.copyWith(isDotted: nextValue),
+    );
     notifyListeners();
+  }
+
+  void _applyDurationOrDotToSelectedGroup(Note Function(Note note) transform) {
+    final selectedTriplet = _selectedValidTripletGroupIndices;
+    if (selectedTriplet != null) {
+      for (final index in selectedTriplet) {
+        score.replaceAt(index, transform(score.notes[index]));
+      }
+      return;
+    }
+
+    final index = _selectedNoteIndex;
+    if (index == null) return;
+    score.replaceAt(index, transform(score.notes[index]));
+  }
+
+  int? _nextTripletStartIndex(int selectedIndex) {
+    if (selectedIndex == score.notes.length - 1) {
+      return selectedIndex;
+    }
+
+    if (selectedIndex + 2 >= score.notes.length) {
+      return null;
+    }
+
+    return selectedIndex;
+  }
+
+  bool _canCreateTripletFromSelection(int selectedIndex) {
+    final startIndex = _nextTripletStartIndex(selectedIndex);
+    if (startIndex == null) return false;
+
+    final selected = score.notes[selectedIndex];
+    if (selected.tripletGroupId != null) return false;
+
+    if (selectedIndex == score.notes.length - 1) {
+      return _tripletFitsAt(startIndex, selected.writtenBeats);
+    }
+
+    final candidates = score.notes.sublist(startIndex, startIndex + 3);
+    final first = candidates.first;
+
+    if (candidates.any((note) => note.tripletGroupId != null)) {
+      return false;
+    }
+
+    if (candidates.any(
+      (note) =>
+          note.duration != first.duration || note.isDotted != first.isDotted,
+    )) {
+      return false;
+    }
+
+    return _tripletFitsAt(startIndex, first.writtenBeats);
+  }
+
+  bool _tripletFitsAt(int startIndex, double writtenBeats) {
+    final beatsBefore = _beatsBeforeIndex(startIndex);
+    final beatInMeasure = beatsBefore % _measureDuration;
+    final tripletBeats = writtenBeats * 2.0;
+    return beatInMeasure + tripletBeats <= _measureDuration + _epsilon;
+  }
+
+  double _beatsBeforeIndex(int index) {
+    var beats = 0.0;
+    for (var i = 0; i < index; i++) {
+      beats += score.notes[i].effectiveBeats;
+    }
+    return beats;
+  }
+
+  List<int>? _validTripletGroupIndices(int groupId) {
+    final indices = <int>[];
+
+    for (var i = 0; i < score.notes.length; i++) {
+      if (score.notes[i].tripletGroupId == groupId) {
+        indices.add(i);
+      }
+    }
+
+    if (indices.length != 3) return null;
+
+    for (var i = 1; i < indices.length; i++) {
+      if (indices[i] != indices[i - 1] + 1) return null;
+    }
+
+    final first = score.notes[indices.first];
+    if (indices.any((index) {
+      final note = score.notes[index];
+      return note.duration != first.duration || note.isDotted != first.isDotted;
+    })) {
+      return null;
+    }
+
+    return indices;
+  }
+
+  void _createTripletFromSelection(int selectedIndex) {
+    final source = score.notes[selectedIndex];
+    final tripletGroupId = _nextTripletGroupId++;
+
+    score.replaceAt(
+      selectedIndex,
+      source.copyWith(tripletGroupId: () => tripletGroupId),
+    );
+
+    if (selectedIndex == score.notes.length - 1) {
+      final cloneA = source.copyWith(tripletGroupId: () => tripletGroupId);
+      final cloneB = source.copyWith(tripletGroupId: () => tripletGroupId);
+      score.addNote(cloneA, selectedIndex + 1);
+      score.addNote(cloneB, selectedIndex + 2);
+      return;
+    }
+
+    for (var i = selectedIndex + 1; i <= selectedIndex + 2; i++) {
+      final note = score.notes[i];
+      score.replaceAt(i, note.copyWith(tripletGroupId: () => tripletGroupId));
+    }
   }
 
   /// Move cursor to a specific index.

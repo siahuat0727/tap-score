@@ -46,7 +46,7 @@ void main() {
         KeySignature.bMajor,
         KeySignature.fSharpMajor,
       ]) {
-        expect(key.accidentalOffset, 1, reason: '${key.displayName}');
+        expect(key.accidentalOffset, 1, reason: key.displayName);
       }
     });
 
@@ -59,7 +59,7 @@ void main() {
         KeySignature.dbMajor,
         KeySignature.gbMajor,
       ]) {
-        expect(key.accidentalOffset, -1, reason: '${key.displayName}');
+        expect(key.accidentalOffset, -1, reason: key.displayName);
       }
     });
   });

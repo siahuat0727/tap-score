@@ -32,4 +32,22 @@ void main() {
       EditorShortcutKind.restAction,
     );
   });
+
+  test('resolves browser key codes for forwarded iframe shortcuts', () {
+    expect(resolveEditorShortcutCode('KeyD')?.midi, 60);
+    expect(resolveEditorShortcutCode('KeyL')?.midi, 71);
+    expect(resolveEditorShortcutCode('Digit1')?.duration, NoteDuration.whole);
+    expect(
+      resolveEditorShortcutCode('Digit6')?.kind,
+      EditorShortcutKind.toggleDotted,
+    );
+    expect(
+      resolveEditorShortcutCode('Digit9')?.kind,
+      EditorShortcutKind.toggleTriplet,
+    );
+    expect(
+      resolveEditorShortcutCode('Backquote')?.kind,
+      EditorShortcutKind.restAction,
+    );
+  });
 }
