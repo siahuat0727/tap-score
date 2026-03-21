@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../input/editor_shortcuts.dart';
 import '../models/key_signature.dart';
 import '../models/score.dart';
+import '../rhythm_test/rhythm_test_models.dart';
 import '../state/score_notifier.dart';
 
 import 'score_renderer_stub.dart'
@@ -19,11 +20,13 @@ class ScoreViewWidget extends StatefulWidget {
   const ScoreViewWidget({
     this.interactive = true,
     this.onRendererKeyDown,
+    this.rhythmOverlay,
     super.key,
   });
 
   final bool interactive;
   final bool Function(String? key, String? code)? onRendererKeyDown;
+  final RhythmOverlayRenderData? rhythmOverlay;
 
   @override
   State<ScoreViewWidget> createState() => _ScoreViewWidgetState();
@@ -143,6 +146,7 @@ class _ScoreViewWidgetState extends State<ScoreViewWidget> {
       'cursorIndex': notifier.cursorIndex,
       'playbackIndex': notifier.playbackIndex,
       'selectionKind': notifier.selectionKind?.name ?? '',
+      'rhythmTest': widget.rhythmOverlay?.toPayload(),
     });
   }
 

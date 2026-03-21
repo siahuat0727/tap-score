@@ -66,10 +66,49 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
 
     expect(find.text('Rhythm Test'), findsOneWidget);
-    expect(find.text('Tap Score: Rhythm Test'), findsOneWidget);
-    expect(find.textContaining('The score stays visible.'), findsOneWidget);
     expect(find.byKey(const ValueKey('rhythm-test-start')), findsOneWidget);
+    expect(find.byKey(const ValueKey('rhythm-test-reset')), findsOneWidget);
+    expect(find.byKey(const ValueKey('rhythm-test-tap')), findsOneWidget);
+    expect(find.textContaining('The score stays visible.'), findsNothing);
+    expect(find.byType(SingleChildScrollView), findsNothing);
     expect(find.byType(PianoKeyboard), findsNothing);
+  });
+
+  testWidgets('rhythm test stays within a compact viewport', (
+    WidgetTester tester,
+  ) async {
+    final notifier = ScoreNotifier();
+    notifier.score.addNote(
+      const Note(midi: 60, duration: NoteDuration.quarter),
+    );
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 700);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider.value(
+        value: notifier,
+        child: const MaterialApp(home: ScoreEditorScreen()),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.byTooltip('Rhythm Test'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    final screenHeight = tester.view.physicalSize.height;
+    for (final finder in [
+      find.byKey(const ValueKey('rhythm-test-start')),
+      find.byKey(const ValueKey('rhythm-test-reset')),
+      find.byKey(const ValueKey('rhythm-test-tap')),
+    ]) {
+      expect(tester.getRect(finder).bottom, lessThanOrEqualTo(screenHeight));
+    }
+
+    expect(find.byType(SingleChildScrollView), findsNothing);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('duration selector shows rest first and mapped shortcuts', (

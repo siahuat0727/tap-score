@@ -151,27 +151,37 @@ class _ScoreEditorScreenState extends State<ScoreEditorScreen> {
   @override
   Widget build(BuildContext context) {
     final body = _isRhythmTestActive && _rhythmTestNotifier != null
-        ? Column(
-            children: [
-              Expanded(
-                flex: 5,
-                child: ScoreViewWidget(
-                  interactive: false,
-                  onRendererKeyDown: _handleRendererKeyDown,
-                ),
-              ),
-              Container(height: 1, color: const Color(0xFFE0DDD4)),
-              Expanded(
-                flex: 4,
-                child: ChangeNotifierProvider.value(
-                  value: _rhythmTestNotifier!,
-                  child: RhythmTestPanel(
-                    onTempoChanged: _handleRhythmTempoChanged,
-                    onExit: _exitRhythmTest,
-                  ),
-                ),
-              ),
-            ],
+        ? ChangeNotifierProvider.value(
+            value: _rhythmTestNotifier!,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final controlBarHeight = constraints.maxWidth < 700
+                    ? 380.0
+                    : 220.0;
+                return Column(
+                  children: [
+                    Expanded(
+                      child: Consumer<RhythmTestNotifier>(
+                        builder: (context, notifier, _) {
+                          return ScoreViewWidget(
+                            interactive: false,
+                            onRendererKeyDown: _handleRendererKeyDown,
+                            rhythmOverlay: notifier.overlayRenderData,
+                          );
+                        },
+                      ),
+                    ),
+                    Container(height: 1, color: const Color(0xFFE0DDD4)),
+                    SizedBox(
+                      height: controlBarHeight,
+                      child: RhythmTestPanel(
+                        onTempoChanged: _handleRhythmTempoChanged,
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
           )
         : Column(
             children: [
@@ -202,22 +212,7 @@ class _ScoreEditorScreenState extends State<ScoreEditorScreen> {
         onPointerDown: (_) => _focusNode.requestFocus(),
         child: Scaffold(
           appBar: AppBar(
-            title: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  _isRhythmTestActive
-                      ? Icons.timer_outlined
-                      : Icons.music_note_rounded,
-                  size: 24,
-                  color: const Color(0xFF3F51B5),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  _isRhythmTestActive ? 'Tap Score: Rhythm Test' : 'Tap Score',
-                ),
-              ],
-            ),
+            title: Text(_isRhythmTestActive ? 'Rhythm Test' : 'Tap Score'),
             actions: [
               Consumer<ScoreNotifier>(
                 builder: (context, notifier, _) {

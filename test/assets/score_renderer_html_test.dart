@@ -10,6 +10,8 @@ void main() {
     expect(html, contains("'KeyD'"));
     expect(html, contains("'KeyL'"));
     expect(html, contains("'Backquote'"));
+    expect(html, contains("'Enter'"));
+    expect(html, contains("'NumpadEnter'"));
     expect(html, contains("'Digit1'"));
     expect(html, contains("'Digit6'"));
     expect(html, contains("'Digit7'"));
@@ -28,4 +30,17 @@ void main() {
       expect(html, contains('new Curve('));
     },
   );
+
+  test('score renderer handles the inline rhythm overlay payload', () {
+    final html = File('assets/html/score_renderer.html').readAsStringSync();
+
+    expect(html, contains('function _drawRhythmOverlay('));
+    expect(html, contains('function _buildRhythmMeasureSegments('));
+    expect(html, contains('rhythmTest.showExpectedEvents'));
+    expect(html, contains('rhythmTest.liveTapEvents'));
+    expect(html, contains('rhythmTest.resultTapEvents'));
+    expect(html, contains('measureBoundaryTimesSeconds'));
+    expect(html, contains('rhythmTest.pulsesPerMeasure'));
+    expect(html, isNot(contains('noteCenterByIndex')));
+  });
 }

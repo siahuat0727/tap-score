@@ -341,10 +341,10 @@
 
       const { beatsPerMeasure, beatUnit, keySignatureStr, alteredPitches,
               accidentalOffset, notes, selectedIndex, cursorIndex,
-              playbackIndex, selectionKind } = data;
+              playbackIndex, selectionKind, rhythmTest } = data;
 
       // ---- Layout constants ------------------------------------------------
-      const staveHeight = 160;
+      const staveHeight = rhythmTest ? 292 : 160;
       const staveTop = 40;
       const noteSpacing = 48;
       const minMeasureWidth = 80;
@@ -452,6 +452,7 @@
       const allVfNotes = [];      // flat array of VF note objects
       const allDisplayNotes = []; // flat array of display notes (for index mapping)
       const allStaves = [];       // one per measure
+      const measureRenderData = [];
 
       for (let mi = 0; mi < measures.length; mi++) {
         const mWidth = measureWidths[mi];
@@ -482,6 +483,13 @@
                   30,
                 );
             const noteWidth = mWidth - leadingWidth - rightPadding;
+            measureRenderData.push({
+              startX: stave.getX(),
+              endX: stave.getX() + mWidth,
+              contentStartX: stave.getX() + leadingWidth,
+              contentEndX: stave.getX() + mWidth - rightPadding,
+              contentWidth: Math.max(noteWidth, 40),
+            });
             formatter.format([mvd.voice], Math.max(noteWidth, 40));
 
             // Beat-aware beam grouping
@@ -512,6 +520,14 @@
           } catch (e) {
             console.warn('VexFlow render error in measure', mi, e);
           }
+        } else {
+          measureRenderData.push({
+            startX: stave.getX(),
+            endX: stave.getX() + mWidth,
+            contentStartX: stave.getX() + 30,
+            contentEndX: stave.getX() + mWidth - rightPadding,
+            contentWidth: Math.max(mWidth - 30 - rightPadding, 40),
+          });
         }
 
         xOffset += mWidth;
@@ -560,6 +576,12 @@
       // ---- Draw highlights & cursor ----------------------------------------
       const svg = container.querySelector('svg');
       if (svg) {
+        _drawRhythmOverlay(
+          svg,
+          rhythmTest,
+          allStaves,
+          measureRenderData,
+        );
         _drawHighlights(svg, data, allStaves, allDisplayNotes);
         _drawCursorLine(
           svg,
@@ -579,6 +601,282 @@
         container.innerHTML = previousContent
           || '<p style="color:#b71c1c;padding:16px">Unable to render score</p>';
       }
+    }
+
+    // -------------------------------------------------------------------------
+    // Rhythm test overlay — draw the tap lane directly under the score.
+    // -------------------------------------------------------------------------
+    function _drawRhythmOverlay(
+      svg,
+      rhythmTest,
+      allStaves,
+      measureRenderData,
+    ) {
+      if (!rhythmTest || measureRenderData.length === 0) return;
+
+      const ns = svg.namespaceURI;
+      const expectedById = new Map();
+      const matchedExpectedIds = new Set();
+      const matchedTapIds = new Set();
+      const measureSegments = _buildRhythmMeasureSegments(measureRenderData);
+      if (measureSegments.length === 0) return;
+
+      for (const event of rhythmTest.expectedEvents) {
+        expectedById.set(event.id, event);
+      }
+
+      const firstMeasure = measureSegments[0];
+      const lastMeasure = measureSegments[measureSegments.length - 1];
+      const overlayTop = allStaves[0] ? allStaves[0].getYForLine(4) + 44 : 132;
+      const overlayBottom = overlayTop + 66;
+      const centerY = (overlayTop + overlayBottom) / 2;
+
+      const lane = document.createElementNS(ns, 'rect');
+      lane.setAttribute('x', firstMeasure.startX);
+      lane.setAttribute('y', overlayTop);
+      lane.setAttribute('width', Math.max(lastMeasure.endX - firstMeasure.startX, 40));
+      lane.setAttribute('height', overlayBottom - overlayTop);
+      lane.setAttribute('rx', '18');
+      lane.setAttribute('fill', '#f6efe2');
+      lane.setAttribute('stroke', '#d7ccb6');
+      lane.setAttribute('stroke-width', '1');
+      svg.appendChild(lane);
+
+      const baseline = document.createElementNS(ns, 'line');
+      baseline.setAttribute('x1', firstMeasure.startX);
+      baseline.setAttribute('x2', lastMeasure.endX);
+      baseline.setAttribute('y1', centerY);
+      baseline.setAttribute('y2', centerY);
+      baseline.setAttribute('stroke', '#c7b89d');
+      baseline.setAttribute('stroke-width', '2');
+      svg.appendChild(baseline);
+
+      const progressX = _xForRhythmTime(
+        rhythmTest.elapsedRunSeconds,
+        measureSegments,
+        rhythmTest.measureBoundaryTimesSeconds,
+        rhythmTest.totalDurationSeconds,
+      );
+      if (rhythmTest.elapsedRunSeconds > 0.0001 && progressX > firstMeasure.startX) {
+        const progress = document.createElementNS(ns, 'rect');
+        progress.setAttribute('x', firstMeasure.startX);
+        progress.setAttribute('y', overlayTop);
+        progress.setAttribute('width', progressX - firstMeasure.startX);
+        progress.setAttribute('height', overlayBottom - overlayTop);
+        progress.setAttribute('rx', '18');
+        progress.setAttribute('fill', 'rgba(25, 118, 210, 0.08)');
+        svg.appendChild(progress);
+      }
+
+      for (let i = 0; i < measureSegments.length; i++) {
+        const measure = measureSegments[i];
+        _drawOverlayLine(
+          svg,
+          ns,
+          measure.startX,
+          overlayTop + 10,
+          overlayBottom - 10,
+          '#bda98b',
+          i === 0 ? 2.2 : 1.4,
+        );
+        for (let beat = 1; beat < rhythmTest.pulsesPerMeasure; beat++) {
+          const beatX =
+            measure.startX
+            + ((measure.endX - measure.startX) * beat) / rhythmTest.pulsesPerMeasure;
+          _drawOverlayLine(
+            svg,
+            ns,
+            beatX,
+            overlayTop + 16,
+            overlayBottom - 16,
+            '#d7ccb6',
+            1,
+          );
+        }
+      }
+      _drawOverlayLine(svg, ns, lastMeasure.endX, overlayTop + 10, overlayBottom - 10, '#bda98b', 2.2);
+
+      if (rhythmTest.showExpectedEvents) {
+        for (const pair of rhythmTest.matchedPairs) {
+          matchedExpectedIds.add(pair.expectedId);
+          matchedTapIds.add(pair.tapId);
+
+          const expectedEvent = expectedById.get(pair.expectedId);
+          if (!expectedEvent) continue;
+
+          const expectedX = _xForRhythmTime(
+            expectedEvent.timeSeconds,
+            measureSegments,
+            rhythmTest.measureBoundaryTimesSeconds,
+            rhythmTest.totalDurationSeconds,
+          );
+          const tapEvent = rhythmTest.resultTapEvents.find((tap) => tap.id === pair.tapId);
+          if (!tapEvent) continue;
+          const tapX = _xForRhythmTime(
+            tapEvent.timeSeconds,
+            measureSegments,
+            rhythmTest.measureBoundaryTimesSeconds,
+            rhythmTest.totalDurationSeconds,
+          );
+
+          const link = document.createElementNS(ns, 'line');
+          link.setAttribute('x1', expectedX);
+          link.setAttribute('y1', overlayTop + 18);
+          link.setAttribute('x2', tapX);
+          link.setAttribute('y2', overlayBottom - 18);
+          link.setAttribute('stroke', Math.abs(pair.errorSeconds) < 0.1 ? '#2e7d32' : '#ef6c00');
+          link.setAttribute('stroke-width', '3');
+          link.setAttribute('stroke-linecap', 'round');
+          svg.appendChild(link);
+        }
+      }
+
+      if (rhythmTest.showExpectedEvents) {
+        for (const event of rhythmTest.expectedEvents) {
+          const expectedX = _xForRhythmTime(
+            event.timeSeconds,
+            measureSegments,
+            rhythmTest.measureBoundaryTimesSeconds,
+            rhythmTest.totalDurationSeconds,
+          );
+          _drawOverlayPoint(
+            svg,
+            ns,
+            expectedX,
+            overlayTop + 18,
+            matchedExpectedIds.has(event.id) ? '#1565c0' : '#c62828',
+          );
+        }
+      }
+
+      const tapEvents = rhythmTest.showExpectedEvents
+        ? rhythmTest.resultTapEvents
+        : rhythmTest.liveTapEvents;
+      for (const tap of tapEvents) {
+        const tapX = _xForRhythmTime(
+          tap.timeSeconds,
+          measureSegments,
+          rhythmTest.measureBoundaryTimesSeconds,
+          rhythmTest.totalDurationSeconds,
+        );
+        const color = rhythmTest.showExpectedEvents
+          ? (matchedTapIds.has(tap.id) ? '#00897b' : '#ef6c00')
+          : '#6d4c41';
+        _drawOverlayPoint(svg, ns, tapX, overlayBottom - 18, color);
+      }
+
+      const label = document.createElementNS(ns, 'text');
+      label.setAttribute('x', firstMeasure.startX + 12);
+      label.setAttribute('y', overlayTop - 12);
+      label.setAttribute('fill', '#6e6254');
+      label.setAttribute('font-size', '13');
+      label.setAttribute('font-weight', '700');
+      label.textContent = rhythmTest.showExpectedEvents
+        ? 'Rhythm test result'
+        : 'Rhythm test';
+      svg.appendChild(label);
+    }
+
+    function _buildRhythmMeasureSegments(measureRenderData) {
+      if (measureRenderData.length === 0) {
+        return [];
+      }
+
+      if (measureRenderData.length === 1) {
+        const onlyMeasure = measureRenderData[0];
+        const templateWidth = Math.max(onlyMeasure.contentWidth, 40);
+        return [{
+          startX: onlyMeasure.endX - templateWidth,
+          endX: onlyMeasure.endX,
+        }];
+      }
+
+      const segments = [];
+      const firstTemplateWidth = Math.max(
+        _measureSegmentWidth(measureRenderData, 1),
+        40,
+      );
+      segments.push({
+        startX: measureRenderData[1].startX - firstTemplateWidth,
+        endX: measureRenderData[1].startX,
+      });
+
+      for (let i = 1; i < measureRenderData.length; i++) {
+        segments.push({
+          startX: measureRenderData[i].startX,
+          endX: i + 1 < measureRenderData.length
+            ? measureRenderData[i + 1].startX
+            : measureRenderData[i].endX,
+        });
+      }
+
+      return segments;
+    }
+
+    function _measureSegmentWidth(measureRenderData, index) {
+      if (index < 0 || index >= measureRenderData.length) {
+        return 0;
+      }
+      if (index + 1 < measureRenderData.length) {
+        return measureRenderData[index + 1].startX - measureRenderData[index].startX;
+      }
+      return measureRenderData[index].endX - measureRenderData[index].startX;
+    }
+
+    function _drawOverlayLine(svg, ns, x, y1, y2, color, strokeWidth) {
+      const line = document.createElementNS(ns, 'line');
+      line.setAttribute('x1', x);
+      line.setAttribute('x2', x);
+      line.setAttribute('y1', y1);
+      line.setAttribute('y2', y2);
+      line.setAttribute('stroke', color);
+      line.setAttribute('stroke-width', strokeWidth);
+      svg.appendChild(line);
+    }
+
+    function _drawOverlayPoint(svg, ns, x, y, color) {
+      const point = document.createElementNS(ns, 'circle');
+      point.setAttribute('cx', x);
+      point.setAttribute('cy', y);
+      point.setAttribute('r', '7');
+      point.setAttribute('fill', color);
+      point.setAttribute('stroke', '#ffffff');
+      point.setAttribute('stroke-width', '2');
+      svg.appendChild(point);
+    }
+
+    function _xForRhythmTime(
+      timeSeconds,
+      measureSegments,
+      measureBoundaryTimesSeconds,
+      totalDurationSeconds,
+    ) {
+      const firstMeasure = measureSegments[0];
+      const lastMeasure = measureSegments[measureSegments.length - 1];
+      if (timeSeconds <= 0) {
+        return firstMeasure.startX;
+      }
+      if (timeSeconds >= totalDurationSeconds) {
+        return lastMeasure.endX;
+      }
+
+      const measureCount = Math.min(
+        measureSegments.length,
+        Math.max(measureBoundaryTimesSeconds.length - 1, 0),
+      );
+      for (let i = 0; i < measureCount; i++) {
+        const startTime = measureBoundaryTimesSeconds[i];
+        const endTime = measureBoundaryTimesSeconds[i + 1];
+        if (endTime == null) continue;
+        if (timeSeconds <= endTime || i === measureCount - 1) {
+          const measure = measureSegments[i];
+          const duration = Math.max(endTime - startTime, 0.001);
+          const ratio = Math.min(Math.max((timeSeconds - startTime) / duration, 0), 1);
+          return measure.startX + (measure.endX - measure.startX) * ratio;
+        }
+      }
+
+      return lastMeasure.endX;
     }
 
     // -------------------------------------------------------------------------
@@ -792,6 +1090,7 @@
       const forwardedCodes = [
         'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown',
         'Delete', 'Backspace',
+        'Enter', 'NumpadEnter',
         'KeyD', 'KeyF', 'KeyG', 'KeyH', 'KeyJ', 'KeyK', 'KeyL',
         'Backquote',
         'Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6',
