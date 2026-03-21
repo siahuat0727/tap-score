@@ -64,6 +64,35 @@ class Score {
   /// Duration of one beat in seconds at the current tempo.
   double get secondsPerBeat => 60.0 / bpm;
 
+  /// Duration of one quarter note in seconds at the current tempo.
+  double get secondsPerQuarterNote => secondsPerBeat;
+
+  /// Length of one metronome pulse in quarter-note units.
+  double get pulseLengthInQuarterNotes => 4.0 / beatUnit;
+
+  /// Duration of one metronome pulse in seconds.
+  double get pulseDurationSeconds =>
+      pulseLengthInQuarterNotes * secondsPerQuarterNote;
+
+  /// Duration of one full measure in quarter-note units.
+  double get measureLengthInQuarterNotes =>
+      beatsPerMeasure * pulseLengthInQuarterNotes;
+
+  /// Duration of one full measure in seconds.
+  double get measureDurationSeconds =>
+      measureLengthInQuarterNotes * secondsPerQuarterNote;
+
+  /// Create a detached copy of this score.
+  Score copy() {
+    return Score(
+      notes: List<Note>.from(notes),
+      beatsPerMeasure: beatsPerMeasure,
+      beatUnit: beatUnit,
+      bpm: bpm,
+      keySignature: keySignature,
+    );
+  }
+
   @override
   String toString() =>
       'Score(${notes.length} notes, $beatsPerMeasure/$beatUnit, ${bpm}bpm, ${keySignature.displayName})';

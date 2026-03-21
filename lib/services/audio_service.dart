@@ -11,6 +11,9 @@ import 'web_audio_stub.dart'
 ///
 /// On Web, uses Web Audio API with bundled MP3 samples.
 class AudioService {
+  static const int _accentedMetronomeMidi = 84;
+  static const int _regularMetronomeMidi = 76;
+
   final MidiPro _midiPro = MidiPro();
   int? _sfId;
   bool _initialized = false;
@@ -106,6 +109,14 @@ class AudioService {
   }) {
     playNote(midi);
     Timer(duration, () => stopNote(midi));
+  }
+
+  /// Play a short metronome click.
+  void playMetronomeClick({required bool accented}) {
+    playNoteWithDuration(
+      accented ? _accentedMetronomeMidi : _regularMetronomeMidi,
+      duration: const Duration(milliseconds: 90),
+    );
   }
 
   /// Play the entire score sequentially.

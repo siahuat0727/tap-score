@@ -16,7 +16,14 @@ import 'score_renderer_stub.dart'
 ///
 /// All UI logic (pickers, payload construction, message handling) is shared.
 class ScoreViewWidget extends StatefulWidget {
-  const ScoreViewWidget({super.key});
+  const ScoreViewWidget({
+    this.interactive = true,
+    this.onRendererKeyDown,
+    super.key,
+  });
+
+  final bool interactive;
+  final bool Function(String? key, String? code)? onRendererKeyDown;
 
   @override
   State<ScoreViewWidget> createState() => _ScoreViewWidgetState();
@@ -39,17 +46,21 @@ class _ScoreViewWidgetState extends State<ScoreViewWidget> {
       case 'ready':
         _renderNow(notifier);
       case 'noteTap':
+        if (!widget.interactive) return;
         final index = data['index'] as int?;
         if (index != null) notifier.selectNote(index);
       case 'bgTap':
+        if (!widget.interactive) return;
         notifier.selectNote(null);
       case 'timeSigTap':
+        if (!widget.interactive) return;
         if (notifier.selectionKind == SelectionKind.timeSig) {
           _showTimeSigPicker();
         } else {
           notifier.selectTimeSig();
         }
       case 'keySigTap':
+        if (!widget.interactive) return;
         if (notifier.selectionKind == SelectionKind.keySig) {
           _showKeySigPicker();
         } else {
@@ -58,6 +69,13 @@ class _ScoreViewWidgetState extends State<ScoreViewWidget> {
       case 'keydown':
         final key = data['key'] as String?;
         final code = data['code'] as String?;
+        final handledByParent = widget.onRendererKeyDown?.call(key, code);
+        if (handledByParent == true) {
+          return;
+        }
+        if (!widget.interactive) {
+          return;
+        }
         final shortcut = code == null ? null : resolveEditorShortcutCode(code);
         if (shortcut != null) {
           switch (shortcut.kind) {

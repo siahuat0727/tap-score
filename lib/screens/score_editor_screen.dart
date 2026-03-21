@@ -3,11 +3,15 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../input/editor_shortcuts.dart';
+import '../state/rhythm_test_notifier.dart';
 import '../state/score_notifier.dart';
-import '../widgets/score_view_widget.dart';
-import '../widgets/piano_keyboard.dart';
 import '../widgets/duration_selector.dart';
+import '../widgets/piano_keyboard.dart';
 import '../widgets/playback_controls.dart';
+import '../widgets/rhythm_test_panel.dart';
+import '../widgets/score_view_widget.dart';
+
+enum _EditorSurfaceMode { compose, rhythmTest }
 
 /// Main editor screen assembling staff, toolbar, and keyboard.
 class ScoreEditorScreen extends StatefulWidget {
@@ -19,11 +23,14 @@ class ScoreEditorScreen extends StatefulWidget {
 
 class _ScoreEditorScreenState extends State<ScoreEditorScreen> {
   final FocusNode _focusNode = FocusNode();
+  _EditorSurfaceMode _surfaceMode = _EditorSurfaceMode.compose;
+  RhythmTestNotifier? _rhythmTestNotifier;
+
+  bool get _isRhythmTestActive => _surfaceMode == _EditorSurfaceMode.rhythmTest;
 
   @override
   void initState() {
     super.initState();
-    // Initialize the audio service after the first frame.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<ScoreNotifier>().init();
     });
@@ -31,11 +38,70 @@ class _ScoreEditorScreenState extends State<ScoreEditorScreen> {
 
   @override
   void dispose() {
+    _rhythmTestNotifier?.dispose();
     _focusNode.dispose();
     super.dispose();
   }
 
+  void _enterRhythmTest() {
+    final scoreNotifier = context.read<ScoreNotifier>();
+    if (scoreNotifier.score.notes.isEmpty) {
+      return;
+    }
+
+    scoreNotifier.stop();
+    _rhythmTestNotifier?.dispose();
+    final rhythmNotifier = RhythmTestNotifier(score: scoreNotifier.score);
+    setState(() {
+      _surfaceMode = _EditorSurfaceMode.rhythmTest;
+      _rhythmTestNotifier = rhythmNotifier;
+    });
+    rhythmNotifier.init();
+    _focusNode.requestFocus();
+  }
+
+  void _exitRhythmTest() {
+    final rhythmNotifier = _rhythmTestNotifier;
+    setState(() {
+      _surfaceMode = _EditorSurfaceMode.compose;
+      _rhythmTestNotifier = null;
+    });
+    rhythmNotifier?.dispose();
+    _focusNode.requestFocus();
+  }
+
+  void _handleRhythmTempoChanged(double bpm) {
+    final scoreNotifier = context.read<ScoreNotifier>();
+    scoreNotifier.setTempo(bpm);
+    _rhythmTestNotifier?.setTempo(bpm);
+  }
+
+  bool _handleRendererKeyDown(String? key, String? code) {
+    if (!_isRhythmTestActive) {
+      return false;
+    }
+
+    if (key == 'Enter' || code == 'Enter' || code == 'NumpadEnter') {
+      _rhythmTestNotifier?.recordTap();
+      return true;
+    }
+
+    return false;
+  }
+
   KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
+    if (_isRhythmTestActive) {
+      if (event is KeyDownEvent) {
+        final key = event.logicalKey;
+        if (key == LogicalKeyboardKey.enter ||
+            key == LogicalKeyboardKey.numpadEnter) {
+          _rhythmTestNotifier?.recordTap();
+          return KeyEventResult.handled;
+        }
+      }
+      return KeyEventResult.ignored;
+    }
+
     if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
       return KeyEventResult.ignored;
     }
@@ -84,6 +150,49 @@ class _ScoreEditorScreenState extends State<ScoreEditorScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final body = _isRhythmTestActive && _rhythmTestNotifier != null
+        ? Column(
+            children: [
+              Expanded(
+                flex: 5,
+                child: ScoreViewWidget(
+                  interactive: false,
+                  onRendererKeyDown: _handleRendererKeyDown,
+                ),
+              ),
+              Container(height: 1, color: const Color(0xFFE0DDD4)),
+              Expanded(
+                flex: 4,
+                child: ChangeNotifierProvider.value(
+                  value: _rhythmTestNotifier!,
+                  child: RhythmTestPanel(
+                    onTempoChanged: _handleRhythmTempoChanged,
+                    onExit: _exitRhythmTest,
+                  ),
+                ),
+              ),
+            ],
+          )
+        : Column(
+            children: [
+              Expanded(
+                child: ScoreViewWidget(
+                  interactive: true,
+                  onRendererKeyDown: _handleRendererKeyDown,
+                ),
+              ),
+              Container(height: 1, color: const Color(0xFFE0DDD4)),
+              Container(
+                color: const Color(0xFFF0EDE4),
+                child: const Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [DurationSelector(), PlaybackControls()],
+                ),
+              ),
+              const PianoKeyboard(),
+            ],
+          );
+
     return Focus(
       focusNode: _focusNode,
       autofocus: true,
@@ -93,55 +202,67 @@ class _ScoreEditorScreenState extends State<ScoreEditorScreen> {
         onPointerDown: (_) => _focusNode.requestFocus(),
         child: Scaffold(
           appBar: AppBar(
-            title: const Row(
+            title: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(
-                  Icons.music_note_rounded,
+                  _isRhythmTestActive
+                      ? Icons.timer_outlined
+                      : Icons.music_note_rounded,
                   size: 24,
-                  color: Color(0xFF3F51B5),
+                  color: const Color(0xFF3F51B5),
                 ),
-                SizedBox(width: 8),
-                Text('Tap Score'),
+                const SizedBox(width: 8),
+                Text(
+                  _isRhythmTestActive ? 'Tap Score: Rhythm Test' : 'Tap Score',
+                ),
               ],
             ),
             actions: [
               Consumer<ScoreNotifier>(
                 builder: (context, notifier, _) {
-                  if (notifier.score.notes.isEmpty) {
-                    return const SizedBox.shrink();
-                  }
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: Chip(
-                      label: Text(
-                        '${notifier.score.notes.length} notes',
-                        style: const TextStyle(fontSize: 12),
+                  return Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        tooltip: _isRhythmTestActive
+                            ? 'Exit Rhythm Test'
+                            : 'Rhythm Test',
+                        onPressed:
+                            notifier.score.notes.isEmpty && !_isRhythmTestActive
+                            ? null
+                            : () {
+                                if (_isRhythmTestActive) {
+                                  _exitRhythmTest();
+                                } else {
+                                  _enterRhythmTest();
+                                }
+                              },
+                        icon: Icon(
+                          _isRhythmTestActive
+                              ? Icons.close_rounded
+                              : Icons.timer_outlined,
+                        ),
                       ),
-                      backgroundColor: const Color(0xFFE8E4D8),
-                      side: BorderSide.none,
-                    ),
+                      if (notifier.score.notes.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: Chip(
+                            label: Text(
+                              '${notifier.score.notes.length} notes',
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                            backgroundColor: const Color(0xFFE8E4D8),
+                            side: BorderSide.none,
+                          ),
+                        ),
+                    ],
                   );
                 },
               ),
             ],
           ),
-          body: SafeArea(
-            child: Column(
-              children: [
-                const Expanded(child: ScoreViewWidget()),
-                Container(height: 1, color: const Color(0xFFE0DDD4)),
-                Container(
-                  color: const Color(0xFFF0EDE4),
-                  child: const Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [DurationSelector(), PlaybackControls()],
-                  ),
-                ),
-                const PianoKeyboard(),
-              ],
-            ),
-          ),
+          body: SafeArea(child: body),
         ),
       ),
     );

@@ -45,6 +45,33 @@ void main() {
     expect(find.text('Tap Score'), findsOneWidget);
   });
 
+  testWidgets('editor switches into inline rhythm test mode', (
+    WidgetTester tester,
+  ) async {
+    final notifier = ScoreNotifier();
+    notifier.score.addNote(
+      const Note(midi: 60, duration: NoteDuration.quarter),
+    );
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider.value(
+        value: notifier,
+        child: const MaterialApp(home: ScoreEditorScreen()),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.byTooltip('Rhythm Test'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(find.text('Rhythm Test'), findsOneWidget);
+    expect(find.text('Tap Score: Rhythm Test'), findsOneWidget);
+    expect(find.textContaining('The score stays visible.'), findsOneWidget);
+    expect(find.byKey(const ValueKey('rhythm-test-start')), findsOneWidget);
+    expect(find.byType(PianoKeyboard), findsNothing);
+  });
+
   testWidgets('duration selector shows rest first and mapped shortcuts', (
     WidgetTester tester,
   ) async {
