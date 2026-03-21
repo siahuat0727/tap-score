@@ -36,11 +36,19 @@ void main() {
 
     expect(html, contains('function _drawRhythmOverlay('));
     expect(html, contains('function _buildRhythmMeasureSegments('));
+    expect(html, contains('function _drawRhythmErrorLabels('));
+    expect(html, contains('const RHYTHM_ERROR_LABEL_THRESHOLD_BEATS = 0.02;'));
     expect(html, contains('rhythmTest.showExpectedEvents'));
     expect(html, contains('rhythmTest.liveTapEvents'));
     expect(html, contains('rhythmTest.resultTapEvents'));
+    expect(html, contains('rhythmTest.playheadTimeSeconds'));
+    expect(html, contains('rhythmTest.countInDurationSeconds'));
     expect(html, contains('measureBoundaryTimesSeconds'));
     expect(html, contains('rhythmTest.pulsesPerMeasure'));
+    expect(html, contains('const leadInStartX = firstMeasure.startX - leadInWidth;'));
+    expect(html, contains('const playhead = document.createElementNS(ns, \'line\');'));
+    expect(html, contains('const clampedLeadInTime = Math.max(timeSeconds, -countInDurationSeconds);'));
+    expect(html, isNot(contains('const progressX = _xForRhythmTime(')));
     expect(html, isNot(contains('noteCenterByIndex')));
   });
 }

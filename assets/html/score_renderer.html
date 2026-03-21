@@ -606,6 +606,8 @@
     // -------------------------------------------------------------------------
     // Rhythm test overlay — draw the tap lane directly under the score.
     // -------------------------------------------------------------------------
+    const RHYTHM_ERROR_LABEL_THRESHOLD_BEATS = 0.02;
+
     function _drawRhythmOverlay(
       svg,
       rhythmTest,
@@ -616,25 +618,32 @@
 
       const ns = svg.namespaceURI;
       const expectedById = new Map();
+      const resultTapById = new Map();
       const matchedExpectedIds = new Set();
       const matchedTapIds = new Set();
+      const labelCandidates = [];
       const measureSegments = _buildRhythmMeasureSegments(measureRenderData);
       if (measureSegments.length === 0) return;
 
       for (const event of rhythmTest.expectedEvents) {
         expectedById.set(event.id, event);
       }
+      for (const tap of rhythmTest.resultTapEvents) {
+        resultTapById.set(tap.id, tap);
+      }
 
       const firstMeasure = measureSegments[0];
       const lastMeasure = measureSegments[measureSegments.length - 1];
+      const leadInWidth = Math.max(firstMeasure.endX - firstMeasure.startX, 40);
+      const leadInStartX = firstMeasure.startX - leadInWidth;
       const overlayTop = allStaves[0] ? allStaves[0].getYForLine(4) + 44 : 132;
       const overlayBottom = overlayTop + 66;
       const centerY = (overlayTop + overlayBottom) / 2;
 
       const lane = document.createElementNS(ns, 'rect');
-      lane.setAttribute('x', firstMeasure.startX);
+      lane.setAttribute('x', leadInStartX);
       lane.setAttribute('y', overlayTop);
-      lane.setAttribute('width', Math.max(lastMeasure.endX - firstMeasure.startX, 40));
+      lane.setAttribute('width', Math.max(lastMeasure.endX - leadInStartX, 40));
       lane.setAttribute('height', overlayBottom - overlayTop);
       lane.setAttribute('rx', '18');
       lane.setAttribute('fill', '#f6efe2');
@@ -642,8 +651,17 @@
       lane.setAttribute('stroke-width', '1');
       svg.appendChild(lane);
 
+      const leadIn = document.createElementNS(ns, 'rect');
+      leadIn.setAttribute('x', leadInStartX);
+      leadIn.setAttribute('y', overlayTop);
+      leadIn.setAttribute('width', Math.max(firstMeasure.startX - leadInStartX, 0));
+      leadIn.setAttribute('height', overlayBottom - overlayTop);
+      leadIn.setAttribute('rx', '18');
+      leadIn.setAttribute('fill', 'rgba(110, 98, 84, 0.05)');
+      svg.appendChild(leadIn);
+
       const baseline = document.createElementNS(ns, 'line');
-      baseline.setAttribute('x1', firstMeasure.startX);
+      baseline.setAttribute('x1', leadInStartX);
       baseline.setAttribute('x2', lastMeasure.endX);
       baseline.setAttribute('y1', centerY);
       baseline.setAttribute('y2', centerY);
@@ -651,22 +669,15 @@
       baseline.setAttribute('stroke-width', '2');
       svg.appendChild(baseline);
 
-      const progressX = _xForRhythmTime(
-        rhythmTest.elapsedRunSeconds,
-        measureSegments,
-        rhythmTest.measureBoundaryTimesSeconds,
-        rhythmTest.totalDurationSeconds,
+      _drawOverlayLine(
+        svg,
+        ns,
+        leadInStartX,
+        overlayTop + 16,
+        overlayBottom - 16,
+        '#d7ccb6',
+        1,
       );
-      if (rhythmTest.elapsedRunSeconds > 0.0001 && progressX > firstMeasure.startX) {
-        const progress = document.createElementNS(ns, 'rect');
-        progress.setAttribute('x', firstMeasure.startX);
-        progress.setAttribute('y', overlayTop);
-        progress.setAttribute('width', progressX - firstMeasure.startX);
-        progress.setAttribute('height', overlayBottom - overlayTop);
-        progress.setAttribute('rx', '18');
-        progress.setAttribute('fill', 'rgba(25, 118, 210, 0.08)');
-        svg.appendChild(progress);
-      }
 
       for (let i = 0; i < measureSegments.length; i++) {
         const measure = measureSegments[i];
@@ -696,38 +707,68 @@
       }
       _drawOverlayLine(svg, ns, lastMeasure.endX, overlayTop + 10, overlayBottom - 10, '#bda98b', 2.2);
 
+      if (!rhythmTest.showExpectedEvents) {
+        const playheadX = _xForRhythmTime(
+          rhythmTest.playheadTimeSeconds,
+          measureSegments,
+          rhythmTest.measureBoundaryTimesSeconds,
+          rhythmTest.totalDurationSeconds,
+          rhythmTest.countInDurationSeconds,
+        );
+        const playhead = document.createElementNS(ns, 'line');
+        playhead.setAttribute('x1', playheadX);
+        playhead.setAttribute('x2', playheadX);
+        playhead.setAttribute('y1', overlayTop - 8);
+        playhead.setAttribute('y2', overlayBottom + 8);
+        playhead.setAttribute('stroke', '#42a5f5');
+        playhead.setAttribute('stroke-width', '2.5');
+        playhead.setAttribute('stroke-linecap', 'round');
+        svg.appendChild(playhead);
+      }
+
       if (rhythmTest.showExpectedEvents) {
         for (const pair of rhythmTest.matchedPairs) {
           matchedExpectedIds.add(pair.expectedId);
           matchedTapIds.add(pair.tapId);
 
           const expectedEvent = expectedById.get(pair.expectedId);
-          if (!expectedEvent) continue;
+          const tapEvent = resultTapById.get(pair.tapId);
+          if (!expectedEvent || !tapEvent) continue;
 
           const expectedX = _xForRhythmTime(
             expectedEvent.timeSeconds,
             measureSegments,
             rhythmTest.measureBoundaryTimesSeconds,
             rhythmTest.totalDurationSeconds,
+            rhythmTest.countInDurationSeconds,
           );
-          const tapEvent = rhythmTest.resultTapEvents.find((tap) => tap.id === pair.tapId);
-          if (!tapEvent) continue;
           const tapX = _xForRhythmTime(
             tapEvent.timeSeconds,
             measureSegments,
             rhythmTest.measureBoundaryTimesSeconds,
             rhythmTest.totalDurationSeconds,
+            rhythmTest.countInDurationSeconds,
           );
+          const linkColor = Math.abs(pair.errorSeconds) < 0.1 ? '#2e7d32' : '#ef6c00';
 
           const link = document.createElementNS(ns, 'line');
           link.setAttribute('x1', expectedX);
           link.setAttribute('y1', overlayTop + 18);
           link.setAttribute('x2', tapX);
           link.setAttribute('y2', overlayBottom - 18);
-          link.setAttribute('stroke', Math.abs(pair.errorSeconds) < 0.1 ? '#2e7d32' : '#ef6c00');
+          link.setAttribute('stroke', linkColor);
           link.setAttribute('stroke-width', '3');
           link.setAttribute('stroke-linecap', 'round');
           svg.appendChild(link);
+
+          const errorBeats = pair.errorSeconds / rhythmTest.pulseDurationSeconds;
+          if (Math.abs(errorBeats) > RHYTHM_ERROR_LABEL_THRESHOLD_BEATS) {
+            labelCandidates.push({
+              x: (expectedX + tapX) / 2,
+              text: _formatRhythmErrorBeats(errorBeats),
+              color: linkColor,
+            });
+          }
         }
       }
 
@@ -738,6 +779,7 @@
             measureSegments,
             rhythmTest.measureBoundaryTimesSeconds,
             rhythmTest.totalDurationSeconds,
+            rhythmTest.countInDurationSeconds,
           );
           _drawOverlayPoint(
             svg,
@@ -758,6 +800,7 @@
           measureSegments,
           rhythmTest.measureBoundaryTimesSeconds,
           rhythmTest.totalDurationSeconds,
+          rhythmTest.countInDurationSeconds,
         );
         const color = rhythmTest.showExpectedEvents
           ? (matchedTapIds.has(tap.id) ? '#00897b' : '#ef6c00')
@@ -765,8 +808,19 @@
         _drawOverlayPoint(svg, ns, tapX, overlayBottom - 18, color);
       }
 
+      if (rhythmTest.showExpectedEvents) {
+        _drawRhythmErrorLabels(
+          svg,
+          ns,
+          labelCandidates,
+          leadInStartX,
+          lastMeasure.endX,
+          centerY,
+        );
+      }
+
       const label = document.createElementNS(ns, 'text');
-      label.setAttribute('x', firstMeasure.startX + 12);
+      label.setAttribute('x', leadInStartX + 12);
       label.setAttribute('y', overlayTop - 12);
       label.setAttribute('fill', '#6e6254');
       label.setAttribute('font-size', '13');
@@ -845,16 +899,115 @@
       svg.appendChild(point);
     }
 
+    function _drawRhythmErrorLabels(svg, ns, labelCandidates, leftBoundary, rightBoundary, centerY) {
+      if (labelCandidates.length === 0) {
+        return;
+      }
+
+      const labelBands = [centerY - 24, centerY + 28, centerY - 40];
+      const bandRightEdges = new Array(labelBands.length).fill(leftBoundary - 24);
+      const minGap = 8;
+      const sortedLabels = [...labelCandidates].sort((a, b) => a.x - b.x);
+
+      for (const candidate of sortedLabels) {
+        const width = _approximateSvgTextWidth(candidate.text, 12) + 10;
+        const minX = leftBoundary + 6;
+        const maxX = Math.max(minX, rightBoundary - width - 6);
+        const desiredX = Math.max(minX, Math.min(candidate.x - width / 2, maxX));
+
+        let chosenBand = 0;
+        let chosenX = maxX;
+        let foundAvailableBand = false;
+
+        for (let bandIndex = 0; bandIndex < labelBands.length; bandIndex++) {
+          const nextX = Math.max(desiredX, bandRightEdges[bandIndex] + minGap);
+          if (nextX <= maxX) {
+            chosenBand = bandIndex;
+            chosenX = nextX;
+            foundAvailableBand = true;
+            break;
+          }
+        }
+
+        if (!foundAvailableBand) {
+          let fallbackBand = 0;
+          let fallbackX = Infinity;
+          for (let bandIndex = 0; bandIndex < labelBands.length; bandIndex++) {
+            const nextX = Math.max(desiredX, bandRightEdges[bandIndex] + minGap);
+            if (nextX < fallbackX) {
+              fallbackBand = bandIndex;
+              fallbackX = nextX;
+            }
+          }
+          chosenBand = fallbackBand;
+          chosenX = Math.min(fallbackX, maxX);
+        }
+
+        bandRightEdges[chosenBand] = chosenX + width;
+        _drawOverlayLabelChip(
+          svg,
+          ns,
+          chosenX,
+          labelBands[chosenBand],
+          width,
+          candidate.text,
+          candidate.color,
+        );
+      }
+    }
+
+    function _drawOverlayLabelChip(svg, ns, x, centerY, width, textContent, accentColor) {
+      const chipHeight = 18;
+
+      const rect = document.createElementNS(ns, 'rect');
+      rect.setAttribute('x', x);
+      rect.setAttribute('y', centerY - chipHeight / 2);
+      rect.setAttribute('width', width);
+      rect.setAttribute('height', chipHeight);
+      rect.setAttribute('rx', '6');
+      rect.setAttribute('fill', '#fffaf1');
+      rect.setAttribute('stroke', accentColor);
+      rect.setAttribute('stroke-width', '1');
+      svg.appendChild(rect);
+
+      const text = document.createElementNS(ns, 'text');
+      text.setAttribute('x', x + 5);
+      text.setAttribute('y', centerY + 4);
+      text.setAttribute('fill', '#5d5143');
+      text.setAttribute('font-size', '12');
+      text.setAttribute('font-weight', '700');
+      text.textContent = textContent;
+      svg.appendChild(text);
+    }
+
+    function _approximateSvgTextWidth(text, fontSize) {
+      return text.length * fontSize * 0.58;
+    }
+
+    function _formatRhythmErrorBeats(errorBeats) {
+      const rounded = errorBeats.toFixed(2);
+      return errorBeats >= 0 ? `+${rounded}` : rounded;
+    }
+
     function _xForRhythmTime(
       timeSeconds,
       measureSegments,
       measureBoundaryTimesSeconds,
       totalDurationSeconds,
+      countInDurationSeconds,
     ) {
       const firstMeasure = measureSegments[0];
       const lastMeasure = measureSegments[measureSegments.length - 1];
+      const leadInWidth = Math.max(firstMeasure.endX - firstMeasure.startX, 40);
+      const leadInStartX = firstMeasure.startX - leadInWidth;
       if (timeSeconds <= 0) {
-        return firstMeasure.startX;
+        if (countInDurationSeconds <= 0.0001) {
+          return firstMeasure.startX;
+        }
+        const clampedLeadInTime = Math.max(timeSeconds, -countInDurationSeconds);
+        const ratio =
+          (clampedLeadInTime + countInDurationSeconds) / countInDurationSeconds;
+        return leadInStartX + leadInWidth * ratio;
       }
       if (timeSeconds >= totalDurationSeconds) {
         return lastMeasure.endX;

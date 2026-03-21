@@ -45,6 +45,7 @@ class RhythmTestNotifier extends ChangeNotifier {
   int? _countInPulseIndex;
   int? _runningPulseIndex;
   double _elapsedRunSeconds = 0;
+  double _playheadTimeSeconds = 0;
   final double _postRollPulseCount = 1.0;
 
   Score get score => _score;
@@ -72,6 +73,8 @@ class RhythmTestNotifier extends ChangeNotifier {
     return RhythmOverlayRenderData(
       showExpectedEvents: _phase == RhythmTestPhase.finished,
       elapsedRunSeconds: _elapsedRunSeconds,
+      playheadTimeSeconds: _playheadTimeSeconds,
+      countInDurationSeconds: _timeline.countInDurationSeconds,
       totalDurationSeconds: _timeline.totalDurationSeconds,
       pulseDurationSeconds: _timeline.pulseDurationSeconds,
       pulsesPerMeasure: _timeline.pulsesPerMeasure,
@@ -89,6 +92,8 @@ class RhythmTestNotifier extends ChangeNotifier {
   int? get runningPulseIndex => _runningPulseIndex;
 
   double get elapsedRunSeconds => _elapsedRunSeconds;
+
+  double get playheadTimeSeconds => _playheadTimeSeconds;
 
   bool get showsExpectedAnswers => _phase == RhythmTestPhase.finished;
 
@@ -142,6 +147,7 @@ class RhythmTestNotifier extends ChangeNotifier {
     _countInPulseIndex = 0;
     _runningPulseIndex = null;
     _elapsedRunSeconds = 0;
+    _playheadTimeSeconds = -_timeline.countInDurationSeconds;
     _phase = RhythmTestPhase.countIn;
     notifyListeners();
 
@@ -168,12 +174,6 @@ class RhythmTestNotifier extends ChangeNotifier {
         timeSeconds: elapsedMicros / Duration.microsecondsPerSecond,
       ),
     );
-    if (_phase == RhythmTestPhase.running) {
-      _elapsedRunSeconds = _tapEvents.last.timeSeconds.clamp(
-        0,
-        _timeline.totalDurationSeconds + _timeline.matchingWindowSeconds,
-      );
-    }
     notifyListeners();
   }
 
@@ -187,6 +187,7 @@ class RhythmTestNotifier extends ChangeNotifier {
     _phase = RhythmTestPhase.cancelled;
     _countInPulseIndex = null;
     _runningPulseIndex = null;
+    _playheadTimeSeconds = 0;
     notifyListeners();
   }
 
@@ -199,6 +200,7 @@ class RhythmTestNotifier extends ChangeNotifier {
     _countInPulseIndex = null;
     _runningPulseIndex = null;
     _elapsedRunSeconds = 0;
+    _playheadTimeSeconds = 0;
     _clearSessionData();
     notifyListeners();
   }
@@ -214,6 +216,7 @@ class RhythmTestNotifier extends ChangeNotifier {
     _countInPulseIndex = null;
     _runningPulseIndex = null;
     _elapsedRunSeconds = 0;
+    _playheadTimeSeconds = 0;
     _clearSessionData();
     notifyListeners();
   }
@@ -255,6 +258,7 @@ class RhythmTestNotifier extends ChangeNotifier {
     _countInPulseIndex = null;
     _runningPulseIndex = 0;
     _elapsedRunSeconds = 0;
+    _playheadTimeSeconds = 0;
     notifyListeners();
 
     final runPulseCount =
@@ -271,7 +275,7 @@ class RhythmTestNotifier extends ChangeNotifier {
       }
 
       _runningPulseIndex = index;
-      _elapsedRunSeconds = _currentRunSeconds(stopwatch);
+      _syncPlaybackProgress(stopwatch);
       _audioService.playMetronomeClick(
         accented: index % _timeline.pulsesPerMeasure == 0,
       );
@@ -291,6 +295,7 @@ class RhythmTestNotifier extends ChangeNotifier {
     }
 
     _elapsedRunSeconds = _timeline.totalDurationSeconds;
+    _playheadTimeSeconds = _timeline.totalDurationSeconds;
     notifyListeners();
 
     final graceMicros = (pulseMicros * _postRollPulseCount).round();
@@ -312,6 +317,7 @@ class RhythmTestNotifier extends ChangeNotifier {
     required int targetMicros,
   }) async {
     while (sessionId == _sessionId) {
+      _syncPlaybackProgress(stopwatch);
       final remainingMicros = targetMicros - stopwatch.elapsedMicroseconds;
       if (remainingMicros <= 0) {
         return true;
@@ -333,6 +339,31 @@ class RhythmTestNotifier extends ChangeNotifier {
         Duration.microsecondsPerSecond;
   }
 
+  void _syncPlaybackProgress(Stopwatch stopwatch) {
+    if (_phase != RhythmTestPhase.countIn &&
+        _phase != RhythmTestPhase.running) {
+      return;
+    }
+
+    final nextPlayhead = _currentRunSeconds(stopwatch)
+        .clamp(
+          -_timeline.countInDurationSeconds,
+          _timeline.totalDurationSeconds,
+        )
+        .toDouble();
+    final nextElapsed = nextPlayhead
+        .clamp(0, _timeline.totalDurationSeconds)
+        .toDouble();
+    if ((nextPlayhead - _playheadTimeSeconds).abs() < 0.001 &&
+        (nextElapsed - _elapsedRunSeconds).abs() < 0.001) {
+      return;
+    }
+
+    _playheadTimeSeconds = nextPlayhead;
+    _elapsedRunSeconds = nextElapsed;
+    notifyListeners();
+  }
+
   void _completeRun() {
     _phase = RhythmTestPhase.finished;
     _runningPulseIndex = null;
@@ -351,6 +382,7 @@ class RhythmTestNotifier extends ChangeNotifier {
     _nextTapId = 0;
     _performanceStartMicros = null;
     _sessionStopwatch = null;
+    _playheadTimeSeconds = 0;
   }
 
   @override

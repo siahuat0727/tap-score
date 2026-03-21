@@ -93,6 +93,8 @@ class RhythmTestResult {
 class RhythmOverlayRenderData {
   final bool showExpectedEvents;
   final double elapsedRunSeconds;
+  final double playheadTimeSeconds;
+  final double countInDurationSeconds;
   final double totalDurationSeconds;
   final double pulseDurationSeconds;
   final int pulsesPerMeasure;
@@ -106,6 +108,8 @@ class RhythmOverlayRenderData {
   const RhythmOverlayRenderData({
     required this.showExpectedEvents,
     required this.elapsedRunSeconds,
+    required this.playheadTimeSeconds,
+    required this.countInDurationSeconds,
     required this.totalDurationSeconds,
     required this.pulseDurationSeconds,
     required this.pulsesPerMeasure,
@@ -121,6 +125,8 @@ class RhythmOverlayRenderData {
     return {
       'showExpectedEvents': showExpectedEvents,
       'elapsedRunSeconds': elapsedRunSeconds,
+      'playheadTimeSeconds': playheadTimeSeconds,
+      'countInDurationSeconds': countInDurationSeconds,
       'totalDurationSeconds': totalDurationSeconds,
       'pulseDurationSeconds': pulseDurationSeconds,
       'pulsesPerMeasure': pulsesPerMeasure,
