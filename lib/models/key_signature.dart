@@ -79,6 +79,24 @@ enum KeySignature {
     return midi;
   }
 
+  /// Undo this key signature's white-key remapping back to the natural input.
+  int removeFromMidi(int midi) {
+    if (fifths == 0) return midi;
+    final pitchClass = midi % 12;
+    if (fifths > 0) {
+      if (alteredPitches.contains(pitchClass)) return midi - 1;
+    } else {
+      if (alteredPitches.contains(pitchClass)) return midi + 1;
+    }
+    return midi;
+  }
+
+  /// Re-map [midi] from this key signature's white-key intent into [target].
+  int remapTo(KeySignature target, int midi) {
+    final naturalMidi = removeFromMidi(midi);
+    return target.applyToMidi(naturalMidi);
+  }
+
   // ---------------------------------------------------------------------------
   // Display / VexFlow
   // ---------------------------------------------------------------------------

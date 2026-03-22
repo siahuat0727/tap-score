@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:tap_score/main.dart';
 import 'package:tap_score/models/enums.dart';
+import 'package:tap_score/models/key_signature.dart';
 import 'package:tap_score/models/note.dart';
 import 'package:tap_score/screens/score_editor_screen.dart';
 import 'package:tap_score/state/score_notifier.dart';
@@ -296,7 +297,7 @@ void main() {
     );
   });
 
-  testWidgets('piano keyboard shows mapped key hints on C4-B4', (
+  testWidgets('piano keyboard shows expanded hints and shift zones', (
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(
@@ -306,9 +307,149 @@ void main() {
       ),
     );
 
-    for (final keyLabel in ['d', 'f', 'g', 'h', 'j', 'k', 'l']) {
+    for (final keyLabel in ['a', 'd', 'r', ';', '\'']) {
       expect(find.text(keyLabel), findsOneWidget);
     }
+    expect(find.text('q'), findsWidgets);
+    expect(find.text(']'), findsWidgets);
+    expect(find.text('Mode: Key Signature'), findsOneWidget);
+    expect(find.text('e'), findsOneWidget);
+    expect(find.text('E'), findsNothing);
+    expect(find.text('Key Sig'), findsNothing);
+    expect(find.text('Chromatic'), findsNothing);
+    expect(find.text('C#4'), findsNothing);
+    expect(find.text('A#3'), findsNothing);
+  });
+
+  testWidgets(
+    'keyboard mode toggle is compact and key-signature labels show actual pitch',
+    (WidgetTester tester) async {
+      final notifier = ScoreNotifier();
+      notifier.setKeySignature(KeySignature.gMajor);
+
+      await tester.pumpWidget(
+        ChangeNotifierProvider.value(
+          value: notifier,
+          child: const MaterialApp(home: Scaffold(body: PianoKeyboard())),
+        ),
+      );
+
+      final toggleRect = tester.getRect(
+        find.byKey(const ValueKey('keyboard-mode-toggle')),
+      );
+      expect(toggleRect.height, lessThanOrEqualTo(34));
+      expect(toggleRect.width, lessThanOrEqualTo(68));
+
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('piano-white-65')),
+          matching: find.text('F#4'),
+        ),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets('piano keyboard toggle and arrow controls update shared state', (
+    WidgetTester tester,
+  ) async {
+    final notifier = ScoreNotifier();
+    notifier.score.addNote(
+      const Note(midi: 60, duration: NoteDuration.quarter),
+    );
+    notifier.selectKeySig();
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider.value(
+        value: notifier,
+        child: const MaterialApp(home: Scaffold(body: PianoKeyboard())),
+      ),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('keyboard-mode-toggle')));
+    await tester.pump();
+    expect(notifier.keyboardInputMode.name, 'chromatic');
+    expect(find.text('Mode: Chromatic'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('piano-white-65')),
+        matching: find.text('F4'),
+      ),
+      findsOneWidget,
+    );
+
+    _buttonInkWell(tester, const ValueKey('keyboard-nav-right')).onTap?.call();
+    await tester.pump();
+    expect(notifier.selectionKind, SelectionKind.timeSig);
+
+    _buttonInkWell(tester, const ValueKey('keyboard-nav-down')).onTap?.call();
+    await tester.pump();
+    expect(notifier.score.beatsPerMeasure, 3);
+  });
+
+  testWidgets('piano taps use real keys instead of q shift hints', (
+    WidgetTester tester,
+  ) async {
+    final notifier = ScoreNotifier();
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider.value(
+        value: notifier,
+        child: const MaterialApp(home: Scaffold(body: PianoKeyboard())),
+      ),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('piano-white-45')));
+    await tester.pump();
+
+    expect(notifier.keyboardOctaveShift, 0);
+    expect(notifier.score.notes, hasLength(1));
+    expect(notifier.score.notes.single.midi, 45);
+
+    await tester.pump(const Duration(milliseconds: 600));
+  });
+
+  testWidgets('key-signature mode disables direct taps on black keys', (
+    WidgetTester tester,
+  ) async {
+    final notifier = ScoreNotifier();
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider.value(
+        value: notifier,
+        child: const MaterialApp(home: Scaffold(body: PianoKeyboard())),
+      ),
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey('piano-black-61')),
+      warnIfMissed: false,
+    );
+    await tester.pump();
+
+    expect(notifier.score.notes, isEmpty);
+  });
+
+  testWidgets('chromatic mode allows direct taps on black keys', (
+    WidgetTester tester,
+  ) async {
+    final notifier = ScoreNotifier();
+    notifier.toggleKeyboardInputMode();
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider.value(
+        value: notifier,
+        child: const MaterialApp(home: Scaffold(body: PianoKeyboard())),
+      ),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('piano-black-61')));
+    await tester.pump();
+
+    expect(notifier.score.notes, hasLength(1));
+    expect(notifier.score.notes.single.midi, 61);
+
+    await tester.pump(const Duration(milliseconds: 600));
   });
 
   testWidgets('keyboard shortcuts insert rests and notes', (
@@ -372,4 +513,46 @@ void main() {
       await tester.pump(const Duration(milliseconds: 600));
     },
   );
+
+  testWidgets('keyboard shortcuts support octave shift and chromatic toggle', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(const TapScoreApp());
+    await tester.pump();
+
+    final context = tester.element(find.byType(ScoreEditorScreen));
+    final notifier = Provider.of<ScoreNotifier>(context, listen: false);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyQ);
+    await tester.pump();
+    expect(notifier.keyboardOctaveShift, -1);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyD);
+    await tester.pump();
+    expect(notifier.score.notes.single.midi, 48);
+
+    notifier.score.notes.clear();
+    notifier.moveCursor(0);
+    await tester.sendKeyEvent(LogicalKeyboardKey.bracketRight);
+    await tester.pump();
+    expect(notifier.keyboardOctaveShift, 0);
+
+    notifier.setKeySignature(KeySignature.gMajor);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyH);
+    await tester.pump();
+    expect(notifier.score.notes.single.midi, 66);
+
+    notifier.score.notes.clear();
+    notifier.moveCursor(0);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyE);
+    await tester.pump();
+    expect(notifier.keyboardInputMode.name, 'chromatic');
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyH);
+    await tester.pump();
+    expect(notifier.score.notes.single.midi, 65);
+
+    await tester.pump(const Duration(milliseconds: 600));
+  });
 }

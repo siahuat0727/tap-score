@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import '../input/editor_shortcuts.dart';
 import '../models/enums.dart';
 import '../models/key_signature.dart';
 import '../models/note.dart';
@@ -55,6 +56,16 @@ class ScoreNotifier extends ChangeNotifier {
   /// Whether the next inserted input should become a complete triplet.
   bool _tripletMode = false;
   bool get tripletMode => _tripletMode;
+
+  KeyboardInputMode _keyboardInputMode = KeyboardInputMode.keySignatureAware;
+  KeyboardInputMode get keyboardInputMode => _keyboardInputMode;
+
+  int _keyboardOctaveShift = 0;
+  int get keyboardOctaveShift => _keyboardOctaveShift;
+  bool get canShiftKeyboardMappingDown =>
+      _keyboardOctaveShift > minKeyboardOctaveShift;
+  bool get canShiftKeyboardMappingUp =>
+      _keyboardOctaveShift < maxKeyboardOctaveShift;
 
   /// Auto-incrementing triplet group ID.
   int _nextTripletGroupId = 1;
@@ -319,13 +330,85 @@ class ScoreNotifier extends ChangeNotifier {
     _insertNotesAtCursor(_expandForPendingTriplet(prototype));
   }
 
+  int resolveInputMidi(int rawMidi) {
+    return switch (_keyboardInputMode) {
+      KeyboardInputMode.keySignatureAware => score.keySignature.applyToMidi(
+        rawMidi,
+      ),
+      KeyboardInputMode.chromatic => rawMidi,
+    };
+  }
+
+  bool canTapPianoKey(int midi) {
+    if (_keyboardInputMode == KeyboardInputMode.chromatic) {
+      return true;
+    }
+    return !isBlackMidi(midi);
+  }
+
+  void handlePianoTap(int midi) {
+    if (!canTapPianoKey(midi)) {
+      return;
+    }
+
+    final resolvedMidi = switch (_keyboardInputMode) {
+      KeyboardInputMode.keySignatureAware => score.keySignature.applyToMidi(
+        midi,
+      ),
+      KeyboardInputMode.chromatic => midi,
+    };
+    insertPitchedNote(resolvedMidi);
+  }
+
+  void toggleKeyboardInputMode() {
+    _keyboardInputMode = switch (_keyboardInputMode) {
+      KeyboardInputMode.keySignatureAware => KeyboardInputMode.chromatic,
+      KeyboardInputMode.chromatic => KeyboardInputMode.keySignatureAware,
+    };
+    notifyListeners();
+  }
+
+  void shiftKeyboardMapping(int direction) {
+    final nextShift = (_keyboardOctaveShift + direction).clamp(
+      minKeyboardOctaveShift,
+      maxKeyboardOctaveShift,
+    );
+    if (nextShift == _keyboardOctaveShift) {
+      return;
+    }
+    _keyboardOctaveShift = nextShift;
+    notifyListeners();
+  }
+
+  void handleEditorShortcut(EditorShortcutIntent shortcut) {
+    switch (shortcut.kind) {
+      case EditorShortcutKind.insertPitch:
+        insertPitchedNote(resolveInputMidi(shortcut.midi!));
+      case EditorShortcutKind.restAction:
+        handleRestAction();
+      case EditorShortcutKind.setDuration:
+        setDuration(shortcut.duration!);
+      case EditorShortcutKind.toggleDotted:
+        toggleDottedMode();
+      case EditorShortcutKind.toggleSlur:
+        toggleSlurMode();
+      case EditorShortcutKind.toggleTriplet:
+        toggleTripletMode();
+      case EditorShortcutKind.shiftDown:
+        shiftKeyboardMapping(-1);
+      case EditorShortcutKind.shiftUp:
+        shiftKeyboardMapping(1);
+      case EditorShortcutKind.toggleInputMode:
+        toggleKeyboardInputMode();
+    }
+  }
+
   /// Insert a pitched note at the cursor position.
-  void insertPitchedNote(int rawMidi) {
+  void insertPitchedNote(int midi) {
     if (_restMode) {
       _restMode = false;
     }
 
-    final midi = score.keySignature.applyToMidi(rawMidi);
     final prototype = Note(
       midi: midi,
       duration: _currentDuration,
@@ -807,6 +890,21 @@ class ScoreNotifier extends ChangeNotifier {
 
   /// Set key signature explicitly.
   void setKeySignature(KeySignature key) {
+    final previousKey = score.keySignature;
+    if (previousKey == key) {
+      return;
+    }
+
+    for (var index = 0; index < score.notes.length; index++) {
+      final note = score.notes[index];
+      if (note.isRest) {
+        continue;
+      }
+      score.replaceAt(
+        index,
+        note.copyWith(midi: previousKey.remapTo(key, note.midi)),
+      );
+    }
     score.keySignature = key;
     notifyListeners();
   }

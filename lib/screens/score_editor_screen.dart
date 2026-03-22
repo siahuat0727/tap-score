@@ -125,25 +125,15 @@ class _ScoreEditorScreenState extends State<ScoreEditorScreen> {
       return KeyEventResult.handled;
     }
 
-    final shortcut = resolveEditorShortcut(key);
+    final shortcut = resolveEditorShortcut(
+      key,
+      inputMode: notifier.keyboardInputMode,
+      octaveShift: notifier.keyboardOctaveShift,
+    );
     if (shortcut == null) {
       return KeyEventResult.ignored;
     }
-
-    switch (shortcut.kind) {
-      case EditorShortcutKind.insertPitch:
-        notifier.insertPitchedNote(shortcut.midi!);
-      case EditorShortcutKind.restAction:
-        notifier.handleRestAction();
-      case EditorShortcutKind.setDuration:
-        notifier.setDuration(shortcut.duration!);
-      case EditorShortcutKind.toggleDotted:
-        notifier.toggleDottedMode();
-      case EditorShortcutKind.toggleSlur:
-        notifier.toggleSlurMode();
-      case EditorShortcutKind.toggleTriplet:
-        notifier.toggleTripletMode();
-    }
+    notifier.handleEditorShortcut(shortcut);
 
     return KeyEventResult.handled;
   }

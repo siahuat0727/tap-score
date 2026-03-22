@@ -6,18 +6,19 @@ import '../state/score_notifier.dart';
 
 /// A scrollable piano keyboard widget for note input.
 class PianoKeyboard extends StatelessWidget {
-  /// Start MIDI note (default C3 = 48).
   final int startMidi;
-
-  /// End MIDI note (default C6 = 84).
   final int endMidi;
 
-  const PianoKeyboard({super.key, this.startMidi = 48, this.endMidi = 84});
+  const PianoKeyboard({
+    super.key,
+    this.startMidi = keyboardVisibleStartMidi,
+    this.endMidi = keyboardVisibleEndMidi,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 160,
+      height: 220,
       decoration: BoxDecoration(
         color: const Color(0xFF1A1A2E),
         borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
@@ -29,9 +30,23 @@ class PianoKeyboard extends StatelessWidget {
           ),
         ],
       ),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: _KeyboardContent(startMidi: startMidi, endMidi: endMidi),
+      child: Row(
+        children: [
+          Expanded(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+              child: _KeyboardContent(startMidi: startMidi, endMidi: endMidi),
+            ),
+          ),
+          const SizedBox(
+            width: 132,
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(4, 12, 12, 12),
+              child: _KeyboardControlPanel(),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -45,63 +60,85 @@ class _KeyboardContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final notifier = context.read<ScoreNotifier>();
+    final notifier = context.watch<ScoreNotifier>();
     final whiteKeys = <Widget>[];
-    final blackKeyOverlays = <Widget>[];
+    final blackKeys = <Widget>[];
 
     const whiteKeyWidth = 52.0;
     const blackKeyWidth = 34.0;
-    const whiteKeyHeight = 150.0;
-    const blackKeyHeight = 95.0;
+    const whiteKeyHeight = 180.0;
+    const blackKeyHeight = 102.0;
+    const gap = 2.0;
 
     double xOffset = 0;
-
     for (int midi = startMidi; midi <= endMidi; midi++) {
-      final semitone = midi % 12;
-      final isBlack = [1, 3, 6, 8, 10].contains(semitone);
-
-      if (!isBlack) {
-        whiteKeys.add(
-          _WhiteKey(
-            x: xOffset,
-            width: whiteKeyWidth,
-            height: whiteKeyHeight,
-            onTap: () => notifier.insertPitchedNote(midi),
-            label: _midiToLabel(midi),
-            shortcutLabel: pianoShortcutLabels[midi],
-          ),
-        );
-        xOffset += whiteKeyWidth + 2;
+      if (isBlackMidi(midi)) {
+        continue;
       }
+
+      final hint = describePianoKeyHint(
+        midi,
+        inputMode: notifier.keyboardInputMode,
+        octaveShift: notifier.keyboardOctaveShift,
+      );
+      whiteKeys.add(
+        _WhiteKey(
+          key: ValueKey('piano-white-$midi'),
+          x: xOffset,
+          width: whiteKeyWidth,
+          height: whiteKeyHeight,
+          label: _whiteKeyLabel(notifier, midi),
+          hint: hint,
+          onTap: _tapHandler(notifier, midi),
+        ),
+      );
+      xOffset += whiteKeyWidth + gap;
     }
 
     final totalWidth = xOffset;
 
     xOffset = 0;
     for (int midi = startMidi; midi <= endMidi; midi++) {
-      final semitone = midi % 12;
-      final isBlack = [1, 3, 6, 8, 10].contains(semitone);
-
-      if (!isBlack) {
-        if (midi + 1 <= endMidi && [1, 3, 6, 8, 10].contains((midi + 1) % 12)) {
-          blackKeyOverlays.add(
-            _BlackKey(
-              x: xOffset + whiteKeyWidth - blackKeyWidth / 2 + 1,
-              width: blackKeyWidth,
-              height: blackKeyHeight,
-              onTap: () => notifier.insertPitchedNote(midi + 1),
-            ),
-          );
-        }
-        xOffset += whiteKeyWidth + 2;
+      if (isBlackMidi(midi)) {
+        continue;
       }
+
+      final nextMidi = midi + 1;
+      if (nextMidi > endMidi || !isBlackMidi(nextMidi)) {
+        xOffset += whiteKeyWidth + gap;
+        continue;
+      }
+
+      final hint = describePianoKeyHint(
+        nextMidi,
+        inputMode: notifier.keyboardInputMode,
+        octaveShift: notifier.keyboardOctaveShift,
+      );
+      blackKeys.add(
+        _BlackKey(
+          key: ValueKey('piano-black-$nextMidi'),
+          x: xOffset + whiteKeyWidth - blackKeyWidth / 2 + 1,
+          width: blackKeyWidth,
+          height: blackKeyHeight,
+          hint: hint,
+          onTap: _tapHandler(notifier, nextMidi),
+        ),
+      );
+      xOffset += whiteKeyWidth + gap;
     }
 
     return SizedBox(
       width: totalWidth,
       height: whiteKeyHeight,
-      child: Stack(children: [...whiteKeys, ...blackKeyOverlays]),
+      child: Stack(children: [...whiteKeys, ...blackKeys]),
     );
+  }
+
+  VoidCallback? _tapHandler(ScoreNotifier notifier, int midi) {
+    if (!notifier.canTapPianoKey(midi)) {
+      return null;
+    }
+    return () => notifier.handlePianoTap(midi);
   }
 
   String _midiToLabel(int midi) {
@@ -122,23 +159,32 @@ class _KeyboardContent extends StatelessWidget {
     final octave = (midi ~/ 12) - 1;
     return '${names[midi % 12]}$octave';
   }
+
+  String _whiteKeyLabel(ScoreNotifier notifier, int midi) {
+    final labelMidi =
+        notifier.keyboardInputMode == KeyboardInputMode.keySignatureAware
+        ? notifier.resolveInputMidi(midi)
+        : midi;
+    return _midiToLabel(labelMidi);
+  }
 }
 
 class _WhiteKey extends StatefulWidget {
   final double x;
   final double width;
   final double height;
-  final VoidCallback onTap;
   final String label;
-  final String? shortcutLabel;
+  final PianoKeyHint hint;
+  final VoidCallback? onTap;
 
   const _WhiteKey({
+    super.key,
     required this.x,
     required this.width,
     required this.height,
-    required this.onTap,
     required this.label,
-    required this.shortcutLabel,
+    required this.hint,
+    required this.onTap,
   });
 
   @override
@@ -150,16 +196,21 @@ class _WhiteKeyState extends State<_WhiteKey> {
 
   @override
   Widget build(BuildContext context) {
+    final isEnabled = widget.onTap != null;
     return Positioned(
       left: widget.x,
       top: 0,
       child: GestureDetector(
-        onTapDown: (_) => setState(() => _isPressed = true),
-        onTapUp: (_) {
-          setState(() => _isPressed = false);
-          widget.onTap();
-        },
-        onTapCancel: () => setState(() => _isPressed = false),
+        onTapDown: isEnabled ? (_) => setState(() => _isPressed = true) : null,
+        onTapUp: isEnabled
+            ? (_) {
+                setState(() => _isPressed = false);
+                widget.onTap?.call();
+              }
+            : null,
+        onTapCancel: isEnabled
+            ? () => setState(() => _isPressed = false)
+            : null,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 80),
           width: widget.width,
@@ -168,15 +219,22 @@ class _WhiteKeyState extends State<_WhiteKey> {
             gradient: LinearGradient(
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
-              colors: _isPressed
+              colors: !isEnabled
+                  ? [const Color(0xFFE6E2D8), const Color(0xFFD5D0C4)]
+                  : _isPressed
                   ? [const Color(0xFFE8E4D8), const Color(0xFFD0CCC0)]
                   : [Colors.white, const Color(0xFFF0EDE4)],
             ),
             borderRadius: const BorderRadius.vertical(
               bottom: Radius.circular(6),
             ),
-            border: Border.all(color: const Color(0xFFBBB8B0), width: 1),
-            boxShadow: _isPressed
+            border: Border.all(
+              color: isEnabled
+                  ? const Color(0xFFBBB8B0)
+                  : const Color(0xFFC7C3B8),
+              width: 1,
+            ),
+            boxShadow: !isEnabled || _isPressed
                 ? []
                 : [
                     BoxShadow(
@@ -188,29 +246,16 @@ class _WhiteKeyState extends State<_WhiteKey> {
           ),
           child: Stack(
             children: [
-              if (widget.shortcutLabel != null)
+              if (widget.hint.label.isNotEmpty)
                 Positioned(
-                  top: 8,
+                  top: 104,
                   left: 0,
                   right: 0,
                   child: Center(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF2F4156),
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      child: Text(
-                        widget.shortcutLabel!,
-                        style: const TextStyle(
-                          fontSize: 11,
-                          color: Colors.white,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
+                    child: _ShortcutBadge(
+                      label: widget.hint.label,
+                      enabled: widget.hint.isShortcutEnabled,
+                      isShiftHint: widget.hint.isShiftHint,
                     ),
                   ),
                 ),
@@ -222,8 +267,10 @@ class _WhiteKeyState extends State<_WhiteKey> {
                     widget.label,
                     style: TextStyle(
                       fontSize: 10,
-                      color: Colors.grey[500],
-                      fontWeight: FontWeight.w500,
+                      color: isEnabled
+                          ? Colors.grey[600]
+                          : const Color(0xFF9D9B95),
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ),
@@ -240,12 +287,15 @@ class _BlackKey extends StatefulWidget {
   final double x;
   final double width;
   final double height;
-  final VoidCallback onTap;
+  final PianoKeyHint hint;
+  final VoidCallback? onTap;
 
   const _BlackKey({
+    super.key,
     required this.x,
     required this.width,
     required this.height,
+    required this.hint,
     required this.onTap,
   });
 
@@ -258,16 +308,21 @@ class _BlackKeyState extends State<_BlackKey> {
 
   @override
   Widget build(BuildContext context) {
+    final isEnabled = widget.onTap != null;
     return Positioned(
       left: widget.x,
       top: 0,
       child: GestureDetector(
-        onTapDown: (_) => setState(() => _isPressed = true),
-        onTapUp: (_) {
-          setState(() => _isPressed = false);
-          widget.onTap();
-        },
-        onTapCancel: () => setState(() => _isPressed = false),
+        onTapDown: isEnabled ? (_) => setState(() => _isPressed = true) : null,
+        onTapUp: isEnabled
+            ? (_) {
+                setState(() => _isPressed = false);
+                widget.onTap?.call();
+              }
+            : null,
+        onTapCancel: isEnabled
+            ? () => setState(() => _isPressed = false)
+            : null,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 80),
           width: widget.width,
@@ -276,14 +331,16 @@ class _BlackKeyState extends State<_BlackKey> {
             gradient: LinearGradient(
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
-              colors: _isPressed
+              colors: !isEnabled
+                  ? [const Color(0xFF6D6D6D), const Color(0xFF515151)]
+                  : _isPressed
                   ? [const Color(0xFF444444), const Color(0xFF333333)]
                   : [const Color(0xFF2A2A2A), const Color(0xFF111111)],
             ),
             borderRadius: const BorderRadius.vertical(
               bottom: Radius.circular(4),
             ),
-            boxShadow: _isPressed
+            boxShadow: !isEnabled || _isPressed
                 ? []
                 : [
                     BoxShadow(
@@ -292,6 +349,309 @@ class _BlackKeyState extends State<_BlackKey> {
                       offset: const Offset(0, 3),
                     ),
                   ],
+          ),
+          child: Stack(
+            children: [
+              if (widget.hint.label.isNotEmpty)
+                Positioned(
+                  top: 66,
+                  left: 0,
+                  right: 0,
+                  child: Center(
+                    child: _ShortcutBadge(
+                      label: widget.hint.label,
+                      enabled: widget.hint.isShortcutEnabled,
+                      isShiftHint: widget.hint.isShiftHint,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ShortcutBadge extends StatelessWidget {
+  final String label;
+  final bool enabled;
+  final bool isShiftHint;
+
+  const _ShortcutBadge({
+    required this.label,
+    required this.enabled,
+    required this.isShiftHint,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final backgroundColor = !enabled
+        ? const Color(0xFF9A9388)
+        : isShiftHint
+        ? const Color(0xFF4D6B8A)
+        : const Color(0xFF2F4156);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          fontSize: 11,
+          color: Colors.white,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+}
+
+class _KeyboardControlPanel extends StatelessWidget {
+  const _KeyboardControlPanel();
+
+  @override
+  Widget build(BuildContext context) {
+    return Consumer<ScoreNotifier>(
+      builder: (context, notifier, _) {
+        return DecoratedBox(
+          decoration: BoxDecoration(
+            color: const Color(0xFF22223B),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFF3C3C59)),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _KeyboardModeToggle(notifier: notifier),
+                const SizedBox(height: 12),
+                const Text(
+                  'Navigate',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Color(0xFFD9D9E8),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Expanded(
+                  child: Center(
+                    child: SizedBox(
+                      width: 96,
+                      height: 96,
+                      child: Stack(
+                        children: [
+                          Positioned(
+                            left: 28,
+                            top: 0,
+                            child: _ArrowButton(
+                              key: const ValueKey('keyboard-nav-up'),
+                              icon: Icons.keyboard_arrow_up_rounded,
+                              tooltip: 'Move pitch up',
+                              onPressed: () => notifier.adjustSelection(1),
+                            ),
+                          ),
+                          Positioned(
+                            left: 0,
+                            top: 28,
+                            child: _ArrowButton(
+                              key: const ValueKey('keyboard-nav-left'),
+                              icon: Icons.keyboard_arrow_left_rounded,
+                              tooltip: 'Move selection left',
+                              onPressed: notifier.moveSelectionLeft,
+                            ),
+                          ),
+                          Positioned(
+                            right: 0,
+                            top: 28,
+                            child: _ArrowButton(
+                              key: const ValueKey('keyboard-nav-right'),
+                              icon: Icons.keyboard_arrow_right_rounded,
+                              tooltip: 'Move selection right',
+                              onPressed: notifier.moveSelectionRight,
+                            ),
+                          ),
+                          Positioned(
+                            left: 28,
+                            bottom: 0,
+                            child: _ArrowButton(
+                              key: const ValueKey('keyboard-nav-down'),
+                              icon: Icons.keyboard_arrow_down_rounded,
+                              tooltip: 'Move pitch down',
+                              onPressed: () => notifier.adjustSelection(-1),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _KeyboardModeToggle extends StatelessWidget {
+  final ScoreNotifier notifier;
+
+  const _KeyboardModeToggle({required this.notifier});
+
+  @override
+  Widget build(BuildContext context) {
+    final isKeySig =
+        notifier.keyboardInputMode == KeyboardInputMode.keySignatureAware;
+    final modeLabel = isKeySig ? 'Mode: Key Signature' : 'Mode: Chromatic';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          modeLabel,
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            color: Color(0xFFD9D9E8),
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Material(
+          color: Colors.transparent,
+          child: Center(
+            child: InkWell(
+              onTap: notifier.toggleKeyboardInputMode,
+              borderRadius: BorderRadius.circular(999),
+              child: Container(
+                key: const ValueKey('keyboard-mode-toggle'),
+                width: 68,
+                height: 34,
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF161629),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: const Color(0xFF404060)),
+                ),
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    AnimatedAlign(
+                      duration: const Duration(milliseconds: 180),
+                      curve: Curves.easeOutCubic,
+                      alignment: isKeySig
+                          ? Alignment.centerLeft
+                          : Alignment.centerRight,
+                      child: FractionallySizedBox(
+                        widthFactor: 0.42,
+                        heightFactor: 1,
+                        child: Container(
+                          margin: const EdgeInsets.all(1),
+                          decoration: BoxDecoration(
+                            color: isKeySig
+                                ? const Color(0xFF486284)
+                                : const Color(0xFF9A4F2E),
+                            borderRadius: BorderRadius.circular(999),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withAlpha(38),
+                                blurRadius: 6,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    Positioned.fill(
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Center(
+                              child: Container(
+                                width: 11,
+                                height: 11,
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withAlpha(
+                                    isKeySig ? 230 : 130,
+                                  ),
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                              ),
+                            ),
+                          ),
+                          Expanded(
+                            child: Center(
+                              child: Container(
+                                width: 6,
+                                height: 6,
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withAlpha(
+                                    isKeySig ? 110 : 190,
+                                  ),
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Positioned(
+                      right: -8,
+                      top: -8,
+                      child: IgnorePointer(
+                        child: _ShortcutBadge(
+                          label: 'e',
+                          enabled: true,
+                          isShiftHint: false,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ArrowButton extends StatelessWidget {
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onPressed;
+
+  const _ArrowButton({
+    super.key,
+    required this.icon,
+    required this.tooltip,
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: const Color(0xFF30304B),
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(14),
+        child: Tooltip(
+          message: tooltip,
+          child: SizedBox(
+            width: 40,
+            height: 40,
+            child: Icon(icon, color: Colors.white),
           ),
         ),
       ),

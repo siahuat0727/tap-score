@@ -1,5 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tap_score/input/editor_shortcuts.dart';
 import 'package:tap_score/models/enums.dart';
+import 'package:tap_score/models/key_signature.dart';
 import 'package:tap_score/models/note.dart';
 import 'package:tap_score/state/score_notifier.dart';
 
@@ -128,6 +130,131 @@ void main() {
       1,
     );
     expect(notifier.score.notes.first.tripletGroupId, isNotNull);
+  });
+
+  test('key-signature-aware input applies the current key signature', () {
+    final notifier = ScoreNotifier();
+
+    notifier.setKeySignature(KeySignature.gMajor);
+
+    expect(notifier.resolveInputMidi(65), 66);
+
+    notifier.insertPitchedNote(notifier.resolveInputMidi(65));
+    expect(notifier.score.notes.single.midi, 66);
+  });
+
+  test('chromatic input bypasses the current key signature', () {
+    final notifier = ScoreNotifier();
+
+    notifier.setKeySignature(KeySignature.gMajor);
+    notifier.toggleKeyboardInputMode();
+
+    expect(notifier.keyboardInputMode, KeyboardInputMode.chromatic);
+    expect(notifier.resolveInputMidi(65), 65);
+
+    notifier.insertPitchedNote(notifier.resolveInputMidi(65));
+    expect(notifier.score.notes.single.midi, 65);
+  });
+
+  test('keyboard mapping shift clamps to the supported visible range', () {
+    final notifier = ScoreNotifier();
+
+    notifier.shiftKeyboardMapping(-1);
+    expect(notifier.keyboardOctaveShift, -1);
+    expect(notifier.canShiftKeyboardMappingDown, isFalse);
+
+    notifier.shiftKeyboardMapping(-1);
+    expect(notifier.keyboardOctaveShift, -1);
+
+    notifier.shiftKeyboardMapping(2);
+    expect(notifier.keyboardOctaveShift, 1);
+    expect(notifier.canShiftKeyboardMappingUp, isFalse);
+  });
+
+  test('editor shortcuts route through shared keyboard input state', () {
+    final notifier = ScoreNotifier();
+
+    notifier.handleEditorShortcut(const EditorShortcutIntent.shiftDown());
+    notifier.handleEditorShortcut(const EditorShortcutIntent.toggleInputMode());
+    notifier.handleEditorShortcut(const EditorShortcutIntent.insertPitch(60));
+
+    expect(notifier.keyboardOctaveShift, -1);
+    expect(notifier.keyboardInputMode, KeyboardInputMode.chromatic);
+    expect(notifier.score.notes.single.midi, 60);
+  });
+
+  test(
+    'piano taps ignore keyboard octave shift and insert real white keys',
+    () {
+      final notifier = ScoreNotifier();
+
+      notifier.shiftKeyboardMapping(-1);
+      notifier.handlePianoTap(45);
+
+      expect(notifier.keyboardOctaveShift, -1);
+      expect(notifier.score.notes.single.midi, 45);
+    },
+  );
+
+  test('key-signature-aware piano taps reject black keys', () {
+    final notifier = ScoreNotifier();
+
+    notifier.handlePianoTap(61);
+
+    expect(notifier.score.notes, isEmpty);
+  });
+
+  test('key-signature-aware piano taps apply key signature to white keys', () {
+    final notifier = ScoreNotifier();
+
+    notifier.setKeySignature(KeySignature.gMajor);
+    notifier.handlePianoTap(65);
+
+    expect(notifier.score.notes.single.midi, 66);
+  });
+
+  test(
+    'chromatic piano taps allow black keys without key-signature changes',
+    () {
+      final notifier = ScoreNotifier();
+
+      notifier.setKeySignature(KeySignature.gMajor);
+      notifier.toggleKeyboardInputMode();
+      notifier.handlePianoTap(61);
+
+      expect(notifier.score.notes.single.midi, 61);
+    },
+  );
+
+  test('setKeySignature remaps all existing pitched notes', () {
+    final notifier = ScoreNotifier();
+
+    notifier.score.notes.addAll([
+      const Note(midi: 65, duration: NoteDuration.quarter),
+      const Note(midi: 60, duration: NoteDuration.quarter),
+      const Note.rest(duration: NoteDuration.quarter),
+    ]);
+
+    notifier.setKeySignature(KeySignature.dMajor);
+
+    expect(notifier.score.notes[0].midi, 66);
+    expect(notifier.score.notes[1].midi, 61);
+    expect(notifier.score.notes[2].isRest, isTrue);
+  });
+
+  test('setKeySignature remaps notes from the previous key intent', () {
+    final notifier = ScoreNotifier();
+
+    notifier.score.notes.addAll([
+      const Note(midi: 66, duration: NoteDuration.quarter),
+      const Note(midi: 60, duration: NoteDuration.quarter),
+    ]);
+    notifier.setKeySignature(KeySignature.gMajor);
+
+    notifier.setKeySignature(KeySignature.dMajor);
+
+    expect(notifier.score.notes[0].midi, 66);
+    expect(notifier.score.notes[1].midi, 61);
   });
 
   test('triplet input inserts three identical rests at once', () {

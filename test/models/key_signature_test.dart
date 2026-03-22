@@ -103,6 +103,28 @@ void main() {
       expect(KeySignature.gMajor.applyToMidi(65), 66); // F4
       expect(KeySignature.gMajor.applyToMidi(77), 78); // F5
     });
+
+    test('removeFromMidi restores the natural white-key input', () {
+      expect(KeySignature.gMajor.removeFromMidi(66), 65); // F# -> F
+      expect(KeySignature.dMajor.removeFromMidi(61), 60); // C# -> C
+      expect(KeySignature.fMajor.removeFromMidi(70), 71); // Bb -> B
+      expect(KeySignature.bbMajor.removeFromMidi(63), 64); // Eb -> E
+    });
+
+    test('remapTo transfers white-key intent between key signatures', () {
+      expect(
+        KeySignature.cMajor.remapTo(KeySignature.gMajor, 65),
+        66,
+      ); // F -> F#
+      expect(
+        KeySignature.gMajor.remapTo(KeySignature.dMajor, 60),
+        61,
+      ); // C -> C#
+      expect(
+        KeySignature.fMajor.remapTo(KeySignature.cMajor, 70),
+        71,
+      ); // Bb intent -> B
+    });
   });
 
   group('circle-of-fifths navigation', () {

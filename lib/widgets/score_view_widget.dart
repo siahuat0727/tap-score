@@ -79,22 +79,15 @@ class _ScoreViewWidgetState extends State<ScoreViewWidget> {
         if (!widget.interactive) {
           return;
         }
-        final shortcut = code == null ? null : resolveEditorShortcutCode(code);
+        final shortcut = code == null
+            ? null
+            : resolveEditorShortcutCode(
+                code,
+                inputMode: notifier.keyboardInputMode,
+                octaveShift: notifier.keyboardOctaveShift,
+              );
         if (shortcut != null) {
-          switch (shortcut.kind) {
-            case EditorShortcutKind.insertPitch:
-              notifier.insertPitchedNote(shortcut.midi!);
-            case EditorShortcutKind.restAction:
-              notifier.handleRestAction();
-            case EditorShortcutKind.setDuration:
-              notifier.setDuration(shortcut.duration!);
-            case EditorShortcutKind.toggleDotted:
-              notifier.toggleDottedMode();
-            case EditorShortcutKind.toggleSlur:
-              notifier.toggleSlurMode();
-            case EditorShortcutKind.toggleTriplet:
-              notifier.toggleTripletMode();
-          }
+          notifier.handleEditorShortcut(shortcut);
           return;
         }
         switch (key) {
