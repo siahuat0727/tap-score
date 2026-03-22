@@ -30,6 +30,14 @@ enum EditorShortcutKind {
   toggleInputMode,
 }
 
+class EditorShortcutEvent {
+  final LogicalKeyboardKey? logicalKey;
+  final String? code;
+  final String? character;
+
+  const EditorShortcutEvent({this.logicalKey, this.code, this.character});
+}
+
 class EditorShortcutIntent {
   final EditorShortcutKind kind;
   final int? midi;
@@ -83,6 +91,7 @@ class _PitchBinding {
   final String label;
   final String code;
   final LogicalKeyboardKey logicalKey;
+  final String? character;
   final int baseMidi;
   final bool isBlack;
 
@@ -90,6 +99,7 @@ class _PitchBinding {
     required this.label,
     required this.code,
     required this.logicalKey,
+    this.character,
     required this.baseMidi,
     required this.isBlack,
   });
@@ -240,6 +250,7 @@ const List<_PitchBinding> _pitchBindings = [
     label: '\'',
     code: 'Quote',
     logicalKey: LogicalKeyboardKey.quote,
+    character: '\'',
     baseMidi: 74,
     isBlack: false,
   ),
@@ -254,53 +265,35 @@ EditorShortcutIntent? resolveEditorShortcut(
   LogicalKeyboardKey key, {
   required KeyboardInputMode inputMode,
   required int octaveShift,
+  String? character,
 }) {
-  final pitchIntent = _resolvePitchBinding(
-    _pitchBindingForLogicalKey(key),
+  return resolveEditorShortcutEvent(
+    EditorShortcutEvent(logicalKey: key, character: character),
     inputMode: inputMode,
     octaveShift: octaveShift,
   );
-  if (pitchIntent != null) {
-    return pitchIntent;
-  }
-
-  return switch (key) {
-    LogicalKeyboardKey.keyQ => const EditorShortcutIntent.shiftDown(),
-    LogicalKeyboardKey.bracketRight => const EditorShortcutIntent.shiftUp(),
-    LogicalKeyboardKey.keyE => const EditorShortcutIntent.toggleInputMode(),
-    LogicalKeyboardKey.backquote => const EditorShortcutIntent.restAction(),
-    LogicalKeyboardKey.digit1 => const EditorShortcutIntent.setDuration(
-      NoteDuration.whole,
-    ),
-    LogicalKeyboardKey.digit2 => const EditorShortcutIntent.setDuration(
-      NoteDuration.half,
-    ),
-    LogicalKeyboardKey.digit3 => const EditorShortcutIntent.setDuration(
-      NoteDuration.quarter,
-    ),
-    LogicalKeyboardKey.digit4 => const EditorShortcutIntent.setDuration(
-      NoteDuration.eighth,
-    ),
-    LogicalKeyboardKey.digit5 => const EditorShortcutIntent.setDuration(
-      NoteDuration.sixteenth,
-    ),
-    LogicalKeyboardKey.digit6 => const EditorShortcutIntent.setDuration(
-      NoteDuration.thirtySecond,
-    ),
-    LogicalKeyboardKey.digit7 => const EditorShortcutIntent.toggleDotted(),
-    LogicalKeyboardKey.digit8 => const EditorShortcutIntent.toggleSlur(),
-    LogicalKeyboardKey.digit9 => const EditorShortcutIntent.toggleTriplet(),
-    _ => null,
-  };
 }
 
 EditorShortcutIntent? resolveEditorShortcutCode(
   String code, {
   required KeyboardInputMode inputMode,
   required int octaveShift,
+  String? character,
+}) {
+  return resolveEditorShortcutEvent(
+    EditorShortcutEvent(code: code, character: character),
+    inputMode: inputMode,
+    octaveShift: octaveShift,
+  );
+}
+
+EditorShortcutIntent? resolveEditorShortcutEvent(
+  EditorShortcutEvent event, {
+  required KeyboardInputMode inputMode,
+  required int octaveShift,
 }) {
   final pitchIntent = _resolvePitchBinding(
-    _pitchBindingForCode(code),
+    _pitchBindingForEvent(event),
     inputMode: inputMode,
     octaveShift: octaveShift,
   );
@@ -308,24 +301,8 @@ EditorShortcutIntent? resolveEditorShortcutCode(
     return pitchIntent;
   }
 
-  return switch (code) {
-    'KeyQ' => const EditorShortcutIntent.shiftDown(),
-    'BracketRight' => const EditorShortcutIntent.shiftUp(),
-    'KeyE' => const EditorShortcutIntent.toggleInputMode(),
-    'Backquote' => const EditorShortcutIntent.restAction(),
-    'Digit1' => const EditorShortcutIntent.setDuration(NoteDuration.whole),
-    'Digit2' => const EditorShortcutIntent.setDuration(NoteDuration.half),
-    'Digit3' => const EditorShortcutIntent.setDuration(NoteDuration.quarter),
-    'Digit4' => const EditorShortcutIntent.setDuration(NoteDuration.eighth),
-    'Digit5' => const EditorShortcutIntent.setDuration(NoteDuration.sixteenth),
-    'Digit6' => const EditorShortcutIntent.setDuration(
-      NoteDuration.thirtySecond,
-    ),
-    'Digit7' => const EditorShortcutIntent.toggleDotted(),
-    'Digit8' => const EditorShortcutIntent.toggleSlur(),
-    'Digit9' => const EditorShortcutIntent.toggleTriplet(),
-    _ => null,
-  };
+  return _shortcutIntentForLogicalKey(event.logicalKey) ??
+      _shortcutIntentForCode(event.code);
 }
 
 PianoKeyHint describePianoKeyHint(
@@ -371,7 +348,7 @@ PianoKeyHint describePianoKeyHint(
 
 _PitchBinding? _pitchBindingForLogicalKey(LogicalKeyboardKey key) {
   for (final binding in _pitchBindings) {
-    if (binding.logicalKey == key) {
+    if (binding.character == null && binding.logicalKey == key) {
       return binding;
     }
   }
@@ -380,10 +357,36 @@ _PitchBinding? _pitchBindingForLogicalKey(LogicalKeyboardKey key) {
 
 _PitchBinding? _pitchBindingForCode(String code) {
   for (final binding in _pitchBindings) {
-    if (binding.code == code) {
+    if (binding.character == null && binding.code == code) {
       return binding;
     }
   }
+  return null;
+}
+
+_PitchBinding? _pitchBindingForEvent(EditorShortcutEvent event) {
+  final character = event.character;
+  if (character != null) {
+    for (final binding in _pitchBindings) {
+      if (binding.character == character) {
+        return binding;
+      }
+    }
+  }
+
+  final logicalKey = event.logicalKey;
+  if (logicalKey != null) {
+    final binding = _pitchBindingForLogicalKey(logicalKey);
+    if (binding != null) {
+      return binding;
+    }
+  }
+
+  final code = event.code;
+  if (code != null) {
+    return _pitchBindingForCode(code);
+  }
+
   return null;
 }
 
@@ -412,4 +415,56 @@ EditorShortcutIntent? _resolvePitchBinding(
   return EditorShortcutIntent.insertPitch(
     binding.baseMidi + (octaveShift * 12),
   );
+}
+
+EditorShortcutIntent? _shortcutIntentForLogicalKey(LogicalKeyboardKey? key) {
+  return switch (key) {
+    LogicalKeyboardKey.keyQ => const EditorShortcutIntent.shiftDown(),
+    LogicalKeyboardKey.bracketRight => const EditorShortcutIntent.shiftUp(),
+    LogicalKeyboardKey.keyE => const EditorShortcutIntent.toggleInputMode(),
+    LogicalKeyboardKey.backquote => const EditorShortcutIntent.restAction(),
+    LogicalKeyboardKey.digit1 => const EditorShortcutIntent.setDuration(
+      NoteDuration.whole,
+    ),
+    LogicalKeyboardKey.digit2 => const EditorShortcutIntent.setDuration(
+      NoteDuration.half,
+    ),
+    LogicalKeyboardKey.digit3 => const EditorShortcutIntent.setDuration(
+      NoteDuration.quarter,
+    ),
+    LogicalKeyboardKey.digit4 => const EditorShortcutIntent.setDuration(
+      NoteDuration.eighth,
+    ),
+    LogicalKeyboardKey.digit5 => const EditorShortcutIntent.setDuration(
+      NoteDuration.sixteenth,
+    ),
+    LogicalKeyboardKey.digit6 => const EditorShortcutIntent.setDuration(
+      NoteDuration.thirtySecond,
+    ),
+    LogicalKeyboardKey.digit7 => const EditorShortcutIntent.toggleDotted(),
+    LogicalKeyboardKey.digit8 => const EditorShortcutIntent.toggleSlur(),
+    LogicalKeyboardKey.digit9 => const EditorShortcutIntent.toggleTriplet(),
+    _ => null,
+  };
+}
+
+EditorShortcutIntent? _shortcutIntentForCode(String? code) {
+  return switch (code) {
+    'KeyQ' => const EditorShortcutIntent.shiftDown(),
+    'BracketRight' => const EditorShortcutIntent.shiftUp(),
+    'KeyE' => const EditorShortcutIntent.toggleInputMode(),
+    'Backquote' => const EditorShortcutIntent.restAction(),
+    'Digit1' => const EditorShortcutIntent.setDuration(NoteDuration.whole),
+    'Digit2' => const EditorShortcutIntent.setDuration(NoteDuration.half),
+    'Digit3' => const EditorShortcutIntent.setDuration(NoteDuration.quarter),
+    'Digit4' => const EditorShortcutIntent.setDuration(NoteDuration.eighth),
+    'Digit5' => const EditorShortcutIntent.setDuration(NoteDuration.sixteenth),
+    'Digit6' => const EditorShortcutIntent.setDuration(
+      NoteDuration.thirtySecond,
+    ),
+    'Digit7' => const EditorShortcutIntent.toggleDotted(),
+    'Digit8' => const EditorShortcutIntent.toggleSlur(),
+    'Digit9' => const EditorShortcutIntent.toggleTriplet(),
+    _ => null,
+  };
 }

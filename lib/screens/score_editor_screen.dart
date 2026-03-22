@@ -2,20 +2,24 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../models/score_library.dart';
 import '../input/editor_shortcuts.dart';
+import '../services/score_transfer_service.dart';
 import '../state/rhythm_test_notifier.dart';
 import '../state/score_notifier.dart';
 import '../widgets/duration_selector.dart';
 import '../widgets/piano_keyboard.dart';
 import '../widgets/playback_controls.dart';
-import '../widgets/rhythm_test_panel.dart';
+import '../widgets/rhythm_test_workspace.dart';
 import '../widgets/score_view_widget.dart';
 
 enum _EditorSurfaceMode { compose, rhythmTest }
 
 /// Main editor screen assembling staff, toolbar, and keyboard.
 class ScoreEditorScreen extends StatefulWidget {
-  const ScoreEditorScreen({super.key});
+  const ScoreEditorScreen({super.key, this.scoreTransferService});
+
+  final ScoreTransferService? scoreTransferService;
 
   @override
   State<ScoreEditorScreen> createState() => _ScoreEditorScreenState();
@@ -23,6 +27,8 @@ class ScoreEditorScreen extends StatefulWidget {
 
 class _ScoreEditorScreenState extends State<ScoreEditorScreen> {
   final FocusNode _focusNode = FocusNode();
+  late final ScoreTransferService _scoreTransferService =
+      widget.scoreTransferService ?? PlatformScoreTransferService();
   _EditorSurfaceMode _surfaceMode = _EditorSurfaceMode.compose;
   RhythmTestNotifier? _rhythmTestNotifier;
 
@@ -70,10 +76,306 @@ class _ScoreEditorScreenState extends State<ScoreEditorScreen> {
     _focusNode.requestFocus();
   }
 
+  Future<void> _showSaveDialog() async {
+    final notifier = context.read<ScoreNotifier>();
+    await showDialog<void>(
+      context: context,
+      builder: (_) => _SaveScoreDialog(notifier: notifier),
+    );
+  }
+
+  Future<bool> _confirmLoad(String scoreName) async {
+    final notifier = context.read<ScoreNotifier>();
+    if (!notifier.hasUnsavedChanges) {
+      return true;
+    }
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Load Score?'),
+          content: Text(
+            'Current edits stay available in Draft. Load "$scoreName" now?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Load'),
+            ),
+          ],
+        );
+      },
+    );
+
+    return result ?? false;
+  }
+
+  Future<bool> _confirmDeleteSavedScore(String scoreName) async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Delete Saved Score?'),
+          content: Text(
+            '"$scoreName" will be removed from the local score library.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFFC62828),
+              ),
+              child: const Text('Delete'),
+            ),
+          ],
+        );
+      },
+    );
+
+    return result ?? false;
+  }
+
+  Future<void> _showLoadSheet() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Consumer<ScoreNotifier>(
+            builder: (context, notifier, _) {
+              final items = <_LoadSheetItem>[
+                for (final entry in notifier.presetScores)
+                  _LoadSheetItem.preset(entry),
+                for (final entry in notifier.savedScores)
+                  _LoadSheetItem.saved(entry),
+              ];
+              return Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Expanded(
+                          child: Text(
+                            'Scores',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                        OutlinedButton.icon(
+                          key: const ValueKey('import-score-button'),
+                          onPressed: () async {
+                            try {
+                              final document = await _scoreTransferService
+                                  .importDocument();
+                              if (document == null) {
+                                return;
+                              }
+                              final confirmed = await _confirmLoad(
+                                document.name,
+                              );
+                              if (!confirmed || !mounted) {
+                                return;
+                              }
+                              Navigator.of(sheetContext).pop();
+                              await notifier.importScoreDocument(document);
+                            } on ScoreTransferException catch (error) {
+                              notifier.showLibraryMessage(
+                                error.message,
+                                isError: true,
+                              );
+                            } catch (error) {
+                              notifier.showLibraryMessage(
+                                'Failed to import the selected score document.',
+                                isError: true,
+                              );
+                            }
+                          },
+                          icon: const Icon(Icons.upload_file_outlined),
+                          label: const Text('Import'),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    if (items.isEmpty)
+                      const Expanded(
+                        child: Center(
+                          child: Text(
+                            'No scores available.',
+                            style: TextStyle(
+                              color: Color(0xFF746A57),
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      )
+                    else
+                      Expanded(
+                        child: ListView.separated(
+                          itemCount: items.length,
+                          separatorBuilder: (_, _) => const Divider(height: 1),
+                          itemBuilder: (context, index) {
+                            final item = items[index];
+                            final isActive =
+                                item.source == _LoadSheetItemSource.preset
+                                ? item.presetEntry!.id ==
+                                      notifier.activePresetId
+                                : item.savedEntry!.id == notifier.activeScoreId;
+                            final name = item.name;
+                            return ListTile(
+                              key: ValueKey(
+                                '${item.source.name}-score-${item.id}',
+                              ),
+                              contentPadding: EdgeInsets.zero,
+                              leading: Icon(
+                                item.source == _LoadSheetItemSource.preset
+                                    ? Icons.library_music_outlined
+                                    : Icons.save_outlined,
+                                color: const Color(0xFF746A57),
+                              ),
+                              title: Text(
+                                name,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              subtitle:
+                                  item.source == _LoadSheetItemSource.saved
+                                  ? Text(
+                                      'Updated ${item.savedEntry!.updatedAt.toLocal()}',
+                                      style: const TextStyle(fontSize: 12),
+                                    )
+                                  : const Text(
+                                      'Preset score',
+                                      style: TextStyle(fontSize: 12),
+                                    ),
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (isActive)
+                                    const Padding(
+                                      padding: EdgeInsets.only(right: 8),
+                                      child: Text(
+                                        'Current',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w700,
+                                          color: Color(0xFFD97706),
+                                        ),
+                                      ),
+                                    ),
+                                  if (item.source == _LoadSheetItemSource.saved)
+                                    IconButton(
+                                      tooltip:
+                                          'Delete ${item.savedEntry!.name}',
+                                      onPressed: () async {
+                                        final confirmed =
+                                            await _confirmDeleteSavedScore(
+                                              item.savedEntry!.name,
+                                            );
+                                        if (!confirmed) {
+                                          return;
+                                        }
+                                        await notifier.deleteSavedScore(
+                                          item.savedEntry!.id,
+                                        );
+                                      },
+                                      icon: const Icon(Icons.delete_outline),
+                                    ),
+                                ],
+                              ),
+                              onTap: () async {
+                                final confirmed = await _confirmLoad(name);
+                                if (!confirmed) {
+                                  return;
+                                }
+                                if (!mounted) {
+                                  return;
+                                }
+                                Navigator.of(sheetContext).pop();
+                                if (item.source ==
+                                    _LoadSheetItemSource.preset) {
+                                  await notifier.loadPresetScore(
+                                    item.presetEntry!.id,
+                                  );
+                                  return;
+                                }
+                                await notifier.loadSavedScore(
+                                  item.savedEntry!.id,
+                                );
+                              },
+                            );
+                          },
+                        ),
+                      ),
+                  ],
+                ),
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
   void _handleRhythmTempoChanged(double bpm) {
     final scoreNotifier = context.read<ScoreNotifier>();
     scoreNotifier.setTempo(bpm);
     _rhythmTestNotifier?.setTempo(bpm);
+  }
+
+  Future<void> _exportCurrentScore(BuildContext buttonContext) async {
+    final notifier = context.read<ScoreNotifier>();
+    final document = notifier.buildPortableDocument();
+    final fileName = _buildExportFileName(document.name);
+    final box = buttonContext.findRenderObject() as RenderBox?;
+    final origin = box == null
+        ? null
+        : box.localToGlobal(Offset.zero) & box.size;
+
+    try {
+      await _scoreTransferService.exportDocument(
+        document,
+        fileName: fileName,
+        sharePositionOrigin: origin,
+      );
+      if (!mounted) {
+        return;
+      }
+      notifier.showLibraryMessage('Exported "$fileName".', isError: false);
+    } on ScoreTransferException catch (error) {
+      notifier.showLibraryMessage(error.message, isError: true);
+    } catch (error) {
+      notifier.showLibraryMessage(
+        'Failed to export the current score.',
+        isError: true,
+      );
+    }
+  }
+
+  String _buildExportFileName(String label) {
+    final rawBaseName = label == 'Draft'
+        ? 'tap_score_${DateTime.now().toIso8601String()}'
+        : label;
+    final safeBaseName = rawBaseName
+        .trim()
+        .replaceAll(RegExp(r'[^A-Za-z0-9._-]+'), '_')
+        .replaceAll(RegExp(r'_+'), '_')
+        .replaceAll(RegExp(r'^_+|_+$'), '');
+    final baseName = safeBaseName.isEmpty ? 'tap_score' : safeBaseName;
+    return '$baseName.json';
   }
 
   bool _handleRendererKeyDown(String? key, String? code) {
@@ -125,8 +427,8 @@ class _ScoreEditorScreenState extends State<ScoreEditorScreen> {
       return KeyEventResult.handled;
     }
 
-    final shortcut = resolveEditorShortcut(
-      key,
+    final shortcut = resolveEditorShortcutEvent(
+      EditorShortcutEvent(logicalKey: key, character: event.character),
       inputMode: notifier.keyboardInputMode,
       octaveShift: notifier.keyboardOctaveShift,
     );
@@ -143,54 +445,45 @@ class _ScoreEditorScreenState extends State<ScoreEditorScreen> {
     final body = _isRhythmTestActive && _rhythmTestNotifier != null
         ? ChangeNotifierProvider.value(
             value: _rhythmTestNotifier!,
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final controlBarHeight = constraints.maxWidth < 700
-                    ? 380.0
-                    : 220.0;
-                return Column(
-                  children: [
-                    Expanded(
-                      child: Consumer<RhythmTestNotifier>(
-                        builder: (context, notifier, _) {
-                          return ScoreViewWidget(
-                            interactive: false,
-                            onRendererKeyDown: _handleRendererKeyDown,
-                            rhythmOverlay: notifier.overlayRenderData,
-                          );
-                        },
-                      ),
-                    ),
-                    Container(height: 1, color: const Color(0xFFE0DDD4)),
-                    SizedBox(
-                      height: controlBarHeight,
-                      child: RhythmTestPanel(
-                        onTempoChanged: _handleRhythmTempoChanged,
-                      ),
-                    ),
-                  ],
-                );
-              },
+            child: RhythmTestWorkspace(
+              onTempoChanged: _handleRhythmTempoChanged,
+              onRendererKeyDown: _handleRendererKeyDown,
+              onExit: _exitRhythmTest,
             ),
           )
-        : Column(
-            children: [
-              Expanded(
-                child: ScoreViewWidget(
-                  interactive: true,
-                  onRendererKeyDown: _handleRendererKeyDown,
-                ),
-              ),
-              Container(height: 1, color: const Color(0xFFE0DDD4)),
-              Container(
-                color: const Color(0xFFF0EDE4),
-                child: const Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [DurationSelector(), PlaybackControls()],
-                ),
-              ),
-              const PianoKeyboard(),
-            ],
+        : Consumer<ScoreNotifier>(
+            builder: (context, notifier, _) {
+              return Column(
+                children: [
+                  Expanded(
+                    child: ScoreViewWidget(
+                      interactive: true,
+                      onRendererKeyDown: _handleRendererKeyDown,
+                    ),
+                  ),
+                  Container(height: 1, color: const Color(0xFFE0DDD4)),
+                  Container(
+                    color: const Color(0xFFF0EDE4),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        DurationSelector(
+                          onRhythmTestTap: _enterRhythmTest,
+                          rhythmTestEnabled: notifier.score.notes.isNotEmpty,
+                          rhythmTestActive: _isRhythmTestActive,
+                        ),
+                        PlaybackControls(
+                          onSaveTap: _showSaveDialog,
+                          onLoadTap: _showLoadSheet,
+                          onExportTap: _exportCurrentScore,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const PianoKeyboard(),
+                ],
+              );
+            },
           );
 
     return Focus(
@@ -200,56 +493,111 @@ class _ScoreEditorScreenState extends State<ScoreEditorScreen> {
       child: Listener(
         behavior: HitTestBehavior.translucent,
         onPointerDown: (_) => _focusNode.requestFocus(),
-        child: Scaffold(
-          appBar: AppBar(
-            title: Text(_isRhythmTestActive ? 'Rhythm Test' : 'Tap Score'),
-            actions: [
-              Consumer<ScoreNotifier>(
-                builder: (context, notifier, _) {
-                  return Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        tooltip: _isRhythmTestActive
-                            ? 'Exit Rhythm Test'
-                            : 'Rhythm Test',
-                        onPressed:
-                            notifier.score.notes.isEmpty && !_isRhythmTestActive
-                            ? null
-                            : () {
-                                if (_isRhythmTestActive) {
-                                  _exitRhythmTest();
-                                } else {
-                                  _enterRhythmTest();
-                                }
-                              },
-                        icon: Icon(
-                          _isRhythmTestActive
-                              ? Icons.close_rounded
-                              : Icons.timer_outlined,
-                        ),
-                      ),
-                      if (notifier.score.notes.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(right: 8),
-                          child: Chip(
-                            label: Text(
-                              '${notifier.score.notes.length} notes',
-                              style: const TextStyle(fontSize: 12),
-                            ),
-                            backgroundColor: const Color(0xFFE8E4D8),
-                            side: BorderSide.none,
-                          ),
-                        ),
-                    ],
-                  );
-                },
-              ),
-            ],
-          ),
-          body: SafeArea(child: body),
-        ),
+        child: Scaffold(body: SafeArea(child: body)),
       ),
+    );
+  }
+}
+
+enum _LoadSheetItemSource { preset, saved }
+
+class _LoadSheetItem {
+  const _LoadSheetItem.preset(this.presetEntry)
+    : savedEntry = null,
+      source = _LoadSheetItemSource.preset;
+
+  const _LoadSheetItem.saved(this.savedEntry)
+    : presetEntry = null,
+      source = _LoadSheetItemSource.saved;
+
+  final _LoadSheetItemSource source;
+  final PresetScoreEntry? presetEntry;
+  final SavedScoreEntry? savedEntry;
+
+  String get id => presetEntry?.id ?? savedEntry!.id;
+
+  String get name => presetEntry?.name ?? savedEntry!.name;
+}
+
+class _SaveScoreDialog extends StatefulWidget {
+  const _SaveScoreDialog({required this.notifier});
+
+  final ScoreNotifier notifier;
+
+  @override
+  State<_SaveScoreDialog> createState() => _SaveScoreDialogState();
+}
+
+class _SaveScoreDialogState extends State<_SaveScoreDialog> {
+  late final TextEditingController _controller;
+  String? _errorText;
+  bool _isSaving = false;
+
+  bool get _hasActiveSavedScore => widget.notifier.activeSavedScore != null;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(
+      text: widget.notifier.activeSavedScore?.name ?? '',
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit({required bool createNew}) async {
+    final trimmed = _controller.text.trim();
+    if (trimmed.isEmpty) {
+      setState(() {
+        _errorText = 'Name is required.';
+      });
+      return;
+    }
+
+    setState(() {
+      _errorText = null;
+      _isSaving = true;
+    });
+
+    await widget.notifier.saveCurrentScore(trimmed, createNew: createNew);
+
+    if (!mounted) {
+      return;
+    }
+
+    Navigator.of(context).pop();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Save Score'),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        enabled: !_isSaving,
+        decoration: InputDecoration(labelText: 'Name', errorText: _errorText),
+        onSubmitted: _isSaving ? null : (_) => _submit(createNew: false),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _isSaving ? null : () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        if (_hasActiveSavedScore)
+          OutlinedButton(
+            onPressed: _isSaving ? null : () => _submit(createNew: true),
+            child: const Text('Save As New'),
+          ),
+        FilledButton(
+          onPressed: _isSaving ? null : () => _submit(createNew: false),
+          child: Text(_hasActiveSavedScore ? 'Update' : 'Save'),
+        ),
+      ],
     );
   }
 }

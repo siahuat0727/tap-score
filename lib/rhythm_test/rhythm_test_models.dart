@@ -1,3 +1,5 @@
+import '../services/playback_schedule.dart';
+
 class ExpectedRhythmEvent {
   final int id;
   final int noteIndex;
@@ -7,6 +9,19 @@ class ExpectedRhythmEvent {
     required this.id,
     required this.noteIndex,
     required this.timeSeconds,
+  });
+}
+
+class RhythmTestDisplayConfig {
+  static const double defaultErrorLabelThresholdBeats = 0.05;
+  static const double defaultLargeErrorThresholdBeats = 0.1;
+
+  final double errorLabelThresholdBeats;
+  final double largeErrorThresholdBeats;
+
+  const RhythmTestDisplayConfig({
+    this.errorLabelThresholdBeats = defaultErrorLabelThresholdBeats,
+    this.largeErrorThresholdBeats = defaultLargeErrorThresholdBeats,
   });
 }
 
@@ -33,6 +48,7 @@ class MatchedRhythmPair {
 
 class RhythmTimeline {
   final List<ExpectedRhythmEvent> expectedEvents;
+  final List<ScheduledPlaybackNote> playbackNotes;
   final List<double> measureBoundaryTimesSeconds;
   final double totalDurationSeconds;
   final double pulseDurationSeconds;
@@ -40,6 +56,7 @@ class RhythmTimeline {
 
   const RhythmTimeline({
     required this.expectedEvents,
+    required this.playbackNotes,
     required this.measureBoundaryTimesSeconds,
     required this.totalDurationSeconds,
     required this.pulseDurationSeconds,
@@ -52,6 +69,8 @@ class RhythmTimeline {
 
   double get matchingWindowSeconds => pulseDurationSeconds;
 }
+
+typedef RhythmMelodyEvent = ScheduledPlaybackNote;
 
 class RhythmTestResult {
   final List<MatchedRhythmPair> matchedPairs;
@@ -72,10 +91,26 @@ class RhythmTestResult {
 
   int get matchedCount => matchedPairs.length;
 
+  int get errorCount =>
+      unmatchedExpectedEvents.length + unmatchedTapEvents.length;
+
+  List<int> get missedExpectedNoteIndices => unmatchedExpectedEvents
+      .map((event) => event.noteIndex)
+      .toList(growable: false);
+
   double get totalAbsoluteErrorSeconds => matchedPairs.fold<double>(
     0,
     (sum, pair) => sum + pair.absoluteErrorSeconds,
   );
+
+  double? get maxAbsoluteErrorSeconds {
+    if (matchedPairs.isEmpty) {
+      return null;
+    }
+    return matchedPairs
+        .map((pair) => pair.absoluteErrorSeconds)
+        .reduce((left, right) => left > right ? left : right);
+  }
 
   double? get averageAbsoluteErrorSeconds {
     return shiftedAverageAbsoluteErrorSeconds;
@@ -87,6 +122,17 @@ class RhythmTestResult {
     }
 
     return totalAbsoluteErrorSeconds / matchedPairs.length;
+  }
+
+  int largeErrorCountForThreshold(double thresholdSeconds) {
+    return largeErrorExpectedNoteIndicesForThreshold(thresholdSeconds).length;
+  }
+
+  List<int> largeErrorExpectedNoteIndicesForThreshold(double thresholdSeconds) {
+    return matchedPairs
+        .where((pair) => pair.absoluteErrorSeconds > thresholdSeconds)
+        .map((pair) => pair.expected.noteIndex)
+        .toList(growable: false);
   }
 }
 
@@ -104,6 +150,10 @@ class RhythmOverlayRenderData {
   final List<TapInputEvent> resultTapEvents;
   final List<MatchedRhythmPair> matchedPairs;
   final double appliedShiftSeconds;
+  final double errorLabelThresholdBeats;
+  final double largeErrorThresholdBeats;
+  final List<int> largeErrorNoteIndices;
+  final List<int> missedExpectedNoteIndices;
 
   const RhythmOverlayRenderData({
     required this.showExpectedEvents,
@@ -119,6 +169,10 @@ class RhythmOverlayRenderData {
     required this.resultTapEvents,
     required this.matchedPairs,
     required this.appliedShiftSeconds,
+    required this.errorLabelThresholdBeats,
+    required this.largeErrorThresholdBeats,
+    required this.largeErrorNoteIndices,
+    required this.missedExpectedNoteIndices,
   });
 
   Map<String, dynamic> toPayload() {
@@ -150,6 +204,10 @@ class RhythmOverlayRenderData {
           )
           .toList(growable: false),
       'appliedShiftSeconds': appliedShiftSeconds,
+      'errorLabelThresholdBeats': errorLabelThresholdBeats,
+      'largeErrorThresholdBeats': largeErrorThresholdBeats,
+      'largeErrorNoteIndices': largeErrorNoteIndices,
+      'missedExpectedNoteIndices': missedExpectedNoteIndices,
     };
   }
 }

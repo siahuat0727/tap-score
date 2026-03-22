@@ -42,6 +42,14 @@ enum NoteDuration {
       NoteDuration.thirtySecond => '𝅀',
     };
   }
+
+  static NoteDuration fromName(String name) {
+    return NoteDuration.values.firstWhere(
+      (duration) => duration.name == name,
+      orElse: () =>
+          throw ArgumentError.value(name, 'name', 'Unsupported note duration'),
+    );
+  }
 }
 
 /// Accidental applied to a note.
@@ -56,6 +64,14 @@ enum Accidental {
       Accidental.sharp => '♯',
       Accidental.flat => '♭',
     };
+  }
+
+  static Accidental fromName(String name) {
+    return Accidental.values.firstWhere(
+      (accidental) => accidental.name == name,
+      orElse: () =>
+          throw ArgumentError.value(name, 'name', 'Unsupported accidental'),
+    );
   }
 }
 

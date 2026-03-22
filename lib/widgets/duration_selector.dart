@@ -7,92 +7,125 @@ import '../state/score_notifier.dart';
 
 /// A toolbar row showing note duration buttons and editing tools.
 class DurationSelector extends StatelessWidget {
-  const DurationSelector({super.key});
+  const DurationSelector({
+    required this.onRhythmTestTap,
+    required this.rhythmTestEnabled,
+    required this.rhythmTestActive,
+    super.key,
+  });
+
+  final VoidCallback onRhythmTestTap;
+  final bool rhythmTestEnabled;
+  final bool rhythmTestActive;
 
   @override
   Widget build(BuildContext context) {
     return Consumer<ScoreNotifier>(
       builder: (context, notifier, child) {
-        return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                _ToolButton(
-                  buttonKey: const ValueKey('rest-tool'),
-                  icon: Icons.hotel,
-                  label: 'Rest',
-                  shortcutLabel: restShortcutLabel,
-                  isSelected: notifier.toolbarRestSelected,
-                  onTap: notifier.timingControlsEnabled
-                      ? notifier.handleRestAction
-                      : null,
-                  activeColor: const Color(0xFF9C27B0),
-                ),
-                const SizedBox(width: 8),
-                ...NoteDuration.values.map(
-                  (duration) => _DurationButton(
-                    buttonKey: ValueKey('duration-${duration.name}'),
-                    displayLabel: notifier.toolbarShowsRestDurations
-                        ? duration.restLabel
-                        : duration.label,
-                    shortcutLabel: durationShortcutLabels[duration]!,
-                    isSelected: notifier.toolbarDuration == duration,
-                    onTap: notifier.timingControlsEnabled
-                        ? () => notifier.setDuration(duration)
-                        : null,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                _ToolButton(
-                  buttonKey: const ValueKey('dot-tool'),
-                  icon: Icons.fiber_manual_record,
-                  label: 'Dot',
-                  shortcutLabel: dottedShortcutLabel,
-                  isSelected: notifier.toolbarDottedSelected,
-                  onTap: notifier.timingControlsEnabled
-                      ? notifier.toggleDottedMode
-                      : null,
-                  activeColor: const Color(0xFFFF9800),
-                ),
-                const SizedBox(width: 4),
-                _ToolButton(
-                  buttonKey: const ValueKey('slur-tool'),
-                  icon: Icons.show_chart,
-                  label: 'Slur',
-                  shortcutLabel: slurShortcutLabel,
-                  isSelected: notifier.toolbarSlurSelected,
-                  onTap: notifier.slurButtonEnabled
-                      ? notifier.toggleSlurMode
-                      : null,
-                  activeColor: const Color(0xFF5E35B1),
-                ),
-                const SizedBox(width: 4),
-                _ToolButton(
-                  buttonKey: const ValueKey('triplet-tool'),
-                  icon: Icons.looks_3,
-                  label: 'Trip',
-                  shortcutLabel: tripletShortcutLabel,
-                  isSelected: notifier.toolbarTripletSelected,
-                  onTap: notifier.tripletButtonEnabled
-                      ? notifier.toggleTripletMode
-                      : null,
-                  activeColor: const Color(0xFF00897B),
-                ),
-                const SizedBox(width: 8),
-                _ToolButton(
-                  buttonKey: const ValueKey('delete-tool'),
-                  icon: Icons.delete_outline,
-                  label: 'Delete',
-                  isSelected: false,
-                  onTap: notifier.deleteButtonEnabled
-                      ? notifier.deleteSelected
-                      : null,
-                  activeColor: const Color(0xFFF44336),
-                ),
-              ],
+        final durationGlyph = notifier.toolbarDuration.label;
+        final buttons = [
+          _SquareButton(
+            buttonKey: const ValueKey('rest-tool'),
+            tooltip: 'Rest',
+            glyph: Text(
+              notifier.toolbarDuration.restLabel,
+              style: const TextStyle(fontSize: 22),
             ),
+            shortcutLabel: restShortcutLabel,
+            isSelected: notifier.toolbarRestSelected,
+            onTap: notifier.timingControlsEnabled
+                ? notifier.handleRestAction
+                : null,
+            activeColor: const Color(0xFF9C27B0),
+          ),
+          ...NoteDuration.values.map(
+            (duration) => _SquareButton(
+              buttonKey: ValueKey('duration-${duration.name}'),
+              tooltip: duration.name,
+              glyph: Text(
+                notifier.toolbarShowsRestDurations
+                    ? duration.restLabel
+                    : duration.label,
+                style: const TextStyle(fontSize: 22),
+              ),
+              shortcutLabel: durationShortcutLabels[duration]!,
+              isSelected: notifier.toolbarDuration == duration,
+              onTap: notifier.timingControlsEnabled
+                  ? () => notifier.setDuration(duration)
+                  : null,
+              activeColor: const Color(0xFF2196F3),
+            ),
+          ),
+          _SquareButton(
+            buttonKey: const ValueKey('dot-tool'),
+            tooltip: 'Dot',
+            glyph: _CompoundGlyph(
+              base: durationGlyph,
+              overlay: const _GlyphDot(),
+            ),
+            shortcutLabel: dottedShortcutLabel,
+            isSelected: notifier.toolbarDottedSelected,
+            onTap: notifier.timingControlsEnabled
+                ? notifier.toggleDottedMode
+                : null,
+            activeColor: const Color(0xFFFF9800),
+          ),
+          _SquareButton(
+            buttonKey: const ValueKey('slur-tool'),
+            tooltip: 'Slur',
+            glyph: _CompoundGlyph(
+              base: durationGlyph,
+              overlay: const _GlyphArc(),
+            ),
+            shortcutLabel: slurShortcutLabel,
+            isSelected: notifier.toolbarSlurSelected,
+            onTap: notifier.slurButtonEnabled ? notifier.toggleSlurMode : null,
+            activeColor: const Color(0xFF5E35B1),
+          ),
+          _SquareButton(
+            buttonKey: const ValueKey('triplet-tool'),
+            tooltip: 'Triplet',
+            glyph: _CompoundGlyph(
+              base: durationGlyph,
+              overlay: const _GlyphTriplet(),
+            ),
+            shortcutLabel: tripletShortcutLabel,
+            isSelected: notifier.toolbarTripletSelected,
+            onTap: notifier.tripletButtonEnabled
+                ? notifier.toggleTripletMode
+                : null,
+            activeColor: const Color(0xFF00897B),
+          ),
+          _SquareButton(
+            buttonKey: const ValueKey('delete-tool'),
+            tooltip: 'Delete',
+            glyph: const Icon(Icons.delete_outline, size: 20),
+            isSelected: false,
+            onTap: notifier.deleteButtonEnabled
+                ? notifier.deleteSelected
+                : null,
+            activeColor: const Color(0xFFF44336),
+          ),
+          _RhythmTestButton(
+            isEnabled: rhythmTestEnabled,
+            isSelected: rhythmTestActive,
+            onTap: onRhythmTestTap,
+          ),
+        ];
+
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              if (constraints.maxWidth < 560) {
+                return Wrap(spacing: 2, runSpacing: 8, children: buttons);
+              }
+
+              return SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(children: buttons),
+              );
+            },
           ),
         );
       },
@@ -100,26 +133,35 @@ class DurationSelector extends StatelessWidget {
   }
 }
 
-class _DurationButton extends StatelessWidget {
-  final Key? buttonKey;
-  final String displayLabel;
-  final String shortcutLabel;
-  final bool isSelected;
-  final VoidCallback? onTap;
-
-  const _DurationButton({
-    this.buttonKey,
-    required this.displayLabel,
-    required this.shortcutLabel,
+class _SquareButton extends StatelessWidget {
+  const _SquareButton({
+    required this.glyph,
     required this.isSelected,
     required this.onTap,
+    required this.activeColor,
+    this.buttonKey,
+    this.tooltip,
+    this.shortcutLabel,
   });
+
+  final Key? buttonKey;
+  final String? tooltip;
+  final Widget glyph;
+  final String? shortcutLabel;
+  final bool isSelected;
+  final VoidCallback? onTap;
+  final Color activeColor;
 
   @override
   Widget build(BuildContext context) {
     final enabled = onTap != null;
+    final foreground = isSelected
+        ? activeColor
+        : enabled
+        ? Colors.grey.shade700
+        : Colors.grey.shade300;
 
-    return Padding(
+    Widget button = Padding(
       padding: const EdgeInsets.symmetric(horizontal: 3),
       child: Material(
         key: buttonKey,
@@ -131,83 +173,6 @@ class _DurationButton extends StatelessWidget {
             duration: const Duration(milliseconds: 200),
             width: 48,
             height: 48,
-            decoration: BoxDecoration(
-              color: isSelected
-                  ? const Color(0xFF2196F3).withAlpha(38)
-                  : Colors.transparent,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(
-                color: isSelected
-                    ? const Color(0xFF2196F3)
-                    : enabled
-                    ? Colors.grey.withAlpha(77)
-                    : Colors.grey.withAlpha(38),
-                width: isSelected ? 2 : 1,
-              ),
-            ),
-            child: Stack(
-              children: [
-                Center(
-                  child: Text(
-                    displayLabel,
-                    style: TextStyle(
-                      fontSize: 22,
-                      color: isSelected
-                          ? const Color(0xFF2196F3)
-                          : enabled
-                          ? Colors.grey[600]
-                          : Colors.grey[300],
-                    ),
-                  ),
-                ),
-                Positioned(
-                  top: 4,
-                  right: 4,
-                  child: _ShortcutBadge(label: shortcutLabel),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ToolButton extends StatelessWidget {
-  final Key? buttonKey;
-  final IconData icon;
-  final String label;
-  final String? shortcutLabel;
-  final bool isSelected;
-  final VoidCallback? onTap;
-  final Color activeColor;
-
-  const _ToolButton({
-    this.buttonKey,
-    required this.icon,
-    required this.label,
-    this.shortcutLabel,
-    required this.isSelected,
-    required this.onTap,
-    required this.activeColor,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final enabled = onTap != null;
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 3),
-      child: Material(
-        key: buttonKey,
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(10),
-          onTap: onTap,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
               color: isSelected
                   ? activeColor.withAlpha(38)
@@ -222,38 +187,120 @@ class _ToolButton extends StatelessWidget {
                 width: isSelected ? 2 : 1,
               ),
             ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
+            child: Stack(
+              clipBehavior: Clip.none,
               children: [
-                Icon(
-                  icon,
-                  size: 18,
-                  color: isSelected
-                      ? activeColor
-                      : enabled
-                      ? Colors.grey[600]
-                      : Colors.grey[300],
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: isSelected
-                        ? activeColor
-                        : enabled
-                        ? Colors.grey[600]
-                        : Colors.grey[300],
-                    fontWeight: isSelected
-                        ? FontWeight.w600
-                        : FontWeight.normal,
+                Positioned.fill(
+                  child: IconTheme(
+                    data: IconThemeData(color: foreground),
+                    child: DefaultTextStyle(
+                      style: TextStyle(
+                        color: foreground,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      child: Center(child: glyph),
+                    ),
                   ),
                 ),
-                if (shortcutLabel != null) ...[
-                  const SizedBox(width: 8),
-                  _ShortcutBadge(label: shortcutLabel!),
-                ],
+                if (shortcutLabel != null)
+                  Positioned(
+                    top: 4,
+                    right: 4,
+                    child: _ShortcutBadge(label: shortcutLabel!),
+                  ),
               ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    if (tooltip == null) {
+      return button;
+    }
+
+    return Tooltip(message: tooltip!, child: button);
+  }
+}
+
+class _RhythmTestButton extends StatelessWidget {
+  const _RhythmTestButton({
+    required this.isEnabled,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  final bool isEnabled;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final borderColor = isSelected
+        ? const Color(0xFFD97706)
+        : isEnabled
+        ? const Color(0xFFE0A64B)
+        : Colors.grey.withAlpha(38);
+
+    return Tooltip(
+      message: 'Rhythm Test',
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 3),
+        child: Material(
+          key: const ValueKey('rhythm-test-tool'),
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: isEnabled ? onTap : null,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              width: 124,
+              height: 48,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: isEnabled
+                      ? [const Color(0xFFFFC145), const Color(0xFFF59E0B)]
+                      : [const Color(0xFFE0E0E0), const Color(0xFFBDBDBD)],
+                ),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: borderColor, width: 1.5),
+                boxShadow: isEnabled
+                    ? const [
+                        BoxShadow(
+                          color: Color(0x33F59E0B),
+                          blurRadius: 16,
+                          offset: Offset(0, 4),
+                        ),
+                      ]
+                    : const [],
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.timer_outlined,
+                    size: 18,
+                    color: isEnabled
+                        ? const Color(0xFF4A3411)
+                        : const Color(0xFF757575),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Rhythm Test',
+                      overflow: TextOverflow.fade,
+                      softWrap: false,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        color: isEnabled
+                            ? const Color(0xFF4A3411)
+                            : const Color(0xFF757575),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -262,26 +309,103 @@ class _ToolButton extends StatelessWidget {
   }
 }
 
-class _ShortcutBadge extends StatelessWidget {
-  final String label;
+class _CompoundGlyph extends StatelessWidget {
+  const _CompoundGlyph({required this.base, required this.overlay});
 
-  const _ShortcutBadge({required this.label});
+  final String base;
+  final Widget overlay;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+    return SizedBox(
+      width: 24,
+      height: 24,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Align(
+            alignment: Alignment.center,
+            child: Text(base, style: const TextStyle(fontSize: 20, height: 1)),
+          ),
+          Positioned.fill(child: overlay),
+        ],
+      ),
+    );
+  }
+}
+
+class _GlyphDot extends StatelessWidget {
+  const _GlyphDot();
+
+  @override
+  Widget build(BuildContext context) {
+    final color = DefaultTextStyle.of(context).style.color ?? Colors.black;
+    return Align(
+      alignment: const Alignment(0.9, 0.12),
+      child: Container(
+        width: 5,
+        height: 5,
+        decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+      ),
+    );
+  }
+}
+
+class _GlyphArc extends StatelessWidget {
+  const _GlyphArc();
+
+  @override
+  Widget build(BuildContext context) {
+    final color = DefaultTextStyle.of(context).style.color ?? Colors.black;
+    return Align(
+      alignment: const Alignment(0.0, -0.85),
+      child: Text('◠', style: TextStyle(fontSize: 12, color: color, height: 1)),
+    );
+  }
+}
+
+class _GlyphTriplet extends StatelessWidget {
+  const _GlyphTriplet();
+
+  @override
+  Widget build(BuildContext context) {
+    final color = DefaultTextStyle.of(context).style.color ?? Colors.black;
+    return Align(
+      alignment: const Alignment(0.9, -0.85),
+      child: Text(
+        '3',
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w900,
+          color: color,
+          height: 1,
+        ),
+      ),
+    );
+  }
+}
+
+class _ShortcutBadge extends StatelessWidget {
+  const _ShortcutBadge({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
       decoration: BoxDecoration(
-        color: const Color(0xFF2F4156),
+        color: const Color(0xFFE8E4D8),
         borderRadius: BorderRadius.circular(999),
       ),
-      child: Text(
-        label,
-        style: const TextStyle(
-          fontSize: 10,
-          height: 1,
-          color: Colors.white,
-          fontWeight: FontWeight.w700,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+        child: Text(
+          label,
+          style: const TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.w700,
+            color: Color(0xFF746A57),
+          ),
         ),
       ),
     );

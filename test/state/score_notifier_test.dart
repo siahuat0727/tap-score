@@ -3,6 +3,7 @@ import 'package:tap_score/input/editor_shortcuts.dart';
 import 'package:tap_score/models/enums.dart';
 import 'package:tap_score/models/key_signature.dart';
 import 'package:tap_score/models/note.dart';
+import 'package:tap_score/services/audio_service.dart';
 import 'package:tap_score/state/score_notifier.dart';
 
 void main() {
@@ -452,4 +453,60 @@ void main() {
     expect(notifier.score.notes[0].slurToNext, isFalse);
     expect(notifier.score.notes[1].isRest, isTrue);
   });
+
+  test(
+    'play retriggers repeated same-pitch notes with separate highlights',
+    () async {
+      final audioService = _FakeAudioService();
+      final notifier = ScoreNotifier(audioService: audioService);
+      final playbackIndices = <int>[];
+
+      notifier.addListener(() {
+        if (notifier.playbackIndex >= 0) {
+          playbackIndices.add(notifier.playbackIndex);
+        }
+      });
+      notifier.score.notes.addAll([
+        const Note(midi: 60, duration: NoteDuration.quarter),
+        const Note(midi: 60, duration: NoteDuration.quarter),
+      ]);
+
+      await notifier.play();
+
+      expect(audioService.events, [
+        'start-60',
+        'stop-60',
+        'start-60',
+        'stop-60',
+      ]);
+      expect(playbackIndices, containsAllInOrder([0, 1]));
+      expect(notifier.playbackIndex, -1);
+      expect(notifier.isPlaying, isFalse);
+    },
+  );
+}
+
+class _FakeAudioService extends AudioService {
+  final List<String> events = [];
+  int _nextHandleId = 1;
+
+  @override
+  Future<AudioNoteHandle?> startNote(
+    int midi, {
+    int velocity = AudioService.defaultPlaybackVelocity,
+  }) async {
+    events.add('start-$midi');
+    return AudioNoteHandle(id: _nextHandleId++, midi: midi);
+  }
+
+  @override
+  Future<void> stopNoteHandle(AudioNoteHandle handle) async {
+    events.add('stop-${handle.midi}');
+  }
+
+  @override
+  void stopPlayback() {}
+
+  @override
+  void dispose() {}
 }

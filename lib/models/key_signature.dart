@@ -170,6 +170,14 @@ enum KeySignature {
     return _circleOrder[idx > 0 ? idx - 1 : idx];
   }
 
+  static KeySignature fromName(String name) {
+    return KeySignature.values.firstWhere(
+      (key) => key.name == name,
+      orElse: () =>
+          throw ArgumentError.value(name, 'name', 'Unsupported key signature'),
+    );
+  }
+
   // ---------------------------------------------------------------------------
   // Diatonic step helpers
   // ---------------------------------------------------------------------------

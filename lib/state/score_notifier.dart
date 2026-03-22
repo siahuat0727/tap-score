@@ -1,11 +1,17 @@
 import 'dart:async';
+
 import 'package:flutter/foundation.dart';
+
 import '../input/editor_shortcuts.dart';
 import '../models/enums.dart';
 import '../models/key_signature.dart';
 import '../models/note.dart';
+import '../models/portable_score_document.dart';
 import '../models/score.dart';
+import '../models/score_library.dart';
 import '../services/audio_service.dart';
+import '../services/preset_score_repository.dart';
+import '../services/score_library_repository.dart';
 
 /// What kind of element is currently selected.
 enum SelectionKind { timeSig, keySig, note }
@@ -14,9 +20,25 @@ enum SelectionKind { timeSig, keySig, note }
 class ScoreNotifier extends ChangeNotifier {
   static const int _defaultRestoreMidi = 60;
   static const double _epsilon = 0.001;
+  static const Duration _draftSaveDelay = Duration(milliseconds: 250);
+
+  ScoreNotifier({
+    AudioService? audioService,
+    ScoreLibraryRepository? scoreLibraryRepository,
+    PresetScoreRepository? presetScoreRepository,
+  }) : _audioService = audioService ?? AudioService(),
+       _scoreLibraryRepository =
+           scoreLibraryRepository ?? SharedPreferencesScoreLibraryRepository(),
+       _presetScoreRepository =
+           presetScoreRepository ?? AssetPresetScoreRepository();
 
   final Score score = Score();
-  final AudioService _audioService = AudioService();
+  final AudioService _audioService;
+  final ScoreLibraryRepository _scoreLibraryRepository;
+  final PresetScoreRepository _presetScoreRepository;
+
+  Future<void>? _initFuture;
+  Timer? _draftSaveTimer;
 
   /// Index where the next note will be inserted.
   int _cursorIndex = 0;
@@ -69,6 +91,58 @@ class ScoreNotifier extends ChangeNotifier {
 
   /// Auto-incrementing triplet group ID.
   int _nextTripletGroupId = 1;
+
+  List<SavedScoreEntry> _savedScores = const [];
+  List<SavedScoreEntry> get savedScores => List.unmodifiable(_savedScores);
+
+  List<PresetScoreEntry> _presetScores = const [];
+  List<PresetScoreEntry> get presetScores => List.unmodifiable(_presetScores);
+
+  String? _activeScoreId;
+  String? get activeScoreId => _activeScoreId;
+
+  String? _activePresetId;
+  String? get activePresetId => _activePresetId;
+
+  String? _draftLabel;
+  Score _draftBaseline = Score();
+
+  SavedScoreEntry? get activeSavedScore {
+    final id = _activeScoreId;
+    if (id == null) return null;
+    for (final entry in _savedScores) {
+      if (entry.id == id) {
+        return entry;
+      }
+    }
+    return null;
+  }
+
+  PresetScoreEntry? get activePresetScore {
+    final id = _activePresetId;
+    if (id == null) return null;
+    for (final entry in _presetScores) {
+      if (entry.id == id) {
+        return entry;
+      }
+    }
+    return null;
+  }
+
+  String get currentScoreLabel =>
+      activeSavedScore?.name ??
+      activePresetScore?.name ??
+      _draftLabel ??
+      'Draft';
+
+  bool _hasUnsavedChanges = false;
+  bool get hasUnsavedChanges => _hasUnsavedChanges;
+
+  String? _libraryMessage;
+  String? get libraryMessage => _libraryMessage;
+
+  bool _libraryMessageIsError = false;
+  bool get libraryMessageIsError => _libraryMessageIsError;
 
   /// Selection-aware toolbar state.
   bool get timingControlsEnabled =>
@@ -144,8 +218,40 @@ class ScoreNotifier extends ChangeNotifier {
   bool _isInitialized = false;
   bool get isInitialized => _isInitialized;
 
-  /// Initialize the audio service.
-  Future<void> init() async {
+  /// Initialize local storage and the audio service.
+  Future<void> init() {
+    return _initFuture ??= _initInternal();
+  }
+
+  Future<void> _initInternal() async {
+    try {
+      _presetScores = await _presetScoreRepository.loadPresets();
+    } on PresetScoreException catch (error) {
+      _setLibraryMessage(error.message, isError: true);
+    } catch (error) {
+      _setLibraryMessage('Failed to load preset scores.', isError: true);
+      debugPrint('Preset score load failed: $error');
+    }
+
+    try {
+      final snapshot = await _scoreLibraryRepository.loadSnapshot();
+      if (snapshot != null) {
+        _savedScores = _sortSavedScores(snapshot.savedScores);
+        _draftBaseline = snapshot.draft.copy();
+        _draftLabel = null;
+        _applyScore(snapshot.draft, activeScoreId: snapshot.activeScoreId);
+        _hasUnsavedChanges = _computeHasUnsavedChanges(score);
+      }
+    } on ScoreLibraryStorageException catch (error) {
+      _setLibraryMessage(error.message, isError: true);
+    } catch (error) {
+      _setLibraryMessage(
+        'Failed to load the local score library.',
+        isError: true,
+      );
+      debugPrint('Score library load failed: $error');
+    }
+
     _isInitialized = await _audioService.init();
     notifyListeners();
   }
@@ -162,6 +268,188 @@ class ScoreNotifier extends ChangeNotifier {
     return indices;
   }
 
+  void clearLibraryMessage() {
+    if (_libraryMessage == null) {
+      return;
+    }
+    _libraryMessage = null;
+    _libraryMessageIsError = false;
+    notifyListeners();
+  }
+
+  void showLibraryMessage(String message, {required bool isError}) {
+    _setLibraryMessage(message, isError: isError);
+    notifyListeners();
+  }
+
+  Future<void> restoreDraft() async {
+    try {
+      final snapshot = await _scoreLibraryRepository.loadSnapshot();
+      if (snapshot == null) {
+        _setLibraryMessage('No draft is stored on this device.', isError: true);
+        notifyListeners();
+        return;
+      }
+
+      stop();
+      _savedScores = _sortSavedScores(snapshot.savedScores);
+      _draftBaseline = snapshot.draft.copy();
+      _draftLabel = null;
+      _applyScore(snapshot.draft, activeScoreId: snapshot.activeScoreId);
+      _hasUnsavedChanges = _computeHasUnsavedChanges(score);
+      _setLibraryMessage('Draft restored.', isError: false);
+      notifyListeners();
+    } on ScoreLibraryStorageException catch (error) {
+      _setLibraryMessage(error.message, isError: true);
+      notifyListeners();
+    }
+  }
+
+  Future<void> saveCurrentScore(String name, {bool createNew = false}) async {
+    final trimmedName = name.trim();
+    if (trimmedName.isEmpty) {
+      _setLibraryMessage('Score name cannot be empty.', isError: true);
+      notifyListeners();
+      return;
+    }
+
+    final now = DateTime.now();
+    final id = createNew || _activeScoreId == null
+        ? 'score-${now.microsecondsSinceEpoch}'
+        : _activeScoreId!;
+    final updatedEntry = SavedScoreEntry(
+      id: id,
+      name: trimmedName,
+      updatedAt: now,
+      score: score.copy(),
+    );
+
+    final nextSavedScores = [
+      for (final entry in _savedScores)
+        if (entry.id != id) entry,
+      updatedEntry,
+    ];
+
+    _savedScores = _sortSavedScores(nextSavedScores);
+    _activeScoreId = id;
+    _activePresetId = null;
+    _hasUnsavedChanges = false;
+
+    try {
+      await _persistSnapshot();
+      _setLibraryMessage('Saved "$trimmedName".', isError: false);
+    } on ScoreLibraryStorageException {
+      // Message already set.
+    }
+
+    notifyListeners();
+  }
+
+  Future<void> loadSavedScore(String id) async {
+    final entry = _savedScores.firstWhere(
+      (candidate) => candidate.id == id,
+      orElse: () =>
+          throw ArgumentError.value(id, 'id', 'Saved score does not exist'),
+    );
+
+    stop();
+    _applyScore(entry.score, activeScoreId: entry.id);
+    _draftLabel = null;
+    _draftBaseline = entry.score.copy();
+    _hasUnsavedChanges = false;
+
+    try {
+      await _persistSnapshot();
+      _setLibraryMessage('Loaded "${entry.name}".', isError: false);
+    } on ScoreLibraryStorageException {
+      // Message already set.
+    }
+
+    notifyListeners();
+  }
+
+  Future<void> loadPresetScore(String id) async {
+    final entry = _presetScores.firstWhere(
+      (candidate) => candidate.id == id,
+      orElse: () =>
+          throw ArgumentError.value(id, 'id', 'Preset score does not exist'),
+    );
+
+    stop();
+    _draftBaseline = entry.score.copy();
+    _draftLabel = entry.name;
+    _applyScore(entry.score, activeScoreId: null, activePresetId: entry.id);
+    _hasUnsavedChanges = false;
+
+    try {
+      await _persistSnapshot();
+      _setLibraryMessage('Loaded "${entry.name}".', isError: false);
+    } on ScoreLibraryStorageException {
+      // Message already set.
+    }
+
+    notifyListeners();
+  }
+
+  Future<void> importScoreDocument(PortableScoreDocument document) async {
+    stop();
+    _draftBaseline = document.score.copy();
+    _draftLabel = document.name;
+    _applyScore(document.score, activeScoreId: null);
+    _hasUnsavedChanges = false;
+
+    try {
+      await _persistSnapshot();
+      _setLibraryMessage('Imported "${document.name}".', isError: false);
+    } on ScoreLibraryStorageException {
+      // Message already set.
+    }
+
+    notifyListeners();
+  }
+
+  PortableScoreDocument buildPortableDocument() {
+    return PortableScoreDocument(
+      version: PortableScoreDocument.currentVersion,
+      name: currentScoreLabel,
+      score: score.copy(),
+    );
+  }
+
+  Future<void> deleteSavedScore(String id) async {
+    SavedScoreEntry? removedEntry;
+    final nextSavedScores = <SavedScoreEntry>[];
+    for (final entry in _savedScores) {
+      if (entry.id == id) {
+        removedEntry = entry;
+        continue;
+      }
+      nextSavedScores.add(entry);
+    }
+
+    if (removedEntry == null) {
+      throw ArgumentError.value(id, 'id', 'Saved score does not exist');
+    }
+
+    _savedScores = _sortSavedScores(nextSavedScores);
+    if (_activeScoreId == id) {
+      _activeScoreId = null;
+      _activePresetId = null;
+      _draftLabel = null;
+      _draftBaseline = score.copy();
+      _hasUnsavedChanges = false;
+    }
+
+    try {
+      await _persistSnapshot();
+      _setLibraryMessage('Deleted "${removedEntry.name}".', isError: false);
+    } on ScoreLibraryStorageException {
+      // Message already set.
+    }
+
+    notifyListeners();
+  }
+
   /// Set the active duration for future input, or edit the selected note/rest.
   void setDuration(NoteDuration duration) {
     if (!timingControlsEnabled) return;
@@ -176,6 +464,8 @@ class ScoreNotifier extends ChangeNotifier {
     if (_restMode) {
       _insertRestAtCursor(duration: duration);
       _restMode = false;
+      _notifyScoreChanged();
+      return;
     }
 
     notifyListeners();
@@ -201,7 +491,7 @@ class ScoreNotifier extends ChangeNotifier {
         );
       }
 
-      notifyListeners();
+      _notifyScoreChanged();
       return;
     }
 
@@ -234,7 +524,7 @@ class ScoreNotifier extends ChangeNotifier {
       final note = score.notes[index];
       score.replaceAt(index, note.copyWith(slurToNext: !note.slurToNext));
       _sanitizeSlursInRange(index - 1, index);
-      notifyListeners();
+      _notifyScoreChanged();
       return;
     }
 
@@ -259,7 +549,7 @@ class ScoreNotifier extends ChangeNotifier {
           );
         }
         _sanitizeSlursInRange(selectedTriplet.first - 1, selectedTriplet.last);
-        notifyListeners();
+        _notifyScoreChanged();
         return;
       }
 
@@ -268,7 +558,7 @@ class ScoreNotifier extends ChangeNotifier {
       }
 
       _createTripletFromSelection(_selectedNoteIndex!);
-      notifyListeners();
+      _notifyScoreChanged();
       return;
     }
 
@@ -418,7 +708,7 @@ class ScoreNotifier extends ChangeNotifier {
     _slurMode = false;
 
     _insertNotesAtCursor(_expandForPendingTriplet(prototype));
-    notifyListeners();
+    _notifyScoreChanged();
   }
 
   /// Select a note at the given index, or deselect (cursor at end) when null.
@@ -549,14 +839,14 @@ class ScoreNotifier extends ChangeNotifier {
       newMidi,
       duration: const Duration(milliseconds: 500),
     );
-    notifyListeners();
+    _notifyScoreChanged();
   }
 
   /// Delete the currently selected note, or the last note in end-input mode.
   void deleteSelected() {
     if (_selectionKind == SelectionKind.note && _selectedNoteIndex != null) {
       _deleteNoteAtIndex(_selectedNoteIndex!, keepSelection: true);
-      notifyListeners();
+      _notifyScoreChanged();
       return;
     }
 
@@ -564,7 +854,7 @@ class ScoreNotifier extends ChangeNotifier {
         _cursorIndex == score.notes.length &&
         score.notes.isNotEmpty) {
       _deleteNoteAtIndex(score.notes.length - 1, keepSelection: false);
-      notifyListeners();
+      _notifyScoreChanged();
     }
   }
 
@@ -641,7 +931,7 @@ class ScoreNotifier extends ChangeNotifier {
       duration: const Duration(milliseconds: 500),
     );
 
-    notifyListeners();
+    _notifyScoreChanged();
   }
 
   /// Change the duration of the selected note.
@@ -654,7 +944,7 @@ class ScoreNotifier extends ChangeNotifier {
     _applyDurationOrDotToSelectedGroup(
       (note) => note.copyWith(duration: duration),
     );
-    notifyListeners();
+    _notifyScoreChanged();
   }
 
   /// Toggle the dotted flag on the selected note.
@@ -668,7 +958,7 @@ class ScoreNotifier extends ChangeNotifier {
     _applyDurationOrDotToSelectedGroup(
       (note) => note.copyWith(isDotted: nextValue),
     );
-    notifyListeners();
+    _notifyScoreChanged();
   }
 
   void _applyDurationOrDotToSelectedGroup(Note Function(Note note) transform) {
@@ -858,8 +1148,12 @@ class ScoreNotifier extends ChangeNotifier {
 
   /// Set tempo (BPM).
   void setTempo(double bpm) {
-    score.bpm = bpm.clamp(40, 240);
-    notifyListeners();
+    final nextBpm = bpm.clamp(40, 240).toDouble();
+    if (score.bpm == nextBpm) {
+      return;
+    }
+    score.bpm = nextBpm;
+    _notifyScoreChanged();
   }
 
   // ---------------------------------------------------------------------------
@@ -868,9 +1162,13 @@ class ScoreNotifier extends ChangeNotifier {
 
   /// Set time signature (e.g. 3/4, 6/8).
   void setTimeSignature(int beats, int unit) {
-    score.beatsPerMeasure = beats.clamp(1, 16);
+    final nextBeats = beats.clamp(1, 16);
+    if (score.beatsPerMeasure == nextBeats && score.beatUnit == unit) {
+      return;
+    }
+    score.beatsPerMeasure = nextBeats;
     score.beatUnit = unit;
-    notifyListeners();
+    _notifyScoreChanged();
   }
 
   /// Cycle through common time signatures.
@@ -906,7 +1204,7 @@ class ScoreNotifier extends ChangeNotifier {
       );
     }
     score.keySignature = key;
-    notifyListeners();
+    _notifyScoreChanged();
   }
 
   /// Shift key signature one step on the circle of fifths.
@@ -918,8 +1216,110 @@ class ScoreNotifier extends ChangeNotifier {
     setKeySignature(next);
   }
 
+  void _notifyScoreChanged() {
+    _hasUnsavedChanges = _computeHasUnsavedChanges(score);
+    _scheduleDraftSave();
+    notifyListeners();
+  }
+
+  void _scheduleDraftSave() {
+    if (_initFuture == null) {
+      return;
+    }
+    _draftSaveTimer?.cancel();
+    _draftSaveTimer = Timer(_draftSaveDelay, () async {
+      try {
+        await _persistSnapshot();
+      } on ScoreLibraryStorageException {
+        notifyListeners();
+      }
+    });
+  }
+
+  Future<void> _persistSnapshot() async {
+    try {
+      await _scoreLibraryRepository.saveSnapshot(
+        ScoreLibrarySnapshot(
+          draft: score.copy(),
+          savedScores: [
+            for (final entry in _savedScores)
+              entry.copyWith(score: entry.score.copy()),
+          ],
+          activeScoreId: _activeScoreId,
+        ),
+      );
+    } on ScoreLibraryStorageException catch (error) {
+      _setLibraryMessage(error.message, isError: true);
+      rethrow;
+    } catch (error) {
+      final exception = ScoreLibraryStorageException(
+        'Failed to write the local score library.',
+        cause: error,
+      );
+      _setLibraryMessage(exception.message, isError: true);
+      throw exception;
+    }
+  }
+
+  void _applyScore(
+    Score source, {
+    required String? activeScoreId,
+    String? activePresetId,
+  }) {
+    score.notes
+      ..clear()
+      ..addAll(source.notes);
+    score.beatsPerMeasure = source.beatsPerMeasure;
+    score.beatUnit = source.beatUnit;
+    score.bpm = source.bpm;
+    score.keySignature = source.keySignature;
+
+    _activeScoreId = activeScoreId;
+    _activePresetId = activePresetId;
+    _selectionKind = null;
+    _selectedNoteIndex = null;
+    _cursorIndex = score.notes.length;
+    _currentDuration = NoteDuration.quarter;
+    _restMode = false;
+    _dottedMode = false;
+    _slurMode = false;
+    _tripletMode = false;
+    _syncNextTripletGroupId();
+  }
+
+  void _syncNextTripletGroupId() {
+    var maxTripletGroupId = 0;
+    for (final note in score.notes) {
+      final groupId = note.tripletGroupId;
+      if (groupId != null && groupId > maxTripletGroupId) {
+        maxTripletGroupId = groupId;
+      }
+    }
+    _nextTripletGroupId = maxTripletGroupId + 1;
+  }
+
+  bool _computeHasUnsavedChanges(Score candidate) {
+    final activeSaved = activeSavedScore;
+    if (activeSaved != null) {
+      return candidate != activeSaved.score;
+    }
+    return candidate != _draftBaseline;
+  }
+
+  List<SavedScoreEntry> _sortSavedScores(List<SavedScoreEntry> entries) {
+    final sorted = List<SavedScoreEntry>.from(entries);
+    sorted.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    return List.unmodifiable(sorted);
+  }
+
+  void _setLibraryMessage(String message, {required bool isError}) {
+    _libraryMessage = message;
+    _libraryMessageIsError = isError;
+  }
+
   @override
   void dispose() {
+    _draftSaveTimer?.cancel();
     stop();
     _audioService.dispose();
     super.dispose();

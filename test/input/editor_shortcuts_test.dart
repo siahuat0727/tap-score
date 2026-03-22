@@ -3,15 +3,35 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:tap_score/input/editor_shortcuts.dart';
 import 'package:tap_score/models/enums.dart';
 
+EditorShortcutIntent? _resolveEvent({
+  LogicalKeyboardKey? logicalKey,
+  String? code,
+  String? character,
+  KeyboardInputMode inputMode = KeyboardInputMode.keySignatureAware,
+  int octaveShift = 0,
+}) {
+  return resolveEditorShortcutEvent(
+    EditorShortcutEvent(
+      logicalKey: logicalKey,
+      code: code,
+      character: character,
+    ),
+    inputMode: inputMode,
+    octaveShift: octaveShift,
+  );
+}
+
 EditorShortcutIntent? _resolveKey(
   LogicalKeyboardKey key, {
   KeyboardInputMode inputMode = KeyboardInputMode.keySignatureAware,
   int octaveShift = 0,
+  String? character,
 }) {
   return resolveEditorShortcut(
     key,
     inputMode: inputMode,
     octaveShift: octaveShift,
+    character: character,
   );
 }
 
@@ -19,11 +39,13 @@ EditorShortcutIntent? _resolveCode(
   String code, {
   KeyboardInputMode inputMode = KeyboardInputMode.keySignatureAware,
   int octaveShift = 0,
+  String? character,
 }) {
   return resolveEditorShortcutCode(
     code,
     inputMode: inputMode,
     octaveShift: octaveShift,
+    character: character,
   );
 }
 
@@ -31,7 +53,7 @@ void main() {
   test('default mode resolves white-key shortcuts in the A3-D5 window', () {
     expect(_resolveKey(LogicalKeyboardKey.keyA)?.midi, 57);
     expect(_resolveKey(LogicalKeyboardKey.keyD)?.midi, 60);
-    expect(_resolveKey(LogicalKeyboardKey.quote)?.midi, 74);
+    expect(_resolveKey(LogicalKeyboardKey.quote, character: '\'')?.midi, 74);
   });
 
   test('default mode disables black-key shortcuts', () {
@@ -126,7 +148,7 @@ void main() {
       _resolveCode('KeyW', inputMode: KeyboardInputMode.chromatic)?.midi,
       58,
     );
-    expect(_resolveCode('Quote')?.midi, 74);
+    expect(_resolveCode('Quote', character: '\'')?.midi, 74);
     expect(_resolveCode('Digit1')?.duration, NoteDuration.whole);
     expect(_resolveCode('Digit6')?.duration, NoteDuration.thirtySecond);
     expect(_resolveCode('KeyE')?.kind, EditorShortcutKind.toggleInputMode);
@@ -134,6 +156,24 @@ void main() {
     expect(_resolveCode('BracketRight')?.kind, EditorShortcutKind.shiftUp);
     expect(_resolveCode('Digit8')?.kind, EditorShortcutKind.toggleSlur);
     expect(_resolveCode('Backquote')?.kind, EditorShortcutKind.restAction);
+  });
+
+  test('quote pitch binding only resolves the apostrophe character', () {
+    expect(
+      _resolveEvent(
+        logicalKey: LogicalKeyboardKey.quote,
+        character: '\'',
+      )?.midi,
+      74,
+    );
+    expect(_resolveEvent(code: 'Quote', character: '\'')?.midi, 74);
+    expect(
+      _resolveEvent(logicalKey: LogicalKeyboardKey.quote, character: '"'),
+      isNull,
+    );
+    expect(_resolveEvent(code: 'Quote', character: '"'), isNull);
+    expect(_resolveEvent(logicalKey: LogicalKeyboardKey.quote), isNull);
+    expect(_resolveEvent(code: 'Quote'), isNull);
   });
 
   test('piano key hints reflect mapped keys and shift zones', () {

@@ -93,7 +93,105 @@ class Score {
     );
   }
 
+  Map<String, dynamic> toJson() {
+    return {
+      'notes': notes.map((note) => note.toJson()).toList(),
+      'beatsPerMeasure': beatsPerMeasure,
+      'beatUnit': beatUnit,
+      'bpm': bpm,
+      'keySignature': keySignature.name,
+    };
+  }
+
+  factory Score.fromJson(Map<String, dynamic> json) {
+    final rawNotes = json['notes'];
+    if (rawNotes is! List) {
+      throw ArgumentError.value(
+        json['notes'],
+        'notes',
+        'Expected a list of notes',
+      );
+    }
+
+    final beatsPerMeasure = json['beatsPerMeasure'];
+    if (beatsPerMeasure is! int) {
+      throw ArgumentError.value(
+        json['beatsPerMeasure'],
+        'beatsPerMeasure',
+        'Expected an int',
+      );
+    }
+
+    final beatUnit = json['beatUnit'];
+    if (beatUnit is! int) {
+      throw ArgumentError.value(
+        json['beatUnit'],
+        'beatUnit',
+        'Expected an int',
+      );
+    }
+
+    final bpm = json['bpm'];
+    if (bpm is! num) {
+      throw ArgumentError.value(json['bpm'], 'bpm', 'Expected a number');
+    }
+
+    final keySignatureName = json['keySignature'];
+    if (keySignatureName is! String) {
+      throw ArgumentError.value(
+        json['keySignature'],
+        'keySignature',
+        'Expected a key signature name',
+      );
+    }
+
+    return Score(
+      notes: rawNotes
+          .map((item) {
+            if (item is! Map<String, dynamic>) {
+              throw ArgumentError.value(item, 'notes', 'Expected a note map');
+            }
+            return Note.fromJson(item);
+          })
+          .toList(growable: true),
+      beatsPerMeasure: beatsPerMeasure,
+      beatUnit: beatUnit,
+      bpm: bpm.toDouble(),
+      keySignature: KeySignature.fromName(keySignatureName),
+    );
+  }
+
   @override
   String toString() =>
       'Score(${notes.length} notes, $beatsPerMeasure/$beatUnit, ${bpm}bpm, ${keySignature.displayName})';
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    if (other is! Score) return false;
+    if (beatsPerMeasure != other.beatsPerMeasure ||
+        beatUnit != other.beatUnit ||
+        bpm != other.bpm ||
+        keySignature != other.keySignature ||
+        notes.length != other.notes.length) {
+      return false;
+    }
+
+    for (var index = 0; index < notes.length; index++) {
+      if (notes[index] != other.notes[index]) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    beatsPerMeasure,
+    beatUnit,
+    bpm,
+    keySignature,
+    Object.hashAll(notes),
+  );
 }

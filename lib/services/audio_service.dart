@@ -1,8 +1,11 @@
 import 'dart:async';
 import 'dart:io' show Platform;
+
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_midi_pro/flutter_midi_pro.dart';
+
 import '../models/score.dart';
+import 'playback_schedule.dart';
 import 'web_audio_stub.dart'
     if (dart.library.js) 'web_audio_impl.dart'
     as web_audio;
@@ -10,14 +13,27 @@ import 'web_audio_stub.dart'
 /// Service wrapping flutter_midi_pro for SoundFont-based piano playback.
 ///
 /// On Web, uses Web Audio API with bundled MP3 samples.
+class AudioNoteHandle {
+  final int id;
+  final int midi;
+
+  const AudioNoteHandle({required this.id, required this.midi});
+}
+
 class AudioService {
+  static const int defaultPlaybackVelocity = 100;
+  static const int rhythmTestMelodyVelocity = 90;
   static const int _accentedMetronomeMidi = 84;
   static const int _regularMetronomeMidi = 76;
+  static const int _rhythmTestAccentedMetronomeVelocity = 48;
+  static const int _rhythmTestRegularMetronomeVelocity = 36;
 
   final MidiPro _midiPro = MidiPro();
+  final Map<int, AudioNoteHandle> _activeNoteHandles = {};
   int? _sfId;
   bool _initialized = false;
   bool _stopRequested = false;
+  int _nextNativeHandleId = 1;
 
   /// Whether this platform supports MIDI playback.
   bool get _platformSupported {
@@ -57,48 +73,62 @@ class AudioService {
     }
   }
 
-  /// Play a single MIDI note.
-  Future<void> playNote(int midi, {int velocity = 100}) async {
-    if (!_initialized) return;
+  /// Start a single note and return its playback handle.
+  Future<AudioNoteHandle?> startNote(
+    int midi, {
+    int velocity = defaultPlaybackVelocity,
+  }) async {
+    if (!_initialized) return null;
 
+    final clampedMidi = midi.clamp(0, 127);
     if (kIsWeb) {
-      web_audio.playWebNote(midi.clamp(0, 127), velocity);
-      return;
+      final handleId = web_audio.playWebNote(clampedMidi, velocity);
+      if (handleId < 0) {
+        return null;
+      }
+
+      final handle = AudioNoteHandle(id: handleId, midi: clampedMidi);
+      _activeNoteHandles[handle.id] = handle;
+      return handle;
     }
 
-    if (_sfId == null) return;
+    if (_sfId == null) return null;
 
     try {
       await _midiPro.playNote(
         sfId: _sfId!,
         channel: 0,
-        key: midi.clamp(0, 127),
+        key: clampedMidi,
         velocity: velocity,
       );
+
+      final handle = AudioNoteHandle(
+        id: _nextNativeHandleId++,
+        midi: clampedMidi,
+      );
+      _activeNoteHandles[handle.id] = handle;
+      return handle;
     } catch (e) {
-      // Gracefully handle audio errors.
+      return null;
     }
   }
 
-  /// Stop a single MIDI note.
-  Future<void> stopNote(int midi) async {
+  Future<void> stopNoteHandle(AudioNoteHandle handle) async {
     if (!_initialized) return;
 
+    _activeNoteHandles.remove(handle.id);
+
     if (kIsWeb) {
-      web_audio.stopWebNote(midi.clamp(0, 127));
+      web_audio.stopWebNote(handle.id);
       return;
     }
 
     if (_sfId == null) return;
 
     try {
-      await _midiPro.stopNote(
-        sfId: _sfId!,
-        channel: 0,
-        key: midi.clamp(0, 127),
-      );
+      await _midiPro.stopNote(sfId: _sfId!, channel: 0, key: handle.midi);
     } catch (e) {
-      // Gracefully handle audio errors.
+      // Keep playback resilient to platform stop errors.
     }
   }
 
@@ -106,9 +136,11 @@ class AudioService {
   void playNoteWithDuration(
     int midi, {
     Duration duration = const Duration(milliseconds: 400),
+    int velocity = defaultPlaybackVelocity,
   }) {
-    playNote(midi);
-    Timer(duration, () => stopNote(midi));
+    unawaited(
+      _playNoteWithScheduledStop(midi, duration: duration, velocity: velocity),
+    );
   }
 
   /// Play a short metronome click.
@@ -119,58 +151,162 @@ class AudioService {
     );
   }
 
-  /// Play the entire score sequentially.
+  void playRhythmTestMetronomeClick({required bool accented}) {
+    playNoteWithDuration(
+      accented ? _accentedMetronomeMidi : _regularMetronomeMidi,
+      duration: const Duration(milliseconds: 90),
+      velocity: accented
+          ? _rhythmTestAccentedMetronomeVelocity
+          : _rhythmTestRegularMetronomeVelocity,
+    );
+  }
+
+  /// Play the entire score using the shared playback schedule.
   Future<void> playScore(
     Score score, {
     required void Function(int index) onNoteIndex,
     required void Function() onComplete,
   }) async {
+    await playPlaybackTimeline(
+      buildScorePlaybackTimeline(score),
+      onNoteIndex: onNoteIndex,
+      onComplete: onComplete,
+    );
+  }
+
+  Future<void> playPlaybackTimeline(
+    ScorePlaybackTimeline timeline, {
+    required void Function(int index) onNoteIndex,
+    required void Function() onComplete,
+  }) async {
     _stopRequested = false;
+    final activeHandlesByNoteIndex = <int, AudioNoteHandle>{};
+    final events =
+        <_PlaybackTimelineEvent>[
+          for (final step in timeline.steps)
+            _StepPlaybackEvent(
+              targetMicros: (step.startSeconds * Duration.microsecondsPerSecond)
+                  .round(),
+              noteIndex: step.noteIndex,
+            ),
+          for (final event in buildScheduledPlaybackEvents(
+            timeline.playbackNotes,
+          ))
+            _AudioPlaybackEvent(event),
+        ]..sort((a, b) {
+          final targetCompare = a.targetMicros.compareTo(b.targetMicros);
+          if (targetCompare != 0) {
+            return targetCompare;
+          }
+          return a.sortOrder.compareTo(b.sortOrder);
+        });
 
-    for (int i = 0; i < score.notes.length; i++) {
-      if (_stopRequested) break;
-
-      final note = score.notes[i];
-      onNoteIndex(i);
-
-      if (!note.isRest) {
-        await playNote(note.midi);
+    final stopwatch = Stopwatch()..start();
+    for (final event in events) {
+      if (!await _waitUntil(stopwatch, event.targetMicros)) {
+        await _stopActiveHandles(activeHandlesByNoteIndex.values);
+        return;
       }
 
-      final durationMs = (note.effectiveBeats * score.secondsPerBeat * 1000)
-          .round();
-      await Future.delayed(Duration(milliseconds: durationMs));
-
-      if (!note.isRest) {
-        await stopNote(note.midi);
+      switch (event) {
+        case _StepPlaybackEvent():
+          onNoteIndex(event.noteIndex);
+        case _AudioPlaybackEvent():
+          switch (event.event.type) {
+            case ScheduledPlaybackEventType.noteOff:
+              final handle = activeHandlesByNoteIndex.remove(
+                event.event.note.noteIndex,
+              );
+              if (handle != null) {
+                await stopNoteHandle(handle);
+              }
+            case ScheduledPlaybackEventType.noteOn:
+              final handle = await startNote(
+                event.event.note.midi,
+                velocity: event.event.note.velocity,
+              );
+              if (handle != null) {
+                activeHandlesByNoteIndex[event.event.note.noteIndex] = handle;
+              }
+          }
       }
     }
 
+    final finishMicros =
+        (timeline.totalDurationSeconds * Duration.microsecondsPerSecond)
+            .round();
+    if (!await _waitUntil(stopwatch, finishMicros)) {
+      await _stopActiveHandles(activeHandlesByNoteIndex.values);
+      return;
+    }
+
+    await _stopActiveHandles(activeHandlesByNoteIndex.values);
     if (!_stopRequested) {
       onComplete();
+    }
+  }
+
+  Future<void> _playNoteWithScheduledStop(
+    int midi, {
+    required Duration duration,
+    required int velocity,
+  }) async {
+    final handle = await startNote(midi, velocity: velocity);
+    if (handle == null) {
+      return;
+    }
+
+    Timer(duration, () {
+      unawaited(stopNoteHandle(handle));
+    });
+  }
+
+  Future<bool> _waitUntil(Stopwatch stopwatch, int targetMicros) async {
+    while (!_stopRequested) {
+      final remainingMicros = targetMicros - stopwatch.elapsedMicroseconds;
+      if (remainingMicros <= 0) {
+        return true;
+      }
+
+      final sleepMicros = remainingMicros > 16000 ? 16000 : remainingMicros;
+      await Future<void>.delayed(Duration(microseconds: sleepMicros));
+    }
+
+    return false;
+  }
+
+  Future<void> _stopActiveHandles(Iterable<AudioNoteHandle> handles) async {
+    for (final handle in List<AudioNoteHandle>.from(handles)) {
+      await stopNoteHandle(handle);
     }
   }
 
   /// Stop ongoing playback.
   void stopPlayback() {
     _stopRequested = true;
-    if (_initialized) {
-      if (kIsWeb) {
-        for (int i = 0; i < 128; i++) {
-          web_audio.stopWebNote(i);
-        }
-        return;
-      }
+    if (!_initialized) {
+      return;
+    }
 
-      if (_sfId != null) {
-        try {
-          for (int i = 0; i < 128; i++) {
-            _midiPro.stopNote(sfId: _sfId!, channel: 0, key: i);
-          }
-        } catch (e) {
-          // Gracefully handle audio errors.
-        }
+    if (kIsWeb) {
+      for (final handle in _activeNoteHandles.values.toList()) {
+        web_audio.stopWebNote(handle.id);
       }
+      _activeNoteHandles.clear();
+      return;
+    }
+
+    if (_sfId == null) {
+      return;
+    }
+
+    try {
+      for (final handle in _activeNoteHandles.values.toList()) {
+        _midiPro.stopNote(sfId: _sfId!, channel: 0, key: handle.midi);
+      }
+      _activeNoteHandles.clear();
+    } catch (e) {
+      // Keep playback resilient to platform stop errors.
     }
   }
 
@@ -178,4 +314,36 @@ class AudioService {
   void dispose() {
     stopPlayback();
   }
+}
+
+sealed class _PlaybackTimelineEvent {
+  const _PlaybackTimelineEvent({
+    required this.targetMicros,
+    required this.sortOrder,
+  });
+
+  final int targetMicros;
+  final int sortOrder;
+}
+
+class _StepPlaybackEvent extends _PlaybackTimelineEvent {
+  const _StepPlaybackEvent({
+    required super.targetMicros,
+    required this.noteIndex,
+  }) : super(sortOrder: 1);
+
+  final int noteIndex;
+}
+
+class _AudioPlaybackEvent extends _PlaybackTimelineEvent {
+  _AudioPlaybackEvent(this.event)
+    : super(
+        targetMicros: event.targetMicros,
+        sortOrder: switch (event.type) {
+          ScheduledPlaybackEventType.noteOff => 0,
+          ScheduledPlaybackEventType.noteOn => 2,
+        },
+      );
+
+  final ScheduledPlaybackEvent event;
 }

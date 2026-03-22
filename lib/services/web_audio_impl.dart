@@ -13,10 +13,10 @@ external JSBoolean _isWebAudioReady();
 external JSString _getWebAudioInitError();
 
 @JS('playWebNote')
-external void _playWebNote(int midi, int velocity);
+external JSNumber _playWebNote(int midi, int velocity);
 
 @JS('stopWebNote')
-external void _stopWebNote(int midi);
+external void _stopWebNote(int handleId);
 
 Future<bool> initWebAudio({
   Duration timeout = const Duration(seconds: 10),
@@ -40,10 +40,10 @@ Future<bool> initWebAudio({
   throw TimeoutException('Timed out waiting for Web Audio initialization.');
 }
 
-void playWebNote(int midi, int velocity) {
-  _playWebNote(midi, velocity);
+int playWebNote(int midi, int velocity) {
+  return _playWebNote(midi, velocity).toDartInt;
 }
 
-void stopWebNote(int midi) {
-  _stopWebNote(midi);
+void stopWebNote(int handleId) {
+  _stopWebNote(handleId);
 }

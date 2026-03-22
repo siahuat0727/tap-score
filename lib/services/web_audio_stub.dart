@@ -6,5 +6,5 @@ Future<bool> initWebAudio({
   return false;
 }
 
-void playWebNote(int midi, int velocity) {}
-void stopWebNote(int midi) {}
+int playWebNote(int midi, int velocity) => -1;
+void stopWebNote(int handleId) {}

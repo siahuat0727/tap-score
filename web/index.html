@@ -40,6 +40,7 @@
     var _noteBuffers = {};
     var _noteDecodePromises = {};
     var _activeWebNotes = {};
+    var _nextWebNoteHandleId = 1;
     var _webAudioReady = false;
     var _webAudioInitError = '';
     var _webAudioInitPromise = null;
@@ -186,31 +187,52 @@
     };
 
     window.playWebNote = function(midi, velocity) {
-      if (!_audioCtx || !_webAudioReady) return;
+      if (!_audioCtx || !_webAudioReady) return -1;
 
       // Resume AudioContext on user gesture (browser autoplay policy)
       if (_audioCtx.state === 'suspended') {
         _audioCtx.resume().catch(function() {});
       }
 
+      var handleId = _nextWebNoteHandleId++;
+      var entry = { source: null, stopped: false };
+      _activeWebNotes[handleId] = entry;
+
       _ensureNoteBuffer(midi).then(function(buffer) {
+      if (!_activeWebNotes[handleId] || entry.stopped) {
+        delete _activeWebNotes[handleId];
+        return;
+      }
+
       var source = _audioCtx.createBufferSource();
       var gain = _audioCtx.createGain();
       gain.gain.value = velocity / 127.0;
       source.buffer = buffer;
       source.connect(gain);
       gain.connect(_audioCtx.destination);
+      source.onended = function() {
+        if (_activeWebNotes[handleId] === entry) {
+          delete _activeWebNotes[handleId];
+        }
+      };
+      entry.source = source;
       source.start();
-      _activeWebNotes[midi] = { source: source, gain: gain };
       }).catch(function(error) {
         console.warn('Failed to play note', midi, error);
+        delete _activeWebNotes[handleId];
       });
+
+      return handleId;
     };
 
-    window.stopWebNote = function(midi) {
-      if (_activeWebNotes[midi]) {
-        try { _activeWebNotes[midi].source.stop(); } catch(e) {}
-        delete _activeWebNotes[midi];
+    window.stopWebNote = function(handleId) {
+      var entry = _activeWebNotes[handleId];
+      if (entry) {
+        entry.stopped = true;
+        if (entry.source) {
+          try { entry.source.stop(); } catch(e) {}
+        }
+        delete _activeWebNotes[handleId];
       }
     };
   </script>

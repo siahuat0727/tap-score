@@ -39,6 +39,9 @@ dependencies:
   webview_flutter: ^4.13.1
   webview_flutter_web: ^0.2.3+4
   web: ^1.1.1
+  shared_preferences: ^2.5.3
+  file_picker: ^10.3.9
+  share_plus: ^12.0.1
 
 dev_dependencies:
   flutter_test:
@@ -68,6 +71,7 @@ flutter:
     - assets/soundfonts/
     - assets/html/
     - assets/vexflow/
+    - assets/presets/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

@@ -12,100 +12,99 @@ class RhythmTestPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     return Consumer<RhythmTestNotifier>(
       builder: (context, notifier, _) {
-        final result = notifier.result;
-        final averageErrorBeats =
-            result?.shiftedAverageAbsoluteErrorSeconds == null
-            ? null
-            : result!.shiftedAverageAbsoluteErrorSeconds! /
-                  notifier.timeline.pulseDurationSeconds;
-        final shiftBeats = result == null
-            ? null
-            : result.appliedShiftSeconds /
-                  notifier.timeline.pulseDurationSeconds;
-
         return ColoredBox(
           color: const Color(0xFFF0EDE4),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final stacked = constraints.maxWidth < 700;
+          child: Center(
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(
+                16,
+                notifier.errorMessage == null ? 12 : 14,
+                16,
+                notifier.errorMessage == null ? 14 : 16,
+              ),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 960),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final compact =
+                        constraints.maxWidth < 420 ||
+                        constraints.maxHeight < 190;
+                    final wide = constraints.maxWidth >= 700;
 
-                final summary = _SummaryWrap(
-                  phase: notifier.phase,
-                  matchedLabel: result == null
-                      ? 'Not run'
-                      : '${result.matchedCount} / ${result.expectedCount}',
-                  averageErrorLabel: averageErrorBeats == null
-                      ? 'No matches'
-                      : '${averageErrorBeats.toStringAsFixed(2)} beat',
-                  shiftLabel: result == null
-                      ? 'Not run'
-                      : '${shiftBeats! >= 0 ? '+' : ''}${shiftBeats.toStringAsFixed(2)} beat',
-                );
+                    final parameters = _ParameterColumn(
+                      bpm: notifier.score.bpm,
+                      largeErrorThresholdBeats:
+                          notifier.largeErrorThresholdBeats,
+                      enabled: !notifier.isBusy,
+                      compact: compact,
+                      onTempoChanged: onTempoChanged,
+                    );
 
-                final tempo = _TempoStrip(
-                  bpm: notifier.score.bpm,
-                  enabled: !notifier.isBusy,
-                  onTempoChanged: onTempoChanged,
-                );
-
-                final actionButtons = _ActionButtons(notifier: notifier);
-                final tapButton = _TapButton(notifier: notifier);
-                final compactActionRow = _CompactActionRow(notifier: notifier);
-
-                if (stacked) {
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      if (notifier.errorMessage != null) ...[
-                        _InfoBanner(message: notifier.errorMessage!),
-                        const SizedBox(height: 8),
-                      ],
-                      _CompactSummaryWrap(
-                        phase: notifier.phase,
-                        matchedLabel: result == null
-                            ? 'Not run'
-                            : '${result.matchedCount} / ${result.expectedCount}',
-                        averageErrorLabel: averageErrorBeats == null
-                            ? 'No matches'
-                            : '${averageErrorBeats.toStringAsFixed(2)} beat',
-                        shiftLabel: result == null
-                            ? 'Not run'
-                            : '${shiftBeats! >= 0 ? '+' : ''}${shiftBeats.toStringAsFixed(2)} beat',
-                      ),
-                      const SizedBox(height: 8),
-                      tempo,
-                      const SizedBox(height: 8),
-                      compactActionRow,
-                    ],
-                  );
-                }
-
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    if (notifier.errorMessage != null) ...[
-                      _InfoBanner(message: notifier.errorMessage!),
-                      const SizedBox(height: 10),
-                    ],
-                    summary,
-                    const SizedBox(height: 12),
-                    Expanded(
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                    if (wide) {
+                      return Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Expanded(child: tempo),
-                          const SizedBox(width: 12),
-                          SizedBox(width: 280, child: actionButtons),
-                          const SizedBox(width: 12),
-                          SizedBox(width: 160, child: tapButton),
+                          if (notifier.errorMessage != null) ...[
+                            _InfoBanner(message: notifier.errorMessage!),
+                            const SizedBox(height: 14),
+                          ],
+                          Expanded(
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Expanded(child: parameters),
+                                const SizedBox(width: 18),
+                                Expanded(
+                                  child: _PrimaryActionButton(
+                                    notifier: notifier,
+                                    compact: false,
+                                    wide: true,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                         ],
-                      ),
-                    ),
-                  ],
-                );
-              },
+                      );
+                    }
+
+                    if (compact) {
+                      return Column(
+                        children: [
+                          if (notifier.errorMessage != null) ...[
+                            _InfoBanner(message: notifier.errorMessage!),
+                            const SizedBox(height: 8),
+                          ],
+                          Expanded(child: Center(child: parameters)),
+                          const SizedBox(height: 8),
+                          _PrimaryActionButton(
+                            notifier: notifier,
+                            compact: true,
+                            wide: false,
+                          ),
+                        ],
+                      );
+                    }
+
+                    return Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        if (notifier.errorMessage != null) ...[
+                          _InfoBanner(message: notifier.errorMessage!),
+                          const SizedBox(height: 12),
+                        ],
+                        parameters,
+                        const SizedBox(height: 16),
+                        _PrimaryActionButton(
+                          notifier: notifier,
+                          compact: false,
+                          wide: false,
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
             ),
           ),
         );
@@ -124,7 +123,7 @@ class _InfoBanner extends StatelessWidget {
     return DecoratedBox(
       decoration: BoxDecoration(
         color: const Color(0x18C62828),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(color: const Color(0x55C62828)),
       ),
       child: Padding(
@@ -141,348 +140,304 @@ class _InfoBanner extends StatelessWidget {
   }
 }
 
-class _SummaryWrap extends StatelessWidget {
-  const _SummaryWrap({
-    required this.phase,
-    required this.matchedLabel,
-    required this.averageErrorLabel,
-    required this.shiftLabel,
-  });
-
-  final RhythmTestPhase phase;
-  final String matchedLabel;
-  final String averageErrorLabel;
-  final String shiftLabel;
-
-  @override
-  Widget build(BuildContext context) {
-    return Wrap(
-      spacing: 10,
-      runSpacing: 10,
-      children: [
-        _SummaryTile(label: 'Phase', value: _phaseLabel(phase)),
-        _SummaryTile(label: 'Matched', value: matchedLabel),
-        _SummaryTile(label: 'Avg abs error', value: averageErrorLabel),
-        _SummaryTile(label: 'Shift', value: shiftLabel),
-      ],
-    );
-  }
-
-  String _phaseLabel(RhythmTestPhase phase) {
-    return switch (phase) {
-      RhythmTestPhase.idle => 'Ready',
-      RhythmTestPhase.countIn => 'Count-in',
-      RhythmTestPhase.running => 'Running',
-      RhythmTestPhase.finished => 'Result',
-      RhythmTestPhase.cancelled => 'Stopped',
-    };
-  }
-}
-
-class _CompactSummaryWrap extends StatelessWidget {
-  const _CompactSummaryWrap({
-    required this.phase,
-    required this.matchedLabel,
-    required this.averageErrorLabel,
-    required this.shiftLabel,
-  });
-
-  final RhythmTestPhase phase;
-  final String matchedLabel;
-  final String averageErrorLabel;
-  final String shiftLabel;
-
-  @override
-  Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: const Color(0xFFFBF7EE),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE0D6C4)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'Phase ${_phaseLabel(phase)}   Matched $matchedLabel',
-              style: const TextStyle(
-                color: Color(0xFF2B251C),
-                fontSize: 13,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Avg $averageErrorLabel   Shift $shiftLabel',
-              style: const TextStyle(
-                color: Color(0xFF6E6254),
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  String _phaseLabel(RhythmTestPhase phase) {
-    return switch (phase) {
-      RhythmTestPhase.idle => 'Ready',
-      RhythmTestPhase.countIn => 'Count-in',
-      RhythmTestPhase.running => 'Running',
-      RhythmTestPhase.finished => 'Result',
-      RhythmTestPhase.cancelled => 'Stopped',
-    };
-  }
-}
-
-class _SummaryTile extends StatelessWidget {
-  const _SummaryTile({required this.label, required this.value});
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      constraints: const BoxConstraints(minWidth: 116),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFBF7EE),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE0D6C4)),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: const TextStyle(color: Color(0xFF857764), fontSize: 12),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            value,
-            style: const TextStyle(
-              color: Color(0xFF2B251C),
-              fontSize: 16,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _TempoStrip extends StatelessWidget {
-  const _TempoStrip({
+class _ParameterColumn extends StatelessWidget {
+  const _ParameterColumn({
     required this.bpm,
+    required this.largeErrorThresholdBeats,
     required this.enabled,
+    required this.compact,
     required this.onTempoChanged,
   });
 
   final double bpm;
+  final double largeErrorThresholdBeats;
   final bool enabled;
+  final bool compact;
   final ValueChanged<double> onTempoChanged;
 
   @override
   Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final effectiveCompact = compact || constraints.maxHeight < 170;
+        final tempoStrip = _ParameterStrip(
+          controlKeyPrefix: 'rhythm-test-tempo',
+          key: const ValueKey('rhythm-test-tempo'),
+          label: 'BPM',
+          valueLabel: '${bpm.round()}',
+          value: bpm,
+          min: 40,
+          max: 240,
+          divisions: 200,
+          compact: effectiveCompact,
+          enabled: enabled,
+          onChanged: onTempoChanged,
+        );
+        final thresholdStrip = _ParameterStrip(
+          controlKeyPrefix: 'rhythm-test-threshold',
+          key: const ValueKey('rhythm-test-threshold'),
+          label: 'Large offset',
+          valueLabel: '${largeErrorThresholdBeats.toStringAsFixed(2)} beat',
+          value: largeErrorThresholdBeats,
+          min: 0.05,
+          max: 0.50,
+          divisions: 45,
+          compact: effectiveCompact,
+          enabled: enabled,
+          onChanged: context.read<RhythmTestNotifier>().setLargeErrorThreshold,
+        );
+
+        if (effectiveCompact) {
+          return Row(
+            children: [
+              Expanded(child: tempoStrip),
+              const SizedBox(width: 8),
+              Expanded(child: thresholdStrip),
+            ],
+          );
+        }
+
+        return Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            tempoStrip,
+            SizedBox(height: effectiveCompact ? 8 : 10),
+            thresholdStrip,
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _ParameterStrip extends StatelessWidget {
+  const _ParameterStrip({
+    required super.key,
+    required this.controlKeyPrefix,
+    required this.label,
+    required this.valueLabel,
+    required this.value,
+    required this.min,
+    required this.max,
+    required this.divisions,
+    required this.compact,
+    required this.enabled,
+    required this.onChanged,
+  });
+
+  final String controlKeyPrefix;
+  final String label;
+  final String valueLabel;
+  final double value;
+  final double min;
+  final double max;
+  final int divisions;
+  final bool compact;
+  final bool enabled;
+  final ValueChanged<double> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final step = (max - min) / divisions;
     return DecoratedBox(
       decoration: BoxDecoration(
         color: const Color(0xFFFBF7EE),
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(20),
         border: Border.all(color: const Color(0xFFE0D6C4)),
       ),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        child: Row(
-          children: [
-            SizedBox(
-              width: 78,
-              child: Text(
-                'BPM ${bpm.round()}',
-                style: const TextStyle(
-                  color: Color(0xFF2B251C),
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
+        padding: EdgeInsets.symmetric(
+          horizontal: 14,
+          vertical: compact ? 4 : 8,
+        ),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final ultraCompact = compact && constraints.maxWidth < 170;
+            final labelBlock = SizedBox(
+              width: ultraCompact ? 44 : (compact ? 98 : 112),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (!ultraCompact)
+                    Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: const Color(0xFF8A7D6A),
+                        fontSize: compact ? 11 : 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  if (!ultraCompact) const SizedBox(height: 2),
+                  Text(
+                    valueLabel,
+                    key: ValueKey('${controlKeyPrefix}-value'),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: const Color(0xFF534838),
+                      fontSize: ultraCompact ? 11 : (compact ? 13 : 14),
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+            );
+            final decrementButton = _AdjustButton(
+              icon: Icons.remove_rounded,
+              enabled: enabled,
+              compact: compact,
+              ultraCompact: ultraCompact,
+              buttonKey: ValueKey('${controlKeyPrefix}-decrement'),
+              onPressed: () => onChanged((value - step).clamp(min, max)),
+            );
+            final incrementButton = _AdjustButton(
+              icon: Icons.add_rounded,
+              enabled: enabled,
+              compact: compact,
+              ultraCompact: ultraCompact,
+              buttonKey: ValueKey('${controlKeyPrefix}-increment'),
+              onPressed: () => onChanged((value + step).clamp(min, max)),
+            );
+            final slider = Expanded(
+              child: SliderTheme(
+                data: SliderTheme.of(context).copyWith(
+                  trackHeight: 3,
+                  activeTrackColor: const Color(0xFF7A705F),
+                  inactiveTrackColor: const Color(0xFFD8D0C1),
+                  thumbColor: const Color(0xFF7A705F),
+                  overlayColor: const Color(0xFF7A705F).withAlpha(24),
+                  thumbShape: RoundSliderThumbShape(
+                    enabledThumbRadius: ultraCompact ? 5 : 7,
+                  ),
+                ),
+                child: Slider(
+                  value: value,
+                  min: min,
+                  max: max,
+                  divisions: divisions,
+                  label: valueLabel,
+                  onChanged: enabled ? onChanged : null,
                 ),
               ),
+            );
+
+            return Row(
+              children: [labelBlock, decrementButton, slider, incrementButton],
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _AdjustButton extends StatelessWidget {
+  const _AdjustButton({
+    required this.icon,
+    required this.enabled,
+    required this.compact,
+    required this.ultraCompact,
+    required this.buttonKey,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final bool enabled;
+  final bool compact;
+  final bool ultraCompact;
+  final Key buttonKey;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      key: buttonKey,
+      onPressed: enabled ? onPressed : null,
+      icon: Icon(icon, size: ultraCompact ? 16 : (compact ? 18 : 20)),
+      color: const Color(0xFF534838),
+      disabledColor: const Color(0xFFB7AE9F),
+      splashRadius: ultraCompact ? 14 : (compact ? 18 : 20),
+      constraints: BoxConstraints.tightFor(
+        width: ultraCompact ? 22 : (compact ? 28 : 32),
+        height: ultraCompact ? 22 : (compact ? 28 : 32),
+      ),
+      padding: EdgeInsets.zero,
+      visualDensity: VisualDensity.compact,
+    );
+  }
+}
+
+class _PrimaryActionButton extends StatelessWidget {
+  const _PrimaryActionButton({
+    required this.notifier,
+    required this.compact,
+    required this.wide,
+  });
+
+  final RhythmTestNotifier notifier;
+  final bool compact;
+  final bool wide;
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = notifier.primaryActionEnabled;
+    final button = FilledButton(
+      key: const ValueKey('rhythm-test-primary'),
+      onPressed: enabled
+          ? () => context.read<RhythmTestNotifier>().performPrimaryAction()
+          : null,
+      style: FilledButton.styleFrom(
+        backgroundColor: const Color(0xFF2F261C),
+        disabledBackgroundColor: const Color(0xFFBFB6A7),
+        foregroundColor: Colors.white,
+        disabledForegroundColor: Colors.white,
+        padding: EdgeInsets.symmetric(
+          horizontal: compact ? 24 : 28,
+          vertical: wide ? 20 : (compact ? 10 : 18),
+        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            compact && notifier.primaryActionHint != null
+                ? '${notifier.primaryActionLabel} · ${notifier.primaryActionHint!}'
+                : notifier.primaryActionLabel,
+            style: TextStyle(
+              fontSize: wide ? 34 : (compact ? 18 : 24),
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.3,
             ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Slider(
-                value: bpm,
-                min: 40,
-                max: 240,
-                divisions: 200,
-                label: '${bpm.round()} BPM',
-                onChanged: enabled ? onTempoChanged : null,
+          ),
+          if (!compact && notifier.primaryActionHint != null) ...[
+            SizedBox(height: wide ? 8 : 4),
+            Text(
+              notifier.primaryActionHint!,
+              style: TextStyle(
+                fontSize: wide ? 14 : 12,
+                fontWeight: FontWeight.w700,
+                color: const Color(0xD9FFFFFF),
+                letterSpacing: 0.5,
               ),
             ),
           ],
-        ),
+        ],
       ),
     );
-  }
-}
 
-class _ActionButtons extends StatelessWidget {
-  const _ActionButtons({required this.notifier});
+    if (wide) {
+      return SizedBox.expand(child: button);
+    }
 
-  final RhythmTestNotifier notifier;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: FilledButton.icon(
-            key: const ValueKey('rhythm-test-start'),
-            onPressed: notifier.canStart
-                ? () => context.read<RhythmTestNotifier>().start()
-                : null,
-            icon: Icon(
-              notifier.result == null
-                  ? Icons.play_arrow_rounded
-                  : Icons.replay_rounded,
-            ),
-            label: Text(notifier.result == null ? 'Start test' : 'Run again'),
-            style: FilledButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 16),
-            ),
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: OutlinedButton.icon(
-            key: const ValueKey('rhythm-test-reset'),
-            onPressed: notifier.isBusy
-                ? () => context.read<RhythmTestNotifier>().stop()
-                : notifier.result != null ||
-                      notifier.phase == RhythmTestPhase.cancelled
-                ? () => context.read<RhythmTestNotifier>().reset()
-                : null,
-            icon: Icon(
-              notifier.isBusy ? Icons.stop_rounded : Icons.refresh_rounded,
-            ),
-            label: Text(notifier.isBusy ? 'Stop' : 'Reset'),
-            style: OutlinedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 16),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _CompactActionRow extends StatelessWidget {
-  const _CompactActionRow({required this.notifier});
-
-  final RhythmTestNotifier notifier;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: FilledButton.icon(
-            key: const ValueKey('rhythm-test-start'),
-            onPressed: notifier.canStart
-                ? () => context.read<RhythmTestNotifier>().start()
-                : null,
-            icon: Icon(
-              notifier.result == null
-                  ? Icons.play_arrow_rounded
-                  : Icons.replay_rounded,
-              size: 18,
-            ),
-            label: Text(notifier.result == null ? 'Start' : 'Again'),
-            style: FilledButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              textStyle: const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: OutlinedButton.icon(
-            key: const ValueKey('rhythm-test-reset'),
-            onPressed: notifier.isBusy
-                ? () => context.read<RhythmTestNotifier>().stop()
-                : notifier.result != null ||
-                      notifier.phase == RhythmTestPhase.cancelled
-                ? () => context.read<RhythmTestNotifier>().reset()
-                : null,
-            icon: Icon(
-              notifier.isBusy ? Icons.stop_rounded : Icons.refresh_rounded,
-              size: 18,
-            ),
-            label: Text(notifier.isBusy ? 'Stop' : 'Reset'),
-            style: OutlinedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              textStyle: const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: FilledButton(
-            key: const ValueKey('rhythm-test-tap'),
-            onPressed:
-                notifier.phase == RhythmTestPhase.countIn ||
-                    notifier.phase == RhythmTestPhase.running
-                ? () => context.read<RhythmTestNotifier>().recordTap()
-                : null,
-            style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFFB44D2B),
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              textStyle: const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-            child: const Text('Tap'),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _TapButton extends StatelessWidget {
-  const _TapButton({required this.notifier});
-
-  final RhythmTestNotifier notifier;
-
-  @override
-  Widget build(BuildContext context) {
-    return FilledButton(
-      key: const ValueKey('rhythm-test-tap'),
-      onPressed:
-          notifier.phase == RhythmTestPhase.countIn ||
-              notifier.phase == RhythmTestPhase.running
-          ? () => context.read<RhythmTestNotifier>().recordTap()
-          : null,
-      style: FilledButton.styleFrom(
-        backgroundColor: const Color(0xFFB44D2B),
-        foregroundColor: Colors.white,
-        padding: const EdgeInsets.symmetric(vertical: 18),
-        textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
-      ),
-      child: const Text('Tap'),
+    return SizedBox(
+      width: double.infinity,
+      height: compact ? 56 : 92,
+      child: button,
     );
   }
 }

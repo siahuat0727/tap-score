@@ -79,13 +79,11 @@ class _ScoreViewWidgetState extends State<ScoreViewWidget> {
         if (!widget.interactive) {
           return;
         }
-        final shortcut = code == null
-            ? null
-            : resolveEditorShortcutCode(
-                code,
-                inputMode: notifier.keyboardInputMode,
-                octaveShift: notifier.keyboardOctaveShift,
-              );
+        final shortcut = resolveEditorShortcutEvent(
+          EditorShortcutEvent(code: code, character: key),
+          inputMode: notifier.keyboardInputMode,
+          octaveShift: notifier.keyboardOctaveShift,
+        );
         if (shortcut != null) {
           notifier.handleEditorShortcut(shortcut);
           return;

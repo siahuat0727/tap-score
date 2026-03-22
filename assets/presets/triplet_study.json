@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "name": "Triplet Study",
+  "score": {
+    "notes": [
+      {
+        "midi": 67,
+        "duration": "quarter",
+        "accidental": "none",
+        "isRest": false,
+        "isDotted": false,
+        "tripletGroupId": 1,
+        "sourceMidi": null,
+        "slurToNext": false
+      },
+      {
+        "midi": 69,
+        "duration": "quarter",
+        "accidental": "none",
+        "isRest": false,
+        "isDotted": false,
+        "tripletGroupId": 1,
+        "sourceMidi": null,
+        "slurToNext": false
+      },
+      {
+        "midi": 71,
+        "duration": "quarter",
+        "accidental": "none",
+        "isRest": false,
+        "isDotted": false,
+        "tripletGroupId": 1,
+        "sourceMidi": null,
+        "slurToNext": false
+      },
+      {
+        "midi": 72,
+        "duration": "half",
+        "accidental": "none",
+        "isRest": false,
+        "isDotted": false,
+        "tripletGroupId": null,
+        "sourceMidi": null,
+        "slurToNext": false
+      }
+    ],
+    "beatsPerMeasure": 4,
+    "beatUnit": 4,
+    "bpm": 96,
+    "keySignature": "gMajor"
+  }
+}

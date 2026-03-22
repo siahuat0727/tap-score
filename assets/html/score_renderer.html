@@ -583,6 +583,7 @@
           measureRenderData,
         );
         _drawHighlights(svg, data, allStaves, allDisplayNotes);
+        _drawRhythmResultNoteHighlights(svg, data, allDisplayNotes);
         _drawCursorLine(
           svg,
           data,
@@ -606,8 +607,6 @@
     // -------------------------------------------------------------------------
     // Rhythm test overlay — draw the tap lane directly under the score.
     // -------------------------------------------------------------------------
-    const RHYTHM_ERROR_LABEL_THRESHOLD_BEATS = 0.02;
-
     function _drawRhythmOverlay(
       svg,
       rhythmTest,
@@ -622,7 +621,12 @@
       const matchedExpectedIds = new Set();
       const matchedTapIds = new Set();
       const labelCandidates = [];
-      const measureSegments = _buildRhythmMeasureSegments(measureRenderData);
+      const errorLabelThresholdBeats = rhythmTest.errorLabelThresholdBeats;
+      const largeErrorThresholdBeats = rhythmTest.largeErrorThresholdBeats;
+      const measureSegments = _buildRhythmMeasureSegments(
+        measureRenderData,
+        rhythmTest.measureBoundaryTimesSeconds,
+      );
       if (measureSegments.length === 0) return;
 
       for (const event of rhythmTest.expectedEvents) {
@@ -680,10 +684,14 @@
           '#bda98b',
           i === 0 ? 2.2 : 1.4,
         );
-        for (let beat = 1; beat < rhythmTest.pulsesPerMeasure; beat++) {
+        const beatCount = Math.max(
+          Math.round(measure.durationSeconds / rhythmTest.pulseDurationSeconds),
+          1,
+        );
+        for (let beat = 1; beat < beatCount; beat++) {
           const beatX =
             measure.startX
-            + ((measure.endX - measure.startX) * beat) / rhythmTest.pulsesPerMeasure;
+            + ((measure.endX - measure.startX) * beat) / beatCount;
           _drawOverlayLine(
             svg,
             ns,
@@ -745,7 +753,10 @@
             leadInStartX,
             timeZeroX,
           );
-          const linkColor = Math.abs(pair.errorSeconds) < 0.1 ? '#2e7d32' : '#ef6c00';
+          const errorBeats = pair.errorSeconds / rhythmTest.pulseDurationSeconds;
+          const linkColor = Math.abs(errorBeats) > largeErrorThresholdBeats
+            ? '#ef6c00'
+            : '#2e7d32';
 
           const link = document.createElementNS(ns, 'line');
           link.setAttribute('x1', expectedX);
@@ -757,8 +768,7 @@
           link.setAttribute('stroke-linecap', 'round');
           svg.appendChild(link);
 
-          const errorBeats = pair.errorSeconds / rhythmTest.pulseDurationSeconds;
-          if (Math.abs(errorBeats) > RHYTHM_ERROR_LABEL_THRESHOLD_BEATS) {
+          if (Math.abs(errorBeats) > errorLabelThresholdBeats) {
             labelCandidates.push({
               x: (expectedX + tapX) / 2,
               text: _formatRhythmErrorBeats(errorBeats),
@@ -816,38 +826,27 @@
           overlayTop + 6,
         );
       }
-
-      const label = document.createElementNS(ns, 'text');
-      label.setAttribute('x', timeZeroX + 12);
-      label.setAttribute('y', overlayTop - 12);
-      label.setAttribute('fill', '#6e6254');
-      label.setAttribute('font-size', '13');
-      label.setAttribute('font-weight', '700');
-      label.textContent = rhythmTest.showExpectedEvents
-        ? 'Rhythm test result'
-        : 'Rhythm test';
-      svg.appendChild(label);
     }
 
-    function _buildRhythmMeasureSegments(measureRenderData) {
+    function _buildRhythmMeasureSegments(
+      measureRenderData,
+      measureBoundaryTimesSeconds,
+    ) {
       if (measureRenderData.length === 0) {
         return [];
       }
 
       const segments = [];
-      segments.push({
-        startX: measureRenderData[0].contentStartX,
-        endX: measureRenderData.length > 1
-          ? measureRenderData[1].startX
-          : measureRenderData[0].endX,
-      });
-
-      for (let i = 1; i < measureRenderData.length; i++) {
+      for (let i = 0; i < measureRenderData.length; i++) {
         segments.push({
-          startX: measureRenderData[i].startX,
+          startX: i === 0
+            ? measureRenderData[0].contentStartX
+            : measureRenderData[i].startX,
           endX: i + 1 < measureRenderData.length
             ? measureRenderData[i + 1].startX
             : measureRenderData[i].endX,
+          durationSeconds:
+            measureBoundaryTimesSeconds[i + 1] - measureBoundaryTimesSeconds[i],
         });
       }
 
@@ -869,10 +868,10 @@
       const point = document.createElementNS(ns, 'circle');
       point.setAttribute('cx', x);
       point.setAttribute('cy', y);
-      point.setAttribute('r', '7');
+      point.setAttribute('r', '3.5');
       point.setAttribute('fill', color);
       point.setAttribute('stroke', '#ffffff');
-      point.setAttribute('stroke-width', '2');
+      point.setAttribute('stroke-width', '1.5');
       svg.appendChild(point);
     }
 
@@ -979,7 +978,38 @@
       }
     }
 
-    function _highlightElement(svg, el, ns) {
+    function _drawRhythmResultNoteHighlights(svg, data, allDisplayNotes) {
+      const rhythmTest = data.rhythmTest;
+      if (!rhythmTest || !rhythmTest.showExpectedEvents) return;
+
+      const noteEls = svg.querySelectorAll('.vf-stavenote');
+      const ns = svg.namespaceURI;
+      const missedNoteIndices = new Set(rhythmTest.missedExpectedNoteIndices || []);
+      const largeErrorNoteIndices = new Set(rhythmTest.largeErrorNoteIndices || []);
+
+      for (let i = 0; i < allDisplayNotes.length; i++) {
+        const noteIndex = allDisplayNotes[i].globalIndex;
+        const noteEl = noteEls[i];
+        if (!noteEl) continue;
+
+        if (missedNoteIndices.has(noteIndex)) {
+          _highlightElement(svg, noteEl, ns, {
+            fill: 'rgba(198, 40, 40, 0.14)',
+            stroke: 'rgba(198, 40, 40, 0.72)',
+          });
+          continue;
+        }
+
+        if (largeErrorNoteIndices.has(noteIndex)) {
+          _highlightElement(svg, noteEl, ns, {
+            fill: 'rgba(239, 108, 0, 0.16)',
+            stroke: 'rgba(239, 108, 0, 0.75)',
+          });
+        }
+      }
+    }
+
+    function _highlightElement(svg, el, ns, options = {}) {
       const bbox = el.getBBox();
       const rect = document.createElementNS(ns, 'rect');
       rect.setAttribute('x', bbox.x - 4);
@@ -987,8 +1017,8 @@
       rect.setAttribute('width', bbox.width + 8);
       rect.setAttribute('height', bbox.height + 8);
       rect.setAttribute('rx', '4');
-      rect.setAttribute('fill', 'rgba(25, 118, 210, 0.15)');
-      rect.setAttribute('stroke', 'rgba(25, 118, 210, 0.4)');
+      rect.setAttribute('fill', options.fill || 'rgba(25, 118, 210, 0.15)');
+      rect.setAttribute('stroke', options.stroke || 'rgba(25, 118, 210, 0.4)');
       rect.setAttribute('stroke-width', '1');
       // Insert before the element so it's behind
       el.parentNode.insertBefore(rect, el);
@@ -1163,19 +1193,32 @@
     // Forward keyboard events to Dart so arrow keys work even when
     // the iframe has focus (e.g. after clicking a note on web).
     document.addEventListener('keydown', function(e) {
-      const forwardedCodes = [
-        'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown',
-        'Delete', 'Backspace',
-        'Enter', 'NumpadEnter',
-        'KeyD', 'KeyF', 'KeyG', 'KeyH', 'KeyJ', 'KeyK', 'KeyL',
-        'Backquote',
-        'Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6',
-        'Digit7', 'Digit8', 'Digit9',
-      ];
-      if (forwardedCodes.includes(e.code)) {
-        e.preventDefault();
-        _sendMessage({ type: 'keydown', key: e.key, code: e.code });
+      if (e.ctrlKey || e.metaKey || e.altKey || e.isComposing) {
+        return;
       }
+
+      if (['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) {
+        return;
+      }
+
+      const isPrintableKey = e.key.length === 1;
+      const isEditingKey = [
+        'ArrowLeft',
+        'ArrowRight',
+        'ArrowUp',
+        'ArrowDown',
+        'Delete',
+        'Backspace',
+        'Enter',
+        'NumpadEnter',
+      ].includes(e.code);
+
+      if (!isPrintableKey && !isEditingKey) {
+        return;
+      }
+
+      e.preventDefault();
+      _sendMessage({ type: 'keydown', key: e.key, code: e.code });
     });
   </script>
 </body>

@@ -140,6 +140,96 @@ class Note {
     );
   }
 
+  Map<String, dynamic> toJson() {
+    return {
+      'midi': midi,
+      'duration': duration.name,
+      'accidental': accidental.name,
+      'isRest': isRest,
+      'isDotted': isDotted,
+      'tripletGroupId': tripletGroupId,
+      'sourceMidi': sourceMidi,
+      'slurToNext': slurToNext,
+    };
+  }
+
+  factory Note.fromJson(Map<String, dynamic> json) {
+    final isRest = json['isRest'];
+    if (isRest is! bool) {
+      throw ArgumentError.value(json['isRest'], 'isRest', 'Expected a bool');
+    }
+
+    final durationName = json['duration'];
+    if (durationName is! String) {
+      throw ArgumentError.value(
+        json['duration'],
+        'duration',
+        'Expected a duration name',
+      );
+    }
+
+    final accidentalName = json['accidental'];
+    if (accidentalName is! String) {
+      throw ArgumentError.value(
+        json['accidental'],
+        'accidental',
+        'Expected an accidental name',
+      );
+    }
+
+    final midi = json['midi'];
+    if (midi is! int) {
+      throw ArgumentError.value(json['midi'], 'midi', 'Expected an int');
+    }
+
+    final isDotted = json['isDotted'];
+    if (isDotted is! bool) {
+      throw ArgumentError.value(
+        json['isDotted'],
+        'isDotted',
+        'Expected a bool',
+      );
+    }
+
+    final slurToNext = json['slurToNext'];
+    if (slurToNext is! bool) {
+      throw ArgumentError.value(
+        json['slurToNext'],
+        'slurToNext',
+        'Expected a bool',
+      );
+    }
+
+    final tripletGroupId = json['tripletGroupId'];
+    if (tripletGroupId != null && tripletGroupId is! int) {
+      throw ArgumentError.value(
+        json['tripletGroupId'],
+        'tripletGroupId',
+        'Expected an int or null',
+      );
+    }
+
+    final sourceMidi = json['sourceMidi'];
+    if (sourceMidi != null && sourceMidi is! int) {
+      throw ArgumentError.value(
+        json['sourceMidi'],
+        'sourceMidi',
+        'Expected an int or null',
+      );
+    }
+
+    return Note(
+      midi: midi,
+      duration: NoteDuration.fromName(durationName),
+      accidental: Accidental.fromName(accidentalName),
+      isRest: isRest,
+      isDotted: isDotted,
+      tripletGroupId: tripletGroupId,
+      sourceMidi: sourceMidi,
+      slurToNext: slurToNext,
+    );
+  }
+
   @override
   String toString() => 'Note($displayName, ${duration.name})';
 

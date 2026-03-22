@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:tap_score/models/enums.dart';
 import 'package:tap_score/models/note.dart';
 import 'package:tap_score/models/score.dart';
+import 'package:tap_score/rhythm_test/rhythm_matcher.dart';
 import 'package:tap_score/rhythm_test/rhythm_test_models.dart';
 import 'package:tap_score/rhythm_test/rhythm_timeline_builder.dart';
 import 'package:tap_score/services/audio_service.dart';
@@ -24,6 +25,14 @@ void main() {
             expectedEvents: [
               ExpectedRhythmEvent(id: 1, noteIndex: 0, timeSeconds: 0),
               ExpectedRhythmEvent(id: 2, noteIndex: 1, timeSeconds: 0.1),
+            ],
+            playbackNotes: [
+              RhythmMelodyEvent(
+                noteIndex: 0,
+                midi: 60,
+                startSeconds: 0,
+                durationSeconds: 0.1,
+              ),
             ],
             measureBoundaryTimesSeconds: [0, 0.2],
             totalDurationSeconds: 0.2,
@@ -75,6 +84,14 @@ void main() {
             expectedEvents: [
               ExpectedRhythmEvent(id: 1, noteIndex: 0, timeSeconds: 0),
             ],
+            playbackNotes: [
+              RhythmMelodyEvent(
+                noteIndex: 0,
+                midi: 60,
+                startSeconds: 0,
+                durationSeconds: 0.2,
+              ),
+            ],
             measureBoundaryTimesSeconds: [0, 0.2],
             totalDurationSeconds: 0.2,
             pulseDurationSeconds: 0.1,
@@ -98,6 +115,286 @@ void main() {
       expect(notifier.overlayRenderData.playheadTimeSeconds, lessThan(0));
     },
   );
+
+  test('count-in plays metronome and running plays melody only', () async {
+    final audioService = _FakeAudioService();
+    final notifier = RhythmTestNotifier(
+      score: Score(
+        bpm: 120,
+        notes: const [
+          Note(midi: 60, duration: NoteDuration.quarter),
+          Note(midi: 62, duration: NoteDuration.quarter),
+        ],
+      ),
+      audioService: audioService,
+      timelineBuilder: _FixedTimelineBuilder(
+        const RhythmTimeline(
+          expectedEvents: [
+            ExpectedRhythmEvent(id: 1, noteIndex: 0, timeSeconds: 0),
+            ExpectedRhythmEvent(id: 2, noteIndex: 1, timeSeconds: 0.1),
+          ],
+          playbackNotes: [
+            RhythmMelodyEvent(
+              noteIndex: 0,
+              midi: 60,
+              startSeconds: 0,
+              durationSeconds: 0.1,
+            ),
+            RhythmMelodyEvent(
+              noteIndex: 1,
+              midi: 62,
+              startSeconds: 0.1,
+              durationSeconds: 0.1,
+            ),
+          ],
+          measureBoundaryTimesSeconds: [0, 0.2],
+          totalDurationSeconds: 0.2,
+          pulseDurationSeconds: 0.1,
+          pulsesPerMeasure: 4,
+        ),
+      ),
+    );
+
+    addTearDown(notifier.dispose);
+
+    await notifier.start();
+    await Future<void>.delayed(const Duration(milliseconds: 760));
+
+    expect(audioService.events, [
+      'metro-accent',
+      'metro-regular',
+      'metro-regular',
+      'metro-regular',
+      'start-60',
+      'stop-60',
+      'start-62',
+      'stop-62',
+    ]);
+  });
+
+  test('running retriggers repeated same-pitch notes in order', () async {
+    final audioService = _FakeAudioService();
+    final notifier = RhythmTestNotifier(
+      score: Score(
+        bpm: 120,
+        notes: const [
+          Note(midi: 60, duration: NoteDuration.quarter),
+          Note(midi: 60, duration: NoteDuration.quarter),
+        ],
+      ),
+      audioService: audioService,
+      timelineBuilder: _FixedTimelineBuilder(
+        const RhythmTimeline(
+          expectedEvents: [
+            ExpectedRhythmEvent(id: 1, noteIndex: 0, timeSeconds: 0),
+            ExpectedRhythmEvent(id: 2, noteIndex: 1, timeSeconds: 0.1),
+          ],
+          playbackNotes: [
+            RhythmMelodyEvent(
+              noteIndex: 0,
+              midi: 60,
+              startSeconds: 0,
+              durationSeconds: 0.1,
+            ),
+            RhythmMelodyEvent(
+              noteIndex: 1,
+              midi: 60,
+              startSeconds: 0.1,
+              durationSeconds: 0.1,
+            ),
+          ],
+          measureBoundaryTimesSeconds: [0, 0.2],
+          totalDurationSeconds: 0.2,
+          pulseDurationSeconds: 0.1,
+          pulsesPerMeasure: 4,
+        ),
+      ),
+    );
+
+    addTearDown(notifier.dispose);
+
+    await notifier.start();
+    await Future<void>.delayed(const Duration(milliseconds: 760));
+
+    expect(audioService.events, [
+      'metro-accent',
+      'metro-regular',
+      'metro-regular',
+      'metro-regular',
+      'start-60',
+      'stop-60',
+      'start-60',
+      'stop-60',
+    ]);
+  });
+
+  test('finished result locks restart before returning to Start', () async {
+    final notifier = RhythmTestNotifier(
+      score: Score(
+        bpm: 120,
+        notes: const [Note(midi: 60, duration: NoteDuration.quarter)],
+      ),
+      audioService: _FakeAudioService(),
+      timelineBuilder: _FixedTimelineBuilder(
+        const RhythmTimeline(
+          expectedEvents: [
+            ExpectedRhythmEvent(id: 1, noteIndex: 0, timeSeconds: 0),
+          ],
+          playbackNotes: [
+            RhythmMelodyEvent(
+              noteIndex: 0,
+              midi: 60,
+              startSeconds: 0,
+              durationSeconds: 0.2,
+            ),
+          ],
+          measureBoundaryTimesSeconds: [0, 0.2],
+          totalDurationSeconds: 0.2,
+          pulseDurationSeconds: 0.1,
+          pulsesPerMeasure: 4,
+        ),
+      ),
+    );
+
+    addTearDown(notifier.dispose);
+
+    await notifier.start();
+    await Future<void>.delayed(const Duration(milliseconds: 820));
+
+    expect(notifier.phase, RhythmTestPhase.finished);
+    expect(notifier.restartLocked, isTrue);
+    expect(notifier.canStart, isFalse);
+    expect(notifier.primaryActionLabel, 'Start');
+
+    final tapsBefore = notifier.tapEvents.length;
+    notifier.recordTap();
+    expect(notifier.tapEvents.length, tapsBefore);
+
+    await Future<void>.delayed(
+      RhythmTestNotifier.resultRevealLockDuration +
+          const Duration(milliseconds: 80),
+    );
+
+    expect(notifier.restartLocked, isFalse);
+    expect(notifier.canStart, isTrue);
+  });
+
+  test(
+    'result getters and overlay payload expose error-focused metrics',
+    () async {
+      final notifier = RhythmTestNotifier(
+        score: Score(
+          bpm: 120,
+          notes: const [Note(midi: 60, duration: NoteDuration.quarter)],
+        ),
+        audioService: _FakeAudioService(),
+        timelineBuilder: _FixedTimelineBuilder(
+          const RhythmTimeline(
+            expectedEvents: [
+              ExpectedRhythmEvent(id: 1, noteIndex: 0, timeSeconds: 0),
+            ],
+            playbackNotes: [
+              RhythmMelodyEvent(
+                noteIndex: 0,
+                midi: 60,
+                startSeconds: 0,
+                durationSeconds: 0.2,
+              ),
+            ],
+            measureBoundaryTimesSeconds: [0, 0.2],
+            totalDurationSeconds: 0.2,
+            pulseDurationSeconds: 0.1,
+            pulsesPerMeasure: 4,
+          ),
+        ),
+      );
+
+      addTearDown(notifier.dispose);
+
+      await notifier.start();
+      await Future<void>.delayed(const Duration(milliseconds: 820));
+
+      expect(notifier.resultErrorCount, 1);
+      expect(notifier.resultErrorCountLabel, '1');
+      expect(notifier.resultLargeErrorCount, 0);
+      expect(notifier.resultAverageErrorBeats, isNull);
+      expect(notifier.resultMaxErrorBeats, isNull);
+      expect(notifier.resultStatusLabel, 'Failed');
+      expect(notifier.resultParameterHint, contains('BPM 120'));
+      expect(notifier.resultParameterHint, contains('Threshold 0.10 beat'));
+      expect(notifier.overlayRenderData.errorLabelThresholdBeats, 0.05);
+      expect(notifier.overlayRenderData.largeErrorThresholdBeats, 0.1);
+      expect(notifier.overlayRenderData.missedExpectedNoteIndices, [0]);
+    },
+  );
+
+  test(
+    'large error threshold is adjustable at runtime and updates result status',
+    () async {
+      final notifier = RhythmTestNotifier(
+        score: Score(
+          bpm: 120,
+          notes: const [Note(midi: 60, duration: NoteDuration.quarter)],
+        ),
+        audioService: _FakeAudioService(),
+        timelineBuilder: _FixedTimelineBuilder(
+          const RhythmTimeline(
+            expectedEvents: [
+              ExpectedRhythmEvent(id: 1, noteIndex: 0, timeSeconds: 0),
+            ],
+            playbackNotes: [
+              RhythmMelodyEvent(
+                noteIndex: 0,
+                midi: 60,
+                startSeconds: 0,
+                durationSeconds: 0.2,
+              ),
+            ],
+            measureBoundaryTimesSeconds: [0, 0.2],
+            totalDurationSeconds: 0.2,
+            pulseDurationSeconds: 0.1,
+            pulsesPerMeasure: 4,
+          ),
+        ),
+        matcher: _FixedMatcher(
+          const RhythmTestResult(
+            matchedPairs: [
+              MatchedRhythmPair(
+                expected: ExpectedRhythmEvent(
+                  id: 1,
+                  noteIndex: 0,
+                  timeSeconds: 0,
+                ),
+                tap: TapInputEvent(id: 1, timeSeconds: 0.012),
+                errorSeconds: 0.012,
+              ),
+            ],
+            unmatchedExpectedEvents: [],
+            unmatchedTapEvents: [],
+            matchingWindowSeconds: 0.1,
+            appliedShiftSeconds: 0,
+          ),
+        ),
+      );
+
+      addTearDown(notifier.dispose);
+
+      await notifier.start();
+      await Future<void>.delayed(const Duration(milliseconds: 820));
+
+      expect(notifier.resultLargeErrorCount, 1);
+      expect(notifier.resultStatusLabel, 'Clean, but loose');
+      expect(notifier.resultMaxErrorBeats, closeTo(0.12, 0.001));
+      expect(notifier.overlayRenderData.largeErrorThresholdBeats, 0.1);
+
+      notifier.setLargeErrorThreshold(0.15);
+
+      expect(notifier.largeErrorThresholdBeats, 0.15);
+      expect(notifier.resultLargeErrorCount, 0);
+      expect(notifier.resultStatusLabel, 'Perfect');
+      expect(notifier.overlayRenderData.largeErrorThresholdBeats, 0.15);
+    },
+  );
 }
 
 class _FixedTimelineBuilder extends RhythmTimelineBuilder {
@@ -109,12 +406,47 @@ class _FixedTimelineBuilder extends RhythmTimelineBuilder {
   RhythmTimeline build(Score score) => timeline;
 }
 
+class _FixedMatcher extends RhythmMatcher {
+  const _FixedMatcher(this.result);
+
+  final RhythmTestResult result;
+
+  @override
+  RhythmTestResult match({
+    required List<ExpectedRhythmEvent> expectedEvents,
+    required List<TapInputEvent> tapEvents,
+    required double matchingWindowSeconds,
+  }) => result;
+}
+
 class _FakeAudioService extends AudioService {
+  final List<String> events = [];
+  int _nextHandleId = 1;
+
   @override
   Future<bool> init() async => true;
 
   @override
-  void playMetronomeClick({required bool accented}) {}
+  Future<AudioNoteHandle?> startNote(
+    int midi, {
+    int velocity = AudioService.defaultPlaybackVelocity,
+  }) async {
+    events.add('start-$midi');
+    return AudioNoteHandle(id: _nextHandleId++, midi: midi);
+  }
+
+  @override
+  Future<void> stopNoteHandle(AudioNoteHandle handle) async {
+    events.add('stop-${handle.midi}');
+  }
+
+  @override
+  void playRhythmTestMetronomeClick({required bool accented}) {
+    events.add(accented ? 'metro-accent' : 'metro-regular');
+  }
+
+  @override
+  void stopPlayback() {}
 
   @override
   void dispose() {}

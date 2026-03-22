@@ -6,11 +6,16 @@ import 'package:tap_score/main.dart';
 import 'package:tap_score/models/enums.dart';
 import 'package:tap_score/models/key_signature.dart';
 import 'package:tap_score/models/note.dart';
+import 'package:tap_score/models/score.dart';
+import 'package:tap_score/models/score_library.dart';
 import 'package:tap_score/screens/score_editor_screen.dart';
+import 'package:tap_score/services/preset_score_repository.dart';
+import 'package:tap_score/services/score_library_repository.dart';
 import 'package:tap_score/state/score_notifier.dart';
 import 'package:tap_score/widgets/duration_selector.dart';
 import 'package:tap_score/widgets/piano_keyboard.dart';
 import 'package:webview_flutter_platform_interface/webview_flutter_platform_interface.dart';
+
 import 'helpers/fake_webview_platform.dart';
 
 BoxDecoration _buttonDecoration(WidgetTester tester, Key key) {
@@ -33,6 +38,14 @@ InkWell _buttonInkWell(WidgetTester tester, Key key) {
   return tester.widget<InkWell>(finder);
 }
 
+DurationSelector _buildDurationSelector() {
+  return DurationSelector(
+    onRhythmTestTap: () {},
+    rhythmTestEnabled: true,
+    rhythmTestActive: false,
+  );
+}
+
 void main() {
   setUpAll(() {
     WebViewPlatform.instance = FakeWebViewPlatform();
@@ -42,14 +55,17 @@ void main() {
     await tester.pumpWidget(const TapScoreApp());
     await tester.pump();
 
-    // Verify the app title is shown.
-    expect(find.text('Tap Score'), findsOneWidget);
+    expect(find.byType(ScoreEditorScreen), findsOneWidget);
+    expect(find.byKey(const ValueKey('save-score-button')), findsOneWidget);
+    expect(find.byKey(const ValueKey('load-score-button')), findsOneWidget);
+    expect(find.byKey(const ValueKey('export-score-button')), findsOneWidget);
   });
 
   testWidgets('editor switches into inline rhythm test mode', (
     WidgetTester tester,
   ) async {
     final notifier = ScoreNotifier();
+    addTearDown(notifier.dispose);
     notifier.score.addNote(
       const Note(midi: 60, duration: NoteDuration.quarter),
     );
@@ -66,19 +82,38 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
 
-    expect(find.text('Rhythm Test'), findsOneWidget);
-    expect(find.byKey(const ValueKey('rhythm-test-start')), findsOneWidget);
-    expect(find.byKey(const ValueKey('rhythm-test-reset')), findsOneWidget);
-    expect(find.byKey(const ValueKey('rhythm-test-tap')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('exit-rhythm-test-button')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('rhythm-test-primary')), findsOneWidget);
+    expect(find.byKey(const ValueKey('rhythm-test-tempo')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('rhythm-test-tempo-increment')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('rhythm-test-threshold-increment')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('rhythm-test-start')), findsNothing);
+    expect(find.byKey(const ValueKey('rhythm-test-reset')), findsNothing);
+    expect(find.byKey(const ValueKey('rhythm-test-tap')), findsNothing);
     expect(find.textContaining('The score stays visible.'), findsNothing);
     expect(find.byType(SingleChildScrollView), findsNothing);
     expect(find.byType(PianoKeyboard), findsNothing);
+
+    final buttonRect = tester.getRect(
+      find.byKey(const ValueKey('rhythm-test-primary')),
+    );
+    expect(buttonRect.width, greaterThan(300));
   });
 
   testWidgets('rhythm test stays within a compact viewport', (
     WidgetTester tester,
   ) async {
     final notifier = ScoreNotifier();
+    addTearDown(notifier.dispose);
     notifier.score.addNote(
       const Note(midi: 60, duration: NoteDuration.quarter),
     );
@@ -100,16 +135,60 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
 
     final screenHeight = tester.view.physicalSize.height;
-    for (final finder in [
-      find.byKey(const ValueKey('rhythm-test-start')),
-      find.byKey(const ValueKey('rhythm-test-reset')),
-      find.byKey(const ValueKey('rhythm-test-tap')),
-    ]) {
-      expect(tester.getRect(finder).bottom, lessThanOrEqualTo(screenHeight));
-    }
+    expect(
+      tester.getRect(find.byKey(const ValueKey('rhythm-test-primary'))).bottom,
+      lessThanOrEqualTo(screenHeight),
+    );
+    expect(
+      tester.getRect(find.byKey(const ValueKey('rhythm-test-tempo'))).bottom,
+      lessThanOrEqualTo(screenHeight),
+    );
 
     expect(find.byType(SingleChildScrollView), findsNothing);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('rhythm test parameter buttons support fine adjustment', (
+    WidgetTester tester,
+  ) async {
+    final notifier = ScoreNotifier();
+    addTearDown(notifier.dispose);
+    notifier.score.addNote(
+      const Note(midi: 60, duration: NoteDuration.quarter),
+    );
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider.value(
+        value: notifier,
+        child: const MaterialApp(home: ScoreEditorScreen()),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.byTooltip('Rhythm Test'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(
+      find.byKey(const ValueKey('rhythm-test-tempo-value')),
+      findsOneWidget,
+    );
+    expect(find.text('120'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('rhythm-test-tempo-increment')));
+    await tester.pump();
+    expect(find.text('121'), findsOneWidget);
+
+    expect(
+      find.byKey(const ValueKey('rhythm-test-threshold-value')),
+      findsOneWidget,
+    );
+    expect(find.text('0.10 beat'), findsOneWidget);
+    await tester.tap(
+      find.byKey(const ValueKey('rhythm-test-threshold-increment')),
+    );
+    await tester.pump();
+    expect(find.text('0.11 beat'), findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 300));
   });
 
   testWidgets('duration selector shows rest first and mapped shortcuts', (
@@ -120,12 +199,12 @@ void main() {
     await tester.pumpWidget(
       ChangeNotifierProvider.value(
         value: notifier,
-        child: const MaterialApp(home: Scaffold(body: DurationSelector())),
+        child: MaterialApp(home: Scaffold(body: _buildDurationSelector())),
       ),
     );
 
-    final restX = tester.getTopLeft(find.text('Rest')).dx;
-    final dotX = tester.getTopLeft(find.text('Dot')).dx;
+    final restX = tester.getTopLeft(find.byKey(const ValueKey('rest-tool'))).dx;
+    final dotX = tester.getTopLeft(find.byKey(const ValueKey('dot-tool'))).dx;
 
     expect(restX, lessThan(dotX));
     expect(find.text('1'), findsOneWidget);
@@ -137,10 +216,10 @@ void main() {
     notifier.handleRestAction();
     await tester.pump();
 
-    expect(find.text('𝄻'), findsOneWidget);
-    expect(find.text('𝄼'), findsOneWidget);
-    expect(find.text('𝄽'), findsOneWidget);
-    expect(find.text('𝅀'), findsOneWidget);
+    expect(find.text('𝄻'), findsWidgets);
+    expect(find.text('𝄼'), findsWidgets);
+    expect(find.text('𝄽'), findsWidgets);
+    expect(find.text('𝅀'), findsWidgets);
   });
 
   testWidgets('duration selector reflects the selected rest timing state', (
@@ -153,11 +232,11 @@ void main() {
     await tester.pumpWidget(
       ChangeNotifierProvider.value(
         value: notifier,
-        child: const MaterialApp(home: Scaffold(body: DurationSelector())),
+        child: MaterialApp(home: Scaffold(body: _buildDurationSelector())),
       ),
     );
 
-    expect(find.text('𝄼'), findsOneWidget);
+    expect(find.text('𝄼'), findsWidgets);
     expect(
       _borderColor(_buttonDecoration(tester, const ValueKey('rest-tool'))),
       const Color(0xFF9C27B0),
@@ -168,6 +247,58 @@ void main() {
     );
 
     await tester.pump(const Duration(milliseconds: 600));
+  });
+
+  testWidgets('load sheet shows presets and saved scores in one list', (
+    WidgetTester tester,
+  ) async {
+    final notifier = ScoreNotifier(
+      scoreLibraryRepository: _WidgetMemoryScoreLibraryRepository(
+        ScoreLibrarySnapshot(
+          draft: Score(),
+          savedScores: [
+            SavedScoreEntry(
+              id: 'saved-1',
+              name: 'Saved Etude',
+              updatedAt: DateTime.utc(2026, 3, 22, 11, 0, 0),
+              score: Score(
+                notes: const [Note(midi: 60, duration: NoteDuration.quarter)],
+              ),
+            ),
+          ],
+        ),
+      ),
+      presetScoreRepository: _WidgetPresetScoreRepository([
+        PresetScoreEntry(
+          id: 'preset-1',
+          name: 'Basic 4/4',
+          assetPath: 'assets/presets/basic_4_4.json',
+          score: Score(),
+        ),
+      ]),
+    );
+    addTearDown(notifier.dispose);
+    await notifier.init();
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider.value(
+        value: notifier,
+        child: const MaterialApp(home: ScoreEditorScreen()),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey('load-score-button')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('Scores'), findsOneWidget);
+    expect(find.byKey(const ValueKey('import-score-button')), findsOneWidget);
+    expect(find.byKey(const ValueKey('preset-score-preset-1')), findsOneWidget);
+    expect(find.byKey(const ValueKey('saved-score-saved-1')), findsOneWidget);
+    expect(find.text('Saved Scores'), findsNothing);
+    expect(find.byTooltip('Delete Saved Etude'), findsOneWidget);
+    expect(find.byTooltip('Delete Basic 4/4'), findsNothing);
   });
 
   testWidgets('duration selector edits the selected note duration', (
@@ -182,7 +313,7 @@ void main() {
     await tester.pumpWidget(
       ChangeNotifierProvider.value(
         value: notifier,
-        child: const MaterialApp(home: Scaffold(body: DurationSelector())),
+        child: MaterialApp(home: Scaffold(body: _buildDurationSelector())),
       ),
     );
 
@@ -212,7 +343,7 @@ void main() {
     await tester.pumpWidget(
       ChangeNotifierProvider.value(
         value: notifier,
-        child: const MaterialApp(home: Scaffold(body: DurationSelector())),
+        child: MaterialApp(home: Scaffold(body: _buildDurationSelector())),
       ),
     );
 
@@ -238,7 +369,7 @@ void main() {
     await tester.pumpWidget(
       ChangeNotifierProvider.value(
         value: notifier,
-        child: const MaterialApp(home: Scaffold(body: DurationSelector())),
+        child: MaterialApp(home: Scaffold(body: _buildDurationSelector())),
       ),
     );
 
@@ -268,7 +399,7 @@ void main() {
     await tester.pumpWidget(
       ChangeNotifierProvider.value(
         value: notifier,
-        child: const MaterialApp(home: Scaffold(body: DurationSelector())),
+        child: MaterialApp(home: Scaffold(body: _buildDurationSelector())),
       ),
     );
 
@@ -287,7 +418,7 @@ void main() {
     await tester.pumpWidget(
       ChangeNotifierProvider.value(
         value: notifier,
-        child: const MaterialApp(home: Scaffold(body: DurationSelector())),
+        child: MaterialApp(home: Scaffold(body: _buildDurationSelector())),
       ),
     );
 
@@ -555,4 +686,72 @@ void main() {
 
     await tester.pump(const Duration(milliseconds: 600));
   });
+
+  testWidgets(
+    'keyboard shortcuts still resolve a, s, and apostrophe after exiting rhythm test',
+    (WidgetTester tester) async {
+      final notifier = ScoreNotifier();
+      addTearDown(notifier.dispose);
+      notifier.score.addNote(
+        const Note(midi: 60, duration: NoteDuration.quarter),
+      );
+
+      await tester.pumpWidget(
+        ChangeNotifierProvider.value(
+          value: notifier,
+          child: const MaterialApp(home: ScoreEditorScreen()),
+        ),
+      );
+      await tester.pump();
+
+      await tester.tap(find.byTooltip('Rhythm Test'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      await tester.tap(find.byTooltip('Exit Rhythm Test'));
+      await tester.pump();
+
+      notifier.selectNote(null);
+      await tester.pump();
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.keyA, character: 'a');
+      await tester.pump();
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.keyS, character: 's');
+      await tester.pump();
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.quote, character: '\'');
+      await tester.pump();
+
+      expect(notifier.score.notes.map((note) => note.midi).toList(), [
+        60,
+        57,
+        59,
+        74,
+      ]);
+
+      await tester.pump(const Duration(milliseconds: 600));
+    },
+  );
+}
+
+class _WidgetMemoryScoreLibraryRepository implements ScoreLibraryRepository {
+  _WidgetMemoryScoreLibraryRepository([this.snapshot]);
+
+  ScoreLibrarySnapshot? snapshot;
+
+  @override
+  Future<ScoreLibrarySnapshot?> loadSnapshot() async => snapshot;
+
+  @override
+  Future<void> saveSnapshot(ScoreLibrarySnapshot nextSnapshot) async {
+    snapshot = nextSnapshot;
+  }
+}
+
+class _WidgetPresetScoreRepository implements PresetScoreRepository {
+  const _WidgetPresetScoreRepository(this._presets);
+
+  final List<PresetScoreEntry> _presets;
+
+  @override
+  Future<List<PresetScoreEntry>> loadPresets() async => _presets;
 }

@@ -20,6 +20,7 @@ void main() {
     final timeline = builder.build(score);
 
     expect(timeline.expectedEvents, hasLength(2));
+    expect(timeline.playbackNotes, hasLength(2));
     expect(timeline.expectedEvents[0].timeSeconds, 0);
     expect(timeline.expectedEvents[1].timeSeconds, 1.5);
     expect(timeline.totalDurationSeconds, 3.0);
@@ -50,4 +51,27 @@ void main() {
     expect(timeline.pulseDurationSeconds, 0.25);
     expect(timeline.totalDurationSeconds, 1.0);
   });
+
+  test(
+    'timeline builder keeps repeated same-pitch notes as distinct playback notes',
+    () {
+      final score = Score(
+        bpm: 60,
+        notes: const [
+          Note(midi: 60, duration: NoteDuration.quarter),
+          Note(midi: 60, duration: NoteDuration.quarter),
+        ],
+      );
+
+      final timeline = builder.build(score);
+
+      expect(timeline.expectedEvents.map((event) => event.noteIndex), [0, 1]);
+      expect(timeline.playbackNotes.map((note) => note.noteIndex), [0, 1]);
+      expect(timeline.playbackNotes.map((note) => note.midi), [60, 60]);
+      expect(timeline.playbackNotes.map((note) => note.startSeconds), [
+        0.0,
+        1.0,
+      ]);
+    },
+  );
 }
