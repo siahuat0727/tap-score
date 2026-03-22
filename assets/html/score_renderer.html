@@ -634,8 +634,8 @@
 
       const firstMeasure = measureSegments[0];
       const lastMeasure = measureSegments[measureSegments.length - 1];
-      const leadInWidth = Math.max(firstMeasure.endX - firstMeasure.startX, 40);
-      const leadInStartX = firstMeasure.startX - leadInWidth;
+      const leadInStartX = measureRenderData[0].startX;
+      const timeZeroX = measureRenderData[0].contentStartX;
       const overlayTop = allStaves[0] ? allStaves[0].getYForLine(4) + 44 : 132;
       const overlayBottom = overlayTop + 66;
       const centerY = (overlayTop + overlayBottom) / 2;
@@ -654,7 +654,7 @@
       const leadIn = document.createElementNS(ns, 'rect');
       leadIn.setAttribute('x', leadInStartX);
       leadIn.setAttribute('y', overlayTop);
-      leadIn.setAttribute('width', Math.max(firstMeasure.startX - leadInStartX, 0));
+      leadIn.setAttribute('width', Math.max(timeZeroX - leadInStartX, 0));
       leadIn.setAttribute('height', overlayBottom - overlayTop);
       leadIn.setAttribute('rx', '18');
       leadIn.setAttribute('fill', 'rgba(110, 98, 84, 0.05)');
@@ -668,16 +668,6 @@
       baseline.setAttribute('stroke', '#c7b89d');
       baseline.setAttribute('stroke-width', '2');
       svg.appendChild(baseline);
-
-      _drawOverlayLine(
-        svg,
-        ns,
-        leadInStartX,
-        overlayTop + 16,
-        overlayBottom - 16,
-        '#d7ccb6',
-        1,
-      );
 
       for (let i = 0; i < measureSegments.length; i++) {
         const measure = measureSegments[i];
@@ -714,6 +704,8 @@
           rhythmTest.measureBoundaryTimesSeconds,
           rhythmTest.totalDurationSeconds,
           rhythmTest.countInDurationSeconds,
+          leadInStartX,
+          timeZeroX,
         );
         const playhead = document.createElementNS(ns, 'line');
         playhead.setAttribute('x1', playheadX);
@@ -741,6 +733,8 @@
             rhythmTest.measureBoundaryTimesSeconds,
             rhythmTest.totalDurationSeconds,
             rhythmTest.countInDurationSeconds,
+            leadInStartX,
+            timeZeroX,
           );
           const tapX = _xForRhythmTime(
             tapEvent.timeSeconds,
@@ -748,6 +742,8 @@
             rhythmTest.measureBoundaryTimesSeconds,
             rhythmTest.totalDurationSeconds,
             rhythmTest.countInDurationSeconds,
+            leadInStartX,
+            timeZeroX,
           );
           const linkColor = Math.abs(pair.errorSeconds) < 0.1 ? '#2e7d32' : '#ef6c00';
 
@@ -780,6 +776,8 @@
             rhythmTest.measureBoundaryTimesSeconds,
             rhythmTest.totalDurationSeconds,
             rhythmTest.countInDurationSeconds,
+            leadInStartX,
+            timeZeroX,
           );
           _drawOverlayPoint(
             svg,
@@ -801,6 +799,8 @@
           rhythmTest.measureBoundaryTimesSeconds,
           rhythmTest.totalDurationSeconds,
           rhythmTest.countInDurationSeconds,
+          leadInStartX,
+          timeZeroX,
         );
         const color = rhythmTest.showExpectedEvents
           ? (matchedTapIds.has(tap.id) ? '#00897b' : '#ef6c00')
@@ -813,14 +813,12 @@
           svg,
           ns,
           labelCandidates,
-          leadInStartX,
-          lastMeasure.endX,
-          centerY,
+          overlayTop + 6,
         );
       }
 
       const label = document.createElementNS(ns, 'text');
-      label.setAttribute('x', leadInStartX + 12);
+      label.setAttribute('x', timeZeroX + 12);
       label.setAttribute('y', overlayTop - 12);
       label.setAttribute('fill', '#6e6254');
       label.setAttribute('font-size', '13');
@@ -836,23 +834,12 @@
         return [];
       }
 
-      if (measureRenderData.length === 1) {
-        const onlyMeasure = measureRenderData[0];
-        const templateWidth = Math.max(onlyMeasure.contentWidth, 40);
-        return [{
-          startX: onlyMeasure.endX - templateWidth,
-          endX: onlyMeasure.endX,
-        }];
-      }
-
       const segments = [];
-      const firstTemplateWidth = Math.max(
-        _measureSegmentWidth(measureRenderData, 1),
-        40,
-      );
       segments.push({
-        startX: measureRenderData[1].startX - firstTemplateWidth,
-        endX: measureRenderData[1].startX,
+        startX: measureRenderData[0].contentStartX,
+        endX: measureRenderData.length > 1
+          ? measureRenderData[1].startX
+          : measureRenderData[0].endX,
       });
 
       for (let i = 1; i < measureRenderData.length; i++) {
@@ -865,16 +852,6 @@
       }
 
       return segments;
-    }
-
-    function _measureSegmentWidth(measureRenderData, index) {
-      if (index < 0 || index >= measureRenderData.length) {
-        return 0;
-      }
-      if (index + 1 < measureRenderData.length) {
-        return measureRenderData[index + 1].startX - measureRenderData[index].startX;
-      }
-      return measureRenderData[index].endX - measureRenderData[index].startX;
     }
 
     function _drawOverlayLine(svg, ns, x, y1, y2, color, strokeWidth) {
@@ -899,89 +876,35 @@
       svg.appendChild(point);
     }
 
-    function _drawRhythmErrorLabels(svg, ns, labelCandidates, leftBoundary, rightBoundary, centerY) {
+    function _drawRhythmErrorLabels(svg, ns, labelCandidates, baselineY) {
       if (labelCandidates.length === 0) {
         return;
       }
 
-      const labelBands = [centerY - 24, centerY + 28, centerY - 40];
-      const bandRightEdges = new Array(labelBands.length).fill(leftBoundary - 24);
-      const minGap = 8;
-      const sortedLabels = [...labelCandidates].sort((a, b) => a.x - b.x);
-
-      for (const candidate of sortedLabels) {
-        const width = _approximateSvgTextWidth(candidate.text, 12) + 10;
-        const minX = leftBoundary + 6;
-        const maxX = Math.max(minX, rightBoundary - width - 6);
-        const desiredX = Math.max(minX, Math.min(candidate.x - width / 2, maxX));
-
-        let chosenBand = 0;
-        let chosenX = maxX;
-        let foundAvailableBand = false;
-
-        for (let bandIndex = 0; bandIndex < labelBands.length; bandIndex++) {
-          const nextX = Math.max(desiredX, bandRightEdges[bandIndex] + minGap);
-          if (nextX <= maxX) {
-            chosenBand = bandIndex;
-            chosenX = nextX;
-            foundAvailableBand = true;
-            break;
-          }
-        }
-
-        if (!foundAvailableBand) {
-          let fallbackBand = 0;
-          let fallbackX = Infinity;
-          for (let bandIndex = 0; bandIndex < labelBands.length; bandIndex++) {
-            const nextX = Math.max(desiredX, bandRightEdges[bandIndex] + minGap);
-            if (nextX < fallbackX) {
-              fallbackBand = bandIndex;
-              fallbackX = nextX;
-            }
-          }
-          chosenBand = fallbackBand;
-          chosenX = Math.min(fallbackX, maxX);
-        }
-
-        bandRightEdges[chosenBand] = chosenX + width;
-        _drawOverlayLabelChip(
+      for (const candidate of labelCandidates) {
+        _drawRotatedOverlayLabel(
           svg,
           ns,
-          chosenX,
-          labelBands[chosenBand],
-          width,
+          candidate.x,
+          baselineY,
           candidate.text,
           candidate.color,
         );
       }
     }
 
-    function _drawOverlayLabelChip(svg, ns, x, centerY, width, textContent, accentColor) {
-      const chipHeight = 18;
-
-      const rect = document.createElementNS(ns, 'rect');
-      rect.setAttribute('x', x);
-      rect.setAttribute('y', centerY - chipHeight / 2);
-      rect.setAttribute('width', width);
-      rect.setAttribute('height', chipHeight);
-      rect.setAttribute('rx', '6');
-      rect.setAttribute('fill', '#fffaf1');
-      rect.setAttribute('stroke', accentColor);
-      rect.setAttribute('stroke-width', '1');
-      svg.appendChild(rect);
-
+    function _drawRotatedOverlayLabel(svg, ns, x, y, textContent, accentColor) {
       const text = document.createElementNS(ns, 'text');
-      text.setAttribute('x', x + 5);
-      text.setAttribute('y', centerY + 4);
-      text.setAttribute('fill', '#5d5143');
+      text.setAttribute('x', x);
+      text.setAttribute('y', y);
+      text.setAttribute('fill', accentColor);
       text.setAttribute('font-size', '12');
       text.setAttribute('font-weight', '700');
+      text.setAttribute('text-anchor', 'middle');
+      text.setAttribute('dominant-baseline', 'middle');
+      text.setAttribute('transform', `rotate(-60 ${x} ${y})`);
       text.textContent = textContent;
       svg.appendChild(text);
-    }
-
-    function _approximateSvgTextWidth(text, fontSize) {
-      return text.length * fontSize * 0.58;
     }
 
     function _formatRhythmErrorBeats(errorBeats) {
@@ -995,14 +918,14 @@
       measureBoundaryTimesSeconds,
       totalDurationSeconds,
       countInDurationSeconds,
+      leadInStartX,
+      timeZeroX,
     ) {
-      const firstMeasure = measureSegments[0];
       const lastMeasure = measureSegments[measureSegments.length - 1];
-      const leadInWidth = Math.max(firstMeasure.endX - firstMeasure.startX, 40);
-      const leadInStartX = firstMeasure.startX - leadInWidth;
+      const leadInWidth = Math.max(timeZeroX - leadInStartX, 0);
       if (timeSeconds <= 0) {
-        if (countInDurationSeconds <= 0.0001) {
-          return firstMeasure.startX;
+        if (countInDurationSeconds <= 0.0001 || leadInWidth <= 0.0001) {
+          return timeZeroX;
         }
         const clampedLeadInTime = Math.max(timeSeconds, -countInDurationSeconds);
         const ratio =

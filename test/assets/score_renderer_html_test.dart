@@ -45,10 +45,23 @@ void main() {
     expect(html, contains('rhythmTest.countInDurationSeconds'));
     expect(html, contains('measureBoundaryTimesSeconds'));
     expect(html, contains('rhythmTest.pulsesPerMeasure'));
-    expect(html, contains('const leadInStartX = firstMeasure.startX - leadInWidth;'));
+    expect(html, contains('startX: measureRenderData[0].contentStartX,'));
+    expect(html, contains('const timeZeroX = measureRenderData[0].contentStartX;'));
+    expect(html, contains('const leadInStartX = measureRenderData[0].startX;'));
     expect(html, contains('const playhead = document.createElementNS(ns, \'line\');'));
     expect(html, contains('const clampedLeadInTime = Math.max(timeSeconds, -countInDurationSeconds);'));
+    expect(html, contains('transform',));
+    expect(html, contains('rotate(-60'));
+    expect(html, contains("text.setAttribute('text-anchor', 'middle');"));
+    expect(html, contains('function _xForRhythmTime('));
+    expect(html, contains('leadInStartX,'));
+    expect(html, contains('timeZeroX,'));
     expect(html, isNot(contains('const progressX = _xForRhythmTime(')));
+    expect(html, isNot(contains('function _measureSegmentWidth(')));
+    expect(html, isNot(contains('labelBands')));
+    expect(html, isNot(contains('bandRightEdges')));
+    expect(html, isNot(contains('_approximateRotatedLabelWidth')));
+    expect(html, isNot(contains('const leadInStartX = measureRenderData[0].startX;\n      const timeZeroX = measureRenderData[0].contentStartX;\n      const leadInWidth = Math.max(timeZeroX - leadInStartX, 0);')));
     expect(html, isNot(contains('noteCenterByIndex')));
   });
 }
