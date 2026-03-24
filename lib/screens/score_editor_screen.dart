@@ -381,6 +381,15 @@ class _ScoreEditorScreenState extends State<ScoreEditorScreen> {
 
   bool _handleRendererKeyDown(String? key, String? code) {
     if (!_isRhythmTestActive) {
+      if (key == ' ' || code == 'Space') {
+        final notifier = context.read<ScoreNotifier>();
+        if (notifier.isPlaying) {
+          notifier.stop();
+        } else {
+          notifier.play();
+        }
+        return true;
+      }
       return false;
     }
 
@@ -410,6 +419,14 @@ class _ScoreEditorScreenState extends State<ScoreEditorScreen> {
     }
     final notifier = context.read<ScoreNotifier>();
     final key = event.logicalKey;
+    if (key == LogicalKeyboardKey.space) {
+      if (notifier.isPlaying) {
+        notifier.stop();
+      } else {
+        notifier.play();
+      }
+      return KeyEventResult.handled;
+    }
     if (key == LogicalKeyboardKey.arrowLeft) {
       notifier.moveSelectionLeft();
       return KeyEventResult.handled;
@@ -456,6 +473,30 @@ class _ScoreEditorScreenState extends State<ScoreEditorScreen> {
             builder: (context, notifier, _) {
               return Column(
                 children: [
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          notifier.currentScoreLabel,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.textMuted,
+                          ),
+                        ),
+                        if (notifier.hasUnsavedChanges) ...[
+                          const SizedBox(width: 6),
+                          const Icon(
+                            Icons.circle,
+                            size: 7,
+                            color: AppColors.accentAmber,
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
                   Expanded(
                     child: ScoreViewWidget(
                       interactive: true,

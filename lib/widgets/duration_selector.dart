@@ -260,7 +260,10 @@ class _RhythmTestButton extends StatelessWidget {
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   colors: isEnabled
-                      ? [AppColors.rhythmTestGradientStart, AppColors.rhythmTestGradientEnd]
+                      ? [
+                          AppColors.rhythmTestGradientStart,
+                          AppColors.rhythmTestGradientEnd,
+                        ]
                       : [const Color(0xFFE0E0E0), const Color(0xFFBDBDBD)],
                 ),
                 borderRadius: BorderRadius.circular(12),

@@ -56,6 +56,13 @@ void main() {
     await tester.pump();
 
     expect(find.byType(ScoreEditorScreen), findsOneWidget);
+    expect(find.byKey(const ValueKey('score-overflow-menu')), findsOneWidget);
+
+    // Open overflow menu to verify Save/Load/Export items
+    await tester.tap(find.byKey(const ValueKey('score-overflow-menu')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
     expect(find.byKey(const ValueKey('save-score-button')), findsOneWidget);
     expect(find.byKey(const ValueKey('load-score-button')), findsOneWidget);
     expect(find.byKey(const ValueKey('export-score-button')), findsOneWidget);
@@ -287,6 +294,10 @@ void main() {
       ),
     );
     await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey('score-overflow-menu')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
 
     await tester.tap(find.byKey(const ValueKey('load-score-button')));
     await tester.pump();

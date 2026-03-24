@@ -443,12 +443,12 @@ class _KeyboardControlPanel extends StatelessWidget {
                 Expanded(
                   child: Center(
                     child: SizedBox(
-                      width: 96,
-                      height: 96,
+                      width: 112,
+                      height: 112,
                       child: Stack(
                         children: [
                           Positioned(
-                            left: 28,
+                            left: 32,
                             top: 0,
                             child: _ArrowButton(
                               key: const ValueKey('keyboard-nav-up'),
@@ -459,7 +459,7 @@ class _KeyboardControlPanel extends StatelessWidget {
                           ),
                           Positioned(
                             left: 0,
-                            top: 28,
+                            top: 32,
                             child: _ArrowButton(
                               key: const ValueKey('keyboard-nav-left'),
                               icon: Icons.keyboard_arrow_left_rounded,
@@ -469,7 +469,7 @@ class _KeyboardControlPanel extends StatelessWidget {
                           ),
                           Positioned(
                             right: 0,
-                            top: 28,
+                            top: 32,
                             child: _ArrowButton(
                               key: const ValueKey('keyboard-nav-right'),
                               icon: Icons.keyboard_arrow_right_rounded,
@@ -478,7 +478,7 @@ class _KeyboardControlPanel extends StatelessWidget {
                             ),
                           ),
                           Positioned(
-                            left: 28,
+                            left: 32,
                             bottom: 0,
                             child: _ArrowButton(
                               key: const ValueKey('keyboard-nav-down'),
@@ -576,28 +576,28 @@ class _KeyboardModeToggle extends StatelessWidget {
                         children: [
                           Expanded(
                             child: Center(
-                              child: Container(
-                                width: 11,
-                                height: 11,
-                                decoration: BoxDecoration(
+                              child: Text(
+                                'Key',
+                                style: TextStyle(
                                   color: Colors.white.withAlpha(
-                                    isKeySig ? 230 : 130,
+                                    isKeySig ? 230 : 100,
                                   ),
-                                  borderRadius: BorderRadius.circular(999),
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
                                 ),
                               ),
                             ),
                           ),
                           Expanded(
                             child: Center(
-                              child: Container(
-                                width: 6,
-                                height: 6,
-                                decoration: BoxDecoration(
+                              child: Text(
+                                'Chr',
+                                style: TextStyle(
                                   color: Colors.white.withAlpha(
-                                    isKeySig ? 110 : 190,
+                                    isKeySig ? 100 : 230,
                                   ),
-                                  borderRadius: BorderRadius.circular(999),
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
                                 ),
                               ),
                             ),
@@ -650,9 +650,9 @@ class _ArrowButton extends StatelessWidget {
         child: Tooltip(
           message: tooltip,
           child: SizedBox(
-            width: 40,
-            height: 40,
-            child: Icon(icon, color: Colors.white),
+            width: 48,
+            height: 48,
+            child: Icon(icon, size: 28, color: Colors.white),
           ),
         ),
       ),

@@ -149,6 +149,8 @@ class ScoreNotifier extends ChangeNotifier {
   bool _libraryMessageIsError = false;
   bool get libraryMessageIsError => _libraryMessageIsError;
 
+  Timer? _libraryMessageTimer;
+
   /// Selection-aware toolbar state.
   bool get timingControlsEnabled =>
       _selectionKind == null || _selectionKind == SelectionKind.note;
@@ -1424,12 +1426,19 @@ class ScoreNotifier extends ChangeNotifier {
   }
 
   void _setLibraryMessage(String message, {required bool isError}) {
+    _libraryMessageTimer?.cancel();
     _libraryMessage = message;
     _libraryMessageIsError = isError;
+    if (!isError) {
+      _libraryMessageTimer = Timer(const Duration(seconds: 3), () {
+        clearLibraryMessage();
+      });
+    }
   }
 
   @override
   void dispose() {
+    _libraryMessageTimer?.cancel();
     _draftSaveTimer?.cancel();
     stop();
     _audioService.onStateChanged = null;

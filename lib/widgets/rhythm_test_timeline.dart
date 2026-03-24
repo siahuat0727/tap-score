@@ -179,7 +179,9 @@ class _RhythmTimelinePainter extends CustomPainter {
         _paintEvent(
           canvas,
           Offset(_xForTime(event.timeSeconds, left, usableWidth), topY),
-          matched ? AppColors.timelineMatchedScore : AppColors.timelineUnmatchedScore,
+          matched
+              ? AppColors.timelineMatchedScore
+              : AppColors.timelineUnmatchedScore,
         );
       }
     }

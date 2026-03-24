@@ -62,14 +62,17 @@ void showTimeSigPicker(BuildContext context, ScoreNotifier notifier) {
                             fontSize: 20,
                             fontWeight: FontWeight.bold,
                             height: 1.0,
-                            color:
-                                isCurrent ? Colors.white : AppColors.textPrimary,
+                            color: isCurrent
+                                ? Colors.white
+                                : AppColors.textPrimary,
                           ),
                         ),
                         Container(
                           height: 1.5,
                           width: 28,
-                          color: isCurrent ? Colors.white70 : AppColors.textHint,
+                          color: isCurrent
+                              ? Colors.white70
+                              : AppColors.textHint,
                           margin: const EdgeInsets.symmetric(vertical: 2),
                         ),
                         Text(
@@ -78,8 +81,9 @@ void showTimeSigPicker(BuildContext context, ScoreNotifier notifier) {
                             fontSize: 20,
                             fontWeight: FontWeight.bold,
                             height: 1.0,
-                            color:
-                                isCurrent ? Colors.white : AppColors.textPrimary,
+                            color: isCurrent
+                                ? Colors.white
+                                : AppColors.textPrimary,
                           ),
                         ),
                       ],
@@ -163,8 +167,9 @@ void showKeySigPicker(BuildContext context, ScoreNotifier notifier) {
                               : '♭' * key.fifths.abs(),
                           style: TextStyle(
                             fontSize: 11,
-                            color:
-                                isCurrent ? Colors.white70 : AppColors.textHint,
+                            color: isCurrent
+                                ? Colors.white70
+                                : AppColors.textHint,
                           ),
                         ),
                       ],
