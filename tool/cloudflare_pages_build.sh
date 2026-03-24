@@ -23,4 +23,9 @@ export PATH="${FLUTTER_ROOT}/bin:${PATH}"
 "${FLUTTER_BIN}" config --enable-web
 "${FLUTTER_BIN}" --version
 "${FLUTTER_BIN}" pub get
-"${FLUTTER_BIN}" build web --release --base-href /
+"${FLUTTER_BIN}" build web --release --base-href / --pwa-strategy none --no-web-resources-cdn
+
+# Remove native-only SoundFont from web output (only used on iOS/Android via flutter_midi_pro)
+rm -f build/web/assets/assets/soundfonts/piano.sf2
+# Remove debug symbol maps (not needed in production, saves ~4MB upload)
+find build/web/canvaskit -name '*.symbols' -delete
