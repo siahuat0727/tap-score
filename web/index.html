@@ -33,8 +33,9 @@
   <link rel="manifest" href="manifest.json">
 </head>
 <body>
-  <script src="soundfonts/acoustic_grand_piano-mp3.js"></script>
   <script>
+    var _soundfontScriptPath = 'soundfonts/acoustic_grand_piano-mp3.js';
+    var _soundfontLoadPromise = null;
     var _audioCtx = null;
     var _soundfontNotes = null;
     var _noteBuffers = {};
@@ -44,6 +45,55 @@
     var _webAudioReady = false;
     var _webAudioInitError = '';
     var _webAudioInitPromise = null;
+
+    function _ensureSoundfontScript() {
+      if (window.MIDI && MIDI.Soundfont && MIDI.Soundfont.acoustic_grand_piano) {
+        return Promise.resolve(MIDI.Soundfont.acoustic_grand_piano);
+      }
+
+      if (_soundfontLoadPromise) {
+        return _soundfontLoadPromise;
+      }
+
+      _soundfontLoadPromise = new Promise(function(resolve, reject) {
+        var existing = document.querySelector('script[data-tap-score-soundfont="true"]');
+        if (existing) {
+          existing.addEventListener('load', function() {
+            if (window.MIDI && MIDI.Soundfont && MIDI.Soundfont.acoustic_grand_piano) {
+              resolve(MIDI.Soundfont.acoustic_grand_piano);
+              return;
+            }
+            reject(new Error('Piano soundfont data not found'));
+          }, { once: true });
+          existing.addEventListener('error', function() {
+            reject(new Error('Failed to load piano soundfont script'));
+          }, { once: true });
+          return;
+        }
+
+        var script = document.createElement('script');
+        script.src = _soundfontScriptPath;
+        script.async = true;
+        script.dataset.tapScoreSoundfont = 'true';
+        script.onload = function() {
+          if (window.MIDI && MIDI.Soundfont && MIDI.Soundfont.acoustic_grand_piano) {
+            resolve(MIDI.Soundfont.acoustic_grand_piano);
+            return;
+          }
+
+          reject(new Error('Piano soundfont data not found'));
+        };
+        script.onerror = function() {
+          reject(new Error('Failed to load piano soundfont script'));
+        };
+        document.head.appendChild(script);
+      }).catch(function(error) {
+        _soundfontLoadPromise = null;
+        throw error;
+      });
+
+      return _soundfontLoadPromise;
+    }
 
     function _noteNameToMidi(name) {
       var noteMap = {C:0, D:2, E:4, F:5, G:7, A:9, B:11};
@@ -156,8 +206,7 @@
         return true;
       }
 
-      _soundfontNotes = (window.MIDI && MIDI.Soundfont)
-        ? MIDI.Soundfont.acoustic_grand_piano : null;
+      _soundfontNotes = await _ensureSoundfontScript();
       if (!_soundfontNotes) {
         _webAudioInitError = 'Piano soundfont data not found';
         console.error(_webAudioInitError);
@@ -173,6 +222,10 @@
 
       try {
         return await _webAudioInitPromise;
+      } catch (error) {
+        _webAudioInitError = error && error.message ? error.message : String(error);
+        console.error(_webAudioInitError);
+        return false;
       } finally {
         _webAudioInitPromise = null;
       }

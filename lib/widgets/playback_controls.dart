@@ -144,6 +144,13 @@ class PlaybackControls extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   toolbar,
+                  if (notifier.audioStatusMessage != null) ...[
+                    const SizedBox(height: 10),
+                    _LibraryMessage(
+                      message: notifier.audioStatusMessage!,
+                      isError: notifier.audioStatusIsError,
+                    ),
+                  ],
                   if (notifier.libraryMessage != null) ...[
                     const SizedBox(height: 10),
                     _LibraryMessage(

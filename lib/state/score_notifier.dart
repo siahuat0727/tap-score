@@ -16,6 +16,8 @@ import '../services/score_library_repository.dart';
 /// What kind of element is currently selected.
 enum SelectionKind { timeSig, keySig, note }
 
+enum AudioStatus { idle, preloading, ready, error }
+
 /// Central state manager for the score editor.
 class ScoreNotifier extends ChangeNotifier {
   static const int _defaultRestoreMidi = 60;
@@ -30,7 +32,10 @@ class ScoreNotifier extends ChangeNotifier {
        _scoreLibraryRepository =
            scoreLibraryRepository ?? SharedPreferencesScoreLibraryRepository(),
        _presetScoreRepository =
-           presetScoreRepository ?? AssetPresetScoreRepository();
+           presetScoreRepository ?? AssetPresetScoreRepository() {
+    _audioService.onStateChanged = _syncAudioState;
+    _syncAudioState(notify: false);
+  }
 
   final Score score = Score();
   final AudioService _audioService;
@@ -222,8 +227,12 @@ class ScoreNotifier extends ChangeNotifier {
   int get playbackIndex => _playbackIndex;
 
   /// Whether the audio engine is initialized.
-  bool _isInitialized = false;
-  bool get isInitialized => _isInitialized;
+  AudioStatus _audioStatus = AudioStatus.idle;
+  AudioStatus get audioStatus => _audioStatus;
+  bool get isInitialized => _audioStatus == AudioStatus.ready;
+  String? _audioStatusMessage;
+  String? get audioStatusMessage => _audioStatusMessage;
+  bool get audioStatusIsError => _audioStatus == AudioStatus.error;
 
   /// Initialize local storage and the audio service.
   Future<void> init() {
@@ -259,8 +268,36 @@ class ScoreNotifier extends ChangeNotifier {
       debugPrint('Score library load failed: $error');
     }
 
-    _isInitialized = await _audioService.init();
+    unawaited(_audioService.preload());
     notifyListeners();
+  }
+
+  void _syncAudioState({bool notify = true}) {
+    final previousStatus = _audioStatus;
+    final previousMessage = _audioStatusMessage;
+
+    switch (_audioService.initializationState) {
+      case AudioInitializationState.idle:
+        _audioStatus = AudioStatus.idle;
+        _audioStatusMessage = null;
+      case AudioInitializationState.loading:
+        _audioStatus = AudioStatus.preloading;
+        _audioStatusMessage = 'Preparing piano audio…';
+      case AudioInitializationState.ready:
+        _audioStatus = AudioStatus.ready;
+        _audioStatusMessage = null;
+      case AudioInitializationState.error:
+        _audioStatus = AudioStatus.error;
+        _audioStatusMessage =
+            _audioService.initializationError ??
+            'Piano audio failed to initialize.';
+    }
+
+    if (notify &&
+        (previousStatus != _audioStatus ||
+            previousMessage != _audioStatusMessage)) {
+      notifyListeners();
+    }
   }
 
   double get _measureDuration => score.beatsPerMeasure * (4.0 / score.beatUnit);
@@ -1395,6 +1432,7 @@ class ScoreNotifier extends ChangeNotifier {
   void dispose() {
     _draftSaveTimer?.cancel();
     stop();
+    _audioService.onStateChanged = null;
     _audioService.dispose();
     super.dispose();
   }

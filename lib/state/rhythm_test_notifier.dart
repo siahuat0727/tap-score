@@ -218,6 +218,7 @@ class RhythmTestNotifier extends ChangeNotifier {
     final initialized = await _audioService.init();
     if (!initialized) {
       _errorMessage =
+          _audioService.initializationError ??
           'Rhythm test metronome is unavailable on this platform or audio failed to initialize.';
       _emitChange();
       return;

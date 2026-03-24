@@ -10,6 +10,8 @@ import 'web_audio_stub.dart'
     if (dart.library.js) 'web_audio_impl.dart'
     as web_audio;
 
+enum AudioInitializationState { idle, loading, ready, error }
+
 /// Service wrapping flutter_midi_pro for SoundFont-based piano playback.
 ///
 /// On Web, uses Web Audio API with bundled MP3 samples.
@@ -32,8 +34,17 @@ class AudioService {
   final Map<int, AudioNoteHandle> _activeNoteHandles = {};
   int? _sfId;
   bool _initialized = false;
+  AudioInitializationState _initializationState = AudioInitializationState.idle;
+  String? _initializationError;
+  Future<bool>? _initializationFuture;
   bool _stopRequested = false;
   int _nextNativeHandleId = 1;
+
+  void Function()? onStateChanged;
+
+  AudioInitializationState get initializationState => _initializationState;
+  String? get initializationError => _initializationError;
+  bool get isInitialized => _initialized;
 
   /// Whether this platform supports MIDI playback.
   bool get _platformSupported {
@@ -46,14 +57,57 @@ class AudioService {
 
   /// Initialize by loading the bundled SoundFont.
   Future<bool> init() async {
+    return _ensureInitialized();
+  }
+
+  Future<bool> preload() async {
+    return _ensureInitialized();
+  }
+
+  Future<bool> _ensureInitialized() async {
     if (_initialized) return true;
-    if (!_platformSupported) return false;
+    if (_initializationFuture != null) {
+      return _initializationFuture!;
+    }
+    if (!_platformSupported) {
+      _setInitializationState(
+        AudioInitializationState.error,
+        errorMessage: 'Audio playback is unavailable on this platform.',
+      );
+      return false;
+    }
+
+    _setInitializationState(AudioInitializationState.loading);
+
+    _initializationFuture = _performInitialization();
+    final initialized = await _initializationFuture!;
+    _initializationFuture = null;
+    return initialized;
+  }
+
+  Future<bool> _performInitialization() async {
+    if (_initialized) {
+      _setInitializationState(AudioInitializationState.ready);
+      return true;
+    }
 
     if (kIsWeb) {
       try {
         _initialized = await web_audio.initWebAudio();
-      } catch (e) {
+        _setInitializationState(
+          _initialized
+              ? AudioInitializationState.ready
+              : AudioInitializationState.error,
+          errorMessage: _initialized
+              ? null
+              : 'Piano audio failed to initialize.',
+        );
+      } catch (error) {
         _initialized = false;
+        _setInitializationState(
+          AudioInitializationState.error,
+          errorMessage: error.toString(),
+        );
       }
 
       return _initialized;
@@ -66,10 +120,31 @@ class AudioService {
         program: 0,
       );
       _initialized = true;
+      _setInitializationState(AudioInitializationState.ready);
       return true;
-    } catch (e) {
+    } catch (error) {
       _initialized = false;
+      _setInitializationState(
+        AudioInitializationState.error,
+        errorMessage: error.toString(),
+      );
       return false;
+    }
+  }
+
+  void _setInitializationState(
+    AudioInitializationState state, {
+    String? errorMessage,
+  }) {
+    final didChange =
+        _initializationState != state || _initializationError != errorMessage;
+    _initializationState = state;
+    _initializationError = errorMessage;
+    if (state != AudioInitializationState.error) {
+      _initializationError = null;
+    }
+    if (didChange) {
+      onStateChanged?.call();
     }
   }
 
@@ -78,7 +153,7 @@ class AudioService {
     int midi, {
     int velocity = defaultPlaybackVelocity,
   }) async {
-    if (!_initialized) return null;
+    if (!await _ensureInitialized()) return null;
 
     final clampedMidi = midi.clamp(0, 127);
     if (kIsWeb) {
@@ -179,6 +254,11 @@ class AudioService {
     required void Function(int index) onNoteIndex,
     required void Function() onComplete,
   }) async {
+    if (!await _ensureInitialized()) {
+      onComplete();
+      return;
+    }
+
     _stopRequested = false;
     final activeHandlesByNoteIndex = <int, AudioNoteHandle>{};
     final events =
@@ -313,6 +393,7 @@ class AudioService {
   /// Clean up resources.
   void dispose() {
     stopPlayback();
+    onStateChanged = null;
   }
 }
 
