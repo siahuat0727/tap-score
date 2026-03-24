@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../input/editor_shortcuts.dart';
 import '../models/enums.dart';
 import '../state/score_notifier.dart';
+import '../theme/app_colors.dart';
 
 /// A toolbar row showing note duration buttons and editing tools.
 class DurationSelector extends StatelessWidget {
@@ -36,7 +37,7 @@ class DurationSelector extends StatelessWidget {
             onTap: notifier.timingControlsEnabled
                 ? notifier.handleRestAction
                 : null,
-            activeColor: const Color(0xFF9C27B0),
+            activeColor: AppColors.toolRest,
           ),
           ...NoteDuration.values.map(
             (duration) => _SquareButton(
@@ -53,7 +54,7 @@ class DurationSelector extends StatelessWidget {
               onTap: notifier.durationButtonsEnabled
                   ? () => notifier.setDuration(duration)
                   : null,
-              activeColor: const Color(0xFF2196F3),
+              activeColor: AppColors.toolDuration,
             ),
           ),
           _SquareButton(
@@ -68,7 +69,7 @@ class DurationSelector extends StatelessWidget {
             onTap: notifier.timingControlsEnabled
                 ? notifier.toggleDottedMode
                 : null,
-            activeColor: const Color(0xFFFF9800),
+            activeColor: AppColors.toolDot,
           ),
           _SquareButton(
             buttonKey: const ValueKey('slur-tool'),
@@ -80,7 +81,7 @@ class DurationSelector extends StatelessWidget {
             shortcutLabel: slurShortcutLabel,
             isSelected: notifier.toolbarSlurSelected,
             onTap: notifier.slurButtonEnabled ? notifier.toggleSlurMode : null,
-            activeColor: const Color(0xFF5E35B1),
+            activeColor: AppColors.toolSlur,
           ),
           _SquareButton(
             buttonKey: const ValueKey('triplet-tool'),
@@ -94,7 +95,7 @@ class DurationSelector extends StatelessWidget {
             onTap: notifier.tripletButtonEnabled
                 ? notifier.toggleTripletMode
                 : null,
-            activeColor: const Color(0xFF00897B),
+            activeColor: AppColors.toolTriplet,
           ),
           _SquareButton(
             buttonKey: const ValueKey('delete-tool'),
@@ -104,7 +105,7 @@ class DurationSelector extends StatelessWidget {
             onTap: notifier.deleteButtonEnabled
                 ? notifier.deleteSelected
                 : null,
-            activeColor: const Color(0xFFF44336),
+            activeColor: AppColors.toolDelete,
           ),
           _RhythmTestButton(
             isEnabled: rhythmTestEnabled,
@@ -237,9 +238,9 @@ class _RhythmTestButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final borderColor = isSelected
-        ? const Color(0xFFD97706)
+        ? AppColors.accentAmber
         : isEnabled
-        ? const Color(0xFFE0A64B)
+        ? AppColors.rhythmTestBorder
         : Colors.grey.withAlpha(38);
 
     return Tooltip(
@@ -259,7 +260,7 @@ class _RhythmTestButton extends StatelessWidget {
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   colors: isEnabled
-                      ? [const Color(0xFFFFC145), const Color(0xFFF59E0B)]
+                      ? [AppColors.rhythmTestGradientStart, AppColors.rhythmTestGradientEnd]
                       : [const Color(0xFFE0E0E0), const Color(0xFFBDBDBD)],
                 ),
                 borderRadius: BorderRadius.circular(12),
@@ -281,7 +282,7 @@ class _RhythmTestButton extends StatelessWidget {
                     Icons.timer_outlined,
                     size: 18,
                     color: isEnabled
-                        ? const Color(0xFF4A3411)
+                        ? AppColors.rhythmTestText
                         : const Color(0xFF757575),
                   ),
                   const SizedBox(width: 8),
@@ -294,7 +295,7 @@ class _RhythmTestButton extends StatelessWidget {
                         fontSize: 12,
                         fontWeight: FontWeight.w800,
                         color: isEnabled
-                            ? const Color(0xFF4A3411)
+                            ? AppColors.rhythmTestText
                             : const Color(0xFF757575),
                       ),
                     ),
@@ -394,7 +395,7 @@ class _ShortcutBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: const Color(0xFFE8E4D8),
+        color: AppColors.shortcutBadgeBackground,
         borderRadius: BorderRadius.circular(999),
       ),
       child: Padding(
@@ -404,7 +405,7 @@ class _ShortcutBadge extends StatelessWidget {
           style: const TextStyle(
             fontSize: 10,
             fontWeight: FontWeight.w700,
-            color: Color(0xFF746A57),
+            color: AppColors.textMuted,
           ),
         ),
       ),

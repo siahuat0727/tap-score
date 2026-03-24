@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../input/editor_shortcuts.dart';
 import '../state/score_notifier.dart';
+import '../theme/app_colors.dart';
 
 /// A scrollable piano keyboard widget for note input.
 class PianoKeyboard extends StatelessWidget {
@@ -20,7 +21,7 @@ class PianoKeyboard extends StatelessWidget {
     return Container(
       height: 220,
       decoration: BoxDecoration(
-        color: const Color(0xFF1A1A2E),
+        color: AppColors.keyboardBackground,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
         boxShadow: [
           BoxShadow(
@@ -230,8 +231,8 @@ class _WhiteKeyState extends State<_WhiteKey> {
             ),
             border: Border.all(
               color: isEnabled
-                  ? const Color(0xFFBBB8B0)
-                  : const Color(0xFFC7C3B8),
+                  ? AppColors.whiteKeyBorderEnabled
+                  : AppColors.whiteKeyBorderDisabled,
               width: 1,
             ),
             boxShadow: !isEnabled || _isPressed
@@ -269,7 +270,7 @@ class _WhiteKeyState extends State<_WhiteKey> {
                       fontSize: 10,
                       color: isEnabled
                           ? Colors.grey[600]
-                          : const Color(0xFF9D9B95),
+                          : AppColors.whiteKeyDisabledLabel,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -387,10 +388,10 @@ class _ShortcutBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final backgroundColor = !enabled
-        ? const Color(0xFF9A9388)
+        ? AppColors.keyBadgeDisabled
         : isShiftHint
-        ? const Color(0xFF4D6B8A)
-        : const Color(0xFF2F4156);
+        ? AppColors.keyBadgeShift
+        : AppColors.keyBadgeDefault;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
@@ -418,9 +419,9 @@ class _KeyboardControlPanel extends StatelessWidget {
       builder: (context, notifier, _) {
         return DecoratedBox(
           decoration: BoxDecoration(
-            color: const Color(0xFF22223B),
+            color: AppColors.keyboardControlPanel,
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: const Color(0xFF3C3C59)),
+            border: Border.all(color: AppColors.keyboardControlBorder),
           ),
           child: Padding(
             padding: const EdgeInsets.all(12),
@@ -433,7 +434,7 @@ class _KeyboardControlPanel extends StatelessWidget {
                   'Navigate',
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    color: Color(0xFFD9D9E8),
+                    color: AppColors.keyboardControlText,
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
                   ),
@@ -518,7 +519,7 @@ class _KeyboardModeToggle extends StatelessWidget {
           modeLabel,
           textAlign: TextAlign.center,
           style: const TextStyle(
-            color: Color(0xFFD9D9E8),
+            color: AppColors.keyboardControlText,
             fontSize: 12,
             fontWeight: FontWeight.w700,
           ),
@@ -536,9 +537,9 @@ class _KeyboardModeToggle extends StatelessWidget {
                 height: 34,
                 padding: const EdgeInsets.all(4),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF161629),
+                  color: AppColors.keyboardToggleTrack,
                   borderRadius: BorderRadius.circular(999),
-                  border: Border.all(color: const Color(0xFF404060)),
+                  border: Border.all(color: AppColors.keyboardToggleBorder),
                 ),
                 child: Stack(
                   clipBehavior: Clip.none,
@@ -556,8 +557,8 @@ class _KeyboardModeToggle extends StatelessWidget {
                           margin: const EdgeInsets.all(1),
                           decoration: BoxDecoration(
                             color: isKeySig
-                                ? const Color(0xFF486284)
-                                : const Color(0xFF9A4F2E),
+                                ? AppColors.keyboardToggleKeySig
+                                : AppColors.keyboardToggleChromatic,
                             borderRadius: BorderRadius.circular(999),
                             boxShadow: [
                               BoxShadow(
@@ -641,7 +642,7 @@ class _ArrowButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: const Color(0xFF30304B),
+      color: AppColors.keyboardArrowButton,
       borderRadius: BorderRadius.circular(14),
       child: InkWell(
         onTap: onPressed,

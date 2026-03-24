@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../state/rhythm_test_notifier.dart';
+import '../theme/app_colors.dart';
 
 class RhythmTestPanel extends StatelessWidget {
   const RhythmTestPanel({required this.onTempoChanged, super.key});
@@ -13,7 +14,7 @@ class RhythmTestPanel extends StatelessWidget {
     return Consumer<RhythmTestNotifier>(
       builder: (context, notifier, _) {
         return ColoredBox(
-          color: const Color(0xFFF0EDE4),
+          color: AppColors.surfaceContainer,
           child: Center(
             child: Padding(
               padding: EdgeInsets.fromLTRB(
@@ -131,7 +132,7 @@ class _InfoBanner extends StatelessWidget {
         child: Text(
           message,
           style: const TextStyle(
-            color: Color(0xFFC62828),
+            color: AppColors.statusError,
             fontWeight: FontWeight.w700,
           ),
         ),
@@ -241,9 +242,9 @@ class _ParameterStrip extends StatelessWidget {
     final step = (max - min) / divisions;
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: const Color(0xFFFBF7EE),
+        color: AppColors.surfaceContainerHigh,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFE0D6C4)),
+        border: Border.all(color: AppColors.surfaceBorder),
       ),
       child: Padding(
         padding: EdgeInsets.symmetric(
@@ -265,7 +266,7 @@ class _ParameterStrip extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        color: const Color(0xFF8A7D6A),
+                        color: AppColors.textTertiary,
                         fontSize: compact ? 11 : 12,
                         fontWeight: FontWeight.w700,
                       ),
@@ -277,7 +278,7 @@ class _ParameterStrip extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      color: const Color(0xFF534838),
+                      color: AppColors.textDark,
                       fontSize: ultraCompact ? 11 : (compact ? 13 : 14),
                       fontWeight: FontWeight.w800,
                     ),
@@ -305,10 +306,10 @@ class _ParameterStrip extends StatelessWidget {
               child: SliderTheme(
                 data: SliderTheme.of(context).copyWith(
                   trackHeight: 3,
-                  activeTrackColor: const Color(0xFF7A705F),
-                  inactiveTrackColor: const Color(0xFFD8D0C1),
-                  thumbColor: const Color(0xFF7A705F),
-                  overlayColor: const Color(0xFF7A705F).withAlpha(24),
+                  activeTrackColor: AppColors.panelSliderActive,
+                  inactiveTrackColor: AppColors.panelSliderInactive,
+                  thumbColor: AppColors.panelSliderActive,
+                  overlayColor: AppColors.panelSliderActive.withAlpha(24),
                   thumbShape: RoundSliderThumbShape(
                     enabledThumbRadius: ultraCompact ? 5 : 7,
                   ),
@@ -357,8 +358,8 @@ class _AdjustButton extends StatelessWidget {
       key: buttonKey,
       onPressed: enabled ? onPressed : null,
       icon: Icon(icon, size: ultraCompact ? 16 : (compact ? 18 : 20)),
-      color: const Color(0xFF534838),
-      disabledColor: const Color(0xFFB7AE9F),
+      color: AppColors.textDark,
+      disabledColor: AppColors.panelAdjustDisabled,
       splashRadius: ultraCompact ? 14 : (compact ? 18 : 20),
       constraints: BoxConstraints.tightFor(
         width: ultraCompact ? 22 : (compact ? 28 : 32),
@@ -390,8 +391,8 @@ class _PrimaryActionButton extends StatelessWidget {
           ? () => context.read<RhythmTestNotifier>().performPrimaryAction()
           : null,
       style: FilledButton.styleFrom(
-        backgroundColor: const Color(0xFF2F261C),
-        disabledBackgroundColor: const Color(0xFFBFB6A7),
+        backgroundColor: AppColors.panelActionBackground,
+        disabledBackgroundColor: AppColors.panelActionDisabled,
         foregroundColor: Colors.white,
         disabledForegroundColor: Colors.white,
         padding: EdgeInsets.symmetric(

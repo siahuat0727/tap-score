@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../rhythm_test/rhythm_test_models.dart';
+import '../theme/app_colors.dart';
 
 class RhythmTestTimeline extends StatelessWidget {
   const RhythmTestTimeline({
@@ -37,9 +38,9 @@ class RhythmTestTimeline extends StatelessWidget {
 
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: const Color(0xFFFFFCF5),
+        color: AppColors.timelineBackground,
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: const Color(0xFFE3DDD0)),
+        border: Border.all(color: AppColors.timelineBorder),
         boxShadow: const [
           BoxShadow(
             color: Color(0x11000000),
@@ -96,13 +97,13 @@ class _RhythmTimelinePainter extends CustomPainter {
     const bottomY = 176.0;
 
     final trackPaint = Paint()
-      ..color = const Color(0xFFD7D0C0)
+      ..color = AppColors.timelineTrack
       ..strokeWidth = 2;
     final measurePaint = Paint()
-      ..color = const Color(0xFFD4CCBC)
+      ..color = AppColors.timelineMeasure
       ..strokeWidth = 1.4;
     final beatPaint = Paint()
-      ..color = const Color(0xFFF0E7D8)
+      ..color = AppColors.timelineBeat
       ..strokeWidth = 1;
     final activeWindowPaint = Paint()..color = const Color(0x142196F3);
 
@@ -153,8 +154,8 @@ class _RhythmTimelinePainter extends CustomPainter {
                 .clamp(0, 1)
                 .toDouble();
         final lineColor = Color.lerp(
-          const Color(0xFF2E7D32),
-          const Color(0xFFF57C00),
+          AppColors.timelineMatchGood,
+          AppColors.timelineMatchWarn,
           ratio,
         )!;
         final linePaint = Paint()
@@ -178,7 +179,7 @@ class _RhythmTimelinePainter extends CustomPainter {
         _paintEvent(
           canvas,
           Offset(_xForTime(event.timeSeconds, left, usableWidth), topY),
-          matched ? const Color(0xFF1565C0) : const Color(0xFFC62828),
+          matched ? AppColors.timelineMatchedScore : AppColors.timelineUnmatchedScore,
         );
       }
     }
@@ -189,10 +190,10 @@ class _RhythmTimelinePainter extends CustomPainter {
         canvas,
         Offset(_xForTime(tap.timeSeconds, left, usableWidth), bottomY),
         matched
-            ? const Color(0xFF00897B)
+            ? AppColors.timelineMatchedTap
             : result == null
             ? const Color(0xFF5D4037)
-            : const Color(0xFFEF6C00),
+            : AppColors.statusWarning,
       );
     }
   }
@@ -212,7 +213,7 @@ class _RhythmTimelinePainter extends CustomPainter {
       text: TextSpan(
         text: text,
         style: const TextStyle(
-          color: Color(0xFF6E6254),
+          color: AppColors.timelineLabel,
           fontSize: 14,
           fontWeight: FontWeight.w700,
         ),
@@ -235,7 +236,7 @@ class _RhythmTimelinePainter extends CustomPainter {
           color: color,
           fontSize: 11,
           fontWeight: FontWeight.w700,
-          backgroundColor: const Color(0xEEFFFDF7),
+          backgroundColor: AppColors.timelineErrorBackground,
         ),
       ),
       textDirection: TextDirection.ltr,

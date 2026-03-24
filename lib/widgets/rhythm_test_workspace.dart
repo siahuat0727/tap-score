@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../state/rhythm_test_notifier.dart';
+import '../theme/app_colors.dart';
 import 'rhythm_test_panel.dart';
 import 'score_view_widget.dart';
 
@@ -59,7 +60,7 @@ class RhythmTestWorkspace extends StatelessWidget {
                                   width: 46,
                                   height: 46,
                                   decoration: const BoxDecoration(
-                                    color: Color(0xD9FBF7EE),
+                                    color: AppColors.exitButtonBackground,
                                     shape: BoxShape.circle,
                                     boxShadow: [
                                       BoxShadow(
@@ -71,7 +72,7 @@ class RhythmTestWorkspace extends StatelessWidget {
                                   ),
                                   child: const Icon(
                                     Icons.close_rounded,
-                                    color: Color(0xFF5B5142),
+                                    color: AppColors.exitButtonIcon,
                                   ),
                                 ),
                               ),
@@ -107,7 +108,7 @@ class RhythmTestWorkspace extends StatelessWidget {
                     ],
                   ),
                 ),
-                Container(height: 1, color: const Color(0xFFE0DDD4)),
+                Container(height: 1, color: AppColors.surfaceDivider),
                 SizedBox(
                   height: controlBarHeight,
                   child: RhythmTestPanel(onTempoChanged: onTempoChanged),
@@ -124,10 +125,10 @@ class RhythmTestWorkspace extends StatelessWidget {
 class _RhythmTestResultCard extends StatelessWidget {
   const _RhythmTestResultCard({super.key});
 
-  static const Color _successColor = Color(0xFF1E8E5A);
-  static const Color _warningColor = Color(0xFFEF6C00);
-  static const Color _failureColor = Color(0xFFC62828);
-  static const Color _textColor = Color(0xFF2B251C);
+  static const Color _successColor = AppColors.statusSuccess;
+  static const Color _warningColor = AppColors.statusWarning;
+  static const Color _failureColor = AppColors.statusError;
+  static const Color _textColor = AppColors.textBody;
 
   @override
   Widget build(BuildContext context) {
@@ -225,7 +226,7 @@ class _RhythmTestResultCard extends StatelessWidget {
                   key: const ValueKey('rhythm-test-result-params'),
                   textAlign: TextAlign.right,
                   style: const TextStyle(
-                    color: Color(0xFF8A7D6A),
+                    color: AppColors.textTertiary,
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
                     height: 1.35,
@@ -295,9 +296,9 @@ class _ResultCardShell extends StatelessWidget {
       constraints: const BoxConstraints(maxWidth: 560),
       child: DecoratedBox(
         decoration: BoxDecoration(
-          color: const Color(0xEEF8F5EE),
+          color: AppColors.resultCardBackground,
           borderRadius: BorderRadius.circular(26),
-          border: Border.all(color: const Color(0xFFD6CCBA)),
+          border: Border.all(color: AppColors.resultCardBorder),
           boxShadow: const [
             BoxShadow(
               color: Color(0x14000000),
@@ -333,7 +334,7 @@ class _PrimaryMetric extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white.withAlpha(118),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFDCCFB9)),
+        border: Border.all(color: AppColors.resultMetricBorder),
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
@@ -344,7 +345,7 @@ class _PrimaryMetric extends StatelessWidget {
               label,
               textAlign: TextAlign.center,
               style: const TextStyle(
-                color: Color(0xFF8A7D6A),
+                color: AppColors.textTertiary,
                 fontSize: 12,
                 fontWeight: FontWeight.w800,
               ),
@@ -379,7 +380,7 @@ class _SecondaryMetric extends StatelessWidget {
       decoration: BoxDecoration(
         color: const Color(0x73FFFFFF),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFDCCFB9)),
+        border: Border.all(color: AppColors.resultMetricBorder),
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -390,7 +391,7 @@ class _SecondaryMetric extends StatelessWidget {
               label,
               textAlign: TextAlign.center,
               style: const TextStyle(
-                color: Color(0xFF8A7D6A),
+                color: AppColors.textTertiary,
                 fontSize: 12,
                 fontWeight: FontWeight.w700,
               ),

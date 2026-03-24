@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../state/score_notifier.dart';
+import '../theme/app_colors.dart';
+import 'signature_pickers.dart';
 
 /// Playback control bar with play/stop, save/load, and tempo controls.
 class PlaybackControls extends StatelessWidget {
@@ -44,6 +46,13 @@ class PlaybackControls extends StatelessWidget {
                                 }
                               },
                               enabled: notifier.score.notes.isNotEmpty,
+                            ),
+                            _TimeSigChip(
+                              beatsPerMeasure: notifier.score.beatsPerMeasure,
+                              beatUnit: notifier.score.beatUnit,
+                            ),
+                            _KeySigChip(
+                              label: notifier.score.keySignature.vexflowKey,
                             ),
                             _ScoreChip(
                               label: notifier.currentScoreLabel,
@@ -99,11 +108,30 @@ class PlaybackControls extends StatelessWidget {
                               enabled: notifier.score.notes.isNotEmpty,
                             ),
                             const SizedBox(width: 14),
-                            _ScoreChip(
-                              label: notifier.currentScoreLabel,
-                              hasUnsavedChanges: notifier.hasUnsavedChanges,
+                            Flexible(
+                              child: Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                children: [
+                                  _ScoreChip(
+                                    label: notifier.currentScoreLabel,
+                                    hasUnsavedChanges:
+                                        notifier.hasUnsavedChanges,
+                                  ),
+                                  _TimeSigChip(
+                                    beatsPerMeasure:
+                                        notifier.score.beatsPerMeasure,
+                                    beatUnit: notifier.score.beatUnit,
+                                  ),
+                                  _KeySigChip(
+                                    label:
+                                        notifier.score.keySignature.vexflowKey,
+                                  ),
+                                ],
+                              ),
                             ),
-                            const Spacer(),
+                            const SizedBox(width: 10),
                             FilledButton.icon(
                               key: const ValueKey('save-score-button'),
                               onPressed: onSaveTap,
@@ -183,17 +211,17 @@ class _TempoStrip extends StatelessWidget {
           style: const TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.w700,
-            color: Color(0xFF444444),
+            color: AppColors.textMedium,
           ),
         ),
         const SizedBox(width: 10),
         Expanded(
           child: SliderTheme(
             data: SliderTheme.of(context).copyWith(
-              activeTrackColor: const Color(0xFF2196F3),
-              inactiveTrackColor: const Color(0xFFE0E0E0),
-              thumbColor: const Color(0xFF2196F3),
-              overlayColor: const Color(0xFF2196F3).withAlpha(51),
+              activeTrackColor: AppColors.sliderActive,
+              inactiveTrackColor: AppColors.sliderInactive,
+              thumbColor: AppColors.sliderActive,
+              overlayColor: AppColors.sliderActive.withAlpha(51),
               trackHeight: 4,
               thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
             ),
@@ -226,9 +254,9 @@ class _ScoreChip extends StatelessWidget {
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: const Color(0xFFFBF7EE),
+        color: AppColors.surfaceContainerHigh,
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: const Color(0xFFE0D6C4)),
+        border: Border.all(color: AppColors.surfaceBorder),
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -239,19 +267,19 @@ class _ScoreChip extends StatelessWidget {
               label,
               style: const TextStyle(
                 fontWeight: FontWeight.w700,
-                color: Color(0xFF4E473A),
+                color: AppColors.textChip,
               ),
             ),
             if (hasUnsavedChanges) ...[
               const SizedBox(width: 8),
-              const Icon(Icons.circle, size: 8, color: Color(0xFFD97706)),
+              const Icon(Icons.circle, size: 8, color: AppColors.accentAmber),
               const SizedBox(width: 4),
               const Text(
                 'Unsaved',
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w700,
-                  color: Color(0xFFD97706),
+                  color: AppColors.accentAmber,
                 ),
               ),
             ],
@@ -270,7 +298,7 @@ class _LibraryMessage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = isError ? const Color(0xFFC62828) : const Color(0xFF1E8E5A);
+    final color = isError ? AppColors.statusError : AppColors.statusSuccess;
     return DecoratedBox(
       decoration: BoxDecoration(
         color: color.withAlpha(18),
@@ -301,6 +329,90 @@ class _PlayButton extends StatefulWidget {
 
   @override
   State<_PlayButton> createState() => _PlayButtonState();
+}
+
+class _TimeSigChip extends StatelessWidget {
+  const _TimeSigChip({
+    required this.beatsPerMeasure,
+    required this.beatUnit,
+  });
+
+  final int beatsPerMeasure;
+  final int beatUnit;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () {
+        showTimeSigPicker(context, context.read<ScoreNotifier>());
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: AppColors.surfaceContainerHigh,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: AppColors.surfaceBorder),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.music_note, size: 14, color: AppColors.textMuted),
+            const SizedBox(width: 4),
+            Text(
+              '$beatsPerMeasure/$beatUnit',
+              style: const TextStyle(
+                fontWeight: FontWeight.w700,
+                fontSize: 13,
+                color: AppColors.textChip,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _KeySigChip extends StatelessWidget {
+  const _KeySigChip({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () {
+        showKeySigPicker(context, context.read<ScoreNotifier>());
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: AppColors.surfaceContainerHigh,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: AppColors.surfaceBorder),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.queue_music,
+              size: 14,
+              color: AppColors.textMuted,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: const TextStyle(
+                fontWeight: FontWeight.w700,
+                fontSize: 13,
+                color: AppColors.textChip,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _PlayButtonState extends State<_PlayButton>
@@ -348,17 +460,17 @@ class _PlayButtonState extends State<_PlayButton>
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: widget.isPlaying
-                  ? [const Color(0xFFF44336), const Color(0xFFD32F2F)]
+                  ? [AppColors.stopGradientStart, AppColors.stopGradientEnd]
                   : widget.enabled
-                  ? [const Color(0xFF4CAF50), const Color(0xFF388E3C)]
-                  : [const Color(0xFFBDBDBD), const Color(0xFF9E9E9E)],
+                  ? [AppColors.playGradientStart, AppColors.playGradientEnd]
+                  : [AppColors.playDisabledStart, AppColors.playDisabledEnd],
             ),
             boxShadow: [
               BoxShadow(
                 color:
                     (widget.isPlaying
-                            ? const Color(0xFFF44336)
-                            : const Color(0xFF4CAF50))
+                            ? AppColors.stopGradientStart
+                            : AppColors.playGradientStart)
                         .withAlpha(widget.enabled ? 102 : 0),
                 blurRadius: 12,
                 offset: const Offset(0, 4),

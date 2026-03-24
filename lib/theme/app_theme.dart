@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'app_colors.dart';
+
 /// App theme for Tap Score — clean, warm, and inviting.
 class AppTheme {
   static ThemeData get lightTheme {
@@ -8,22 +10,22 @@ class AppTheme {
       colorScheme: ColorScheme.fromSeed(
         seedColor: const Color(0xFF3F51B5),
         brightness: Brightness.light,
-        surface: const Color(0xFFF8F6F0),
+        surface: AppColors.surface,
       ),
-      scaffoldBackgroundColor: const Color(0xFFF5F3ED),
+      scaffoldBackgroundColor: AppColors.surfaceDim,
       appBarTheme: const AppBarTheme(
-        backgroundColor: Color(0xFFF5F3ED),
-        foregroundColor: Color(0xFF333333),
+        backgroundColor: AppColors.surfaceDim,
+        foregroundColor: AppColors.textPrimary,
         elevation: 0,
         centerTitle: true,
         titleTextStyle: TextStyle(
           fontSize: 22,
           fontWeight: FontWeight.w600,
-          color: Color(0xFF333333),
+          color: AppColors.textPrimary,
           letterSpacing: 0.5,
         ),
       ),
-      iconTheme: const IconThemeData(color: Color(0xFF555555)),
+      iconTheme: const IconThemeData(color: AppColors.textSecondary),
     );
   }
 }

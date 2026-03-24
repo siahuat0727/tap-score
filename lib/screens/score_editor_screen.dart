@@ -7,6 +7,7 @@ import '../input/editor_shortcuts.dart';
 import '../services/score_transfer_service.dart';
 import '../state/rhythm_test_notifier.dart';
 import '../state/score_notifier.dart';
+import '../theme/app_colors.dart';
 import '../widgets/duration_selector.dart';
 import '../widgets/piano_keyboard.dart';
 import '../widgets/playback_controls.dart';
@@ -132,7 +133,7 @@ class _ScoreEditorScreenState extends State<ScoreEditorScreen> {
             FilledButton(
               onPressed: () => Navigator.of(context).pop(true),
               style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFFC62828),
+                backgroundColor: AppColors.statusError,
               ),
               child: const Text('Delete'),
             ),
@@ -215,7 +216,7 @@ class _ScoreEditorScreenState extends State<ScoreEditorScreen> {
                           child: Text(
                             'No scores available.',
                             style: TextStyle(
-                              color: Color(0xFF746A57),
+                              color: AppColors.textMuted,
                               fontWeight: FontWeight.w600,
                             ),
                           ),
@@ -243,7 +244,7 @@ class _ScoreEditorScreenState extends State<ScoreEditorScreen> {
                                 item.source == _LoadSheetItemSource.preset
                                     ? Icons.library_music_outlined
                                     : Icons.save_outlined,
-                                color: const Color(0xFF746A57),
+                                color: AppColors.textMuted,
                               ),
                               title: Text(
                                 name,
@@ -272,7 +273,7 @@ class _ScoreEditorScreenState extends State<ScoreEditorScreen> {
                                         style: TextStyle(
                                           fontSize: 12,
                                           fontWeight: FontWeight.w700,
-                                          color: Color(0xFFD97706),
+                                          color: AppColors.accentAmber,
                                         ),
                                       ),
                                     ),
@@ -461,9 +462,9 @@ class _ScoreEditorScreenState extends State<ScoreEditorScreen> {
                       onRendererKeyDown: _handleRendererKeyDown,
                     ),
                   ),
-                  Container(height: 1, color: const Color(0xFFE0DDD4)),
+                  Container(height: 1, color: AppColors.surfaceDivider),
                   Container(
-                    color: const Color(0xFFF0EDE4),
+                    color: AppColors.surfaceContainer,
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
