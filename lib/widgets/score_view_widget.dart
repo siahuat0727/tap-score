@@ -362,6 +362,7 @@ class _ScoreViewWidgetState extends State<ScoreViewWidget> {
       },
       // Build the platform renderer once — it survives Consumer rebuilds.
       child: buildScoreRenderer(
+        interactive: widget.interactive,
         onMessage: _onJsMessage,
         onReady: (sendRender) {
           setState(() => _sendRender = sendRender);

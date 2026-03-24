@@ -74,4 +74,21 @@ void main() {
       ]);
     },
   );
+
+  test('timeline builder treats tied continuation as one onset', () {
+    final score = Score(
+      bpm: 60,
+      notes: const [
+        Note(midi: 60, duration: NoteDuration.quarter, slurToNext: true),
+        Note(midi: 60, duration: NoteDuration.quarter),
+      ],
+    );
+
+    final timeline = builder.build(score);
+
+    expect(timeline.expectedEvents.map((event) => event.noteIndex), [0]);
+    expect(timeline.playbackNotes, hasLength(1));
+    expect(timeline.playbackNotes.single.noteIndex, 0);
+    expect(timeline.playbackNotes.single.durationSeconds, 2.0);
+  });
 }

@@ -17,6 +17,7 @@ typedef OnRendererReady =
 /// 3. Call [onReady] with a `sendRender` function once the page is loaded and
 ///    ready to accept render commands.
 Widget buildScoreRenderer({
+  required bool interactive,
   required OnScoreMessage onMessage,
   required OnRendererReady onReady,
 }) {

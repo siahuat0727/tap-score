@@ -545,7 +545,7 @@
         }
       }
 
-      // ---- Render slurs -----------------------------------------------------
+      // ---- Render slurs / logical ties --------------------------------------
       const logicalNoteMap = new Map();
       for (let i = 0; i < allDisplayNotes.length; i++) {
         const globalIndex = allDisplayNotes[i].globalIndex;
@@ -564,12 +564,27 @@
         const targetNotes = logicalNoteMap.get(i + 1);
         if (!sourceNotes || !targetNotes) continue;
 
-        new Curve(sourceNotes[sourceNotes.length - 1], targetNotes[0], {
+        const sourceAnchor = sourceNotes[sourceNotes.length - 1];
+        const targetAnchor = targetNotes[0];
+        const isTieLikeConnection = source.midi === target.midi;
+
+        if (isTieLikeConnection) {
+          new StaveTie({
+            first_note: sourceAnchor,
+            last_note: targetAnchor,
+            first_indices: [0],
+            last_indices: [0],
+          }).setContext(ctx).draw();
+          continue;
+        }
+
+        new Curve(sourceAnchor, targetAnchor, {
           cps: [
-            { x: 0, y: 18 },
-            { x: 0, y: 18 },
+            { x: 0, y: 10 },
+            { x: 0, y: 10 },
           ],
           invert: false,
+          thickness: 2,
         }).setContext(ctx).draw();
       }
 

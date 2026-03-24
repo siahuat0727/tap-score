@@ -50,7 +50,7 @@ class DurationSelector extends StatelessWidget {
               ),
               shortcutLabel: durationShortcutLabels[duration]!,
               isSelected: notifier.toolbarDuration == duration,
-              onTap: notifier.timingControlsEnabled
+              onTap: notifier.durationButtonsEnabled
                   ? () => notifier.setDuration(duration)
                   : null,
               activeColor: const Color(0xFF2196F3),

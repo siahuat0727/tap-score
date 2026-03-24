@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:tap_score/models/enums.dart';
 import 'package:tap_score/models/note.dart';
 import 'package:tap_score/models/score.dart';
+import 'package:tap_score/rhythm_test/rhythm_matcher.dart';
 import 'package:tap_score/rhythm_test/rhythm_test_models.dart';
 import 'package:tap_score/rhythm_test/rhythm_timeline_builder.dart';
 import 'package:tap_score/services/audio_service.dart';
@@ -95,7 +98,7 @@ void main() {
       expect(find.textContaining('Enter'), findsOneWidget);
 
       await tester.runAsync(() async {
-        await Future<void>.delayed(const Duration(milliseconds: 860));
+        await Future<void>.delayed(const Duration(milliseconds: 900));
       });
       await tester.pump();
 
@@ -133,6 +136,54 @@ void main() {
       );
     },
   );
+
+  testWidgets('workspace shows loading card before the final result card', (
+    WidgetTester tester,
+  ) async {
+    final scoringGate = Completer<void>();
+    final notifier = _buildNotifier(
+      matcher: _FixedMatcher(
+        const RhythmTestResult(
+          matchedPairs: [],
+          unmatchedExpectedEvents: [
+            ExpectedRhythmEvent(id: 1, noteIndex: 0, timeSeconds: 0),
+            ExpectedRhythmEvent(id: 2, noteIndex: 1, timeSeconds: 0.1),
+          ],
+          unmatchedTapEvents: [],
+          matchingWindowSeconds: 0.1,
+          appliedShiftSeconds: 0,
+        ),
+      ),
+      waitBeforeScoring: () => scoringGate.future,
+    );
+    addTearDown(notifier.dispose);
+    await notifier.init();
+
+    await tester.pumpWidget(_wrap(notifier));
+    await tester.pump();
+
+    await tester.runAsync(() async {
+      await notifier.performPrimaryAction();
+      await Future<void>.delayed(const Duration(milliseconds: 860));
+    });
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey('rhythm-test-result-card')),
+      findsOneWidget,
+    );
+    expect(find.text('Calculating result…'), findsOneWidget);
+    expect(find.text('Failed'), findsNothing);
+
+    scoringGate.complete();
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    });
+    await tester.pump();
+
+    expect(find.text('Calculating result…'), findsNothing);
+    expect(find.text('Failed'), findsOneWidget);
+  });
 }
 
 Widget _wrap(RhythmTestNotifier notifier) {
@@ -155,7 +206,10 @@ Widget _wrap(RhythmTestNotifier notifier) {
 
 bool _ignoreRendererKeyDown(String? key, String? code) => false;
 
-RhythmTestNotifier _buildNotifier() {
+RhythmTestNotifier _buildNotifier({
+  RhythmMatcher? matcher,
+  Future<void> Function()? waitBeforeScoring,
+}) {
   return RhythmTestNotifier(
     score: Score(
       bpm: 120,
@@ -164,6 +218,8 @@ RhythmTestNotifier _buildNotifier() {
         Note(midi: 62, duration: NoteDuration.quarter),
       ],
     ),
+    matcher: matcher,
+    waitBeforeScoring: waitBeforeScoring,
     audioService: _FakeAudioService(),
     timelineBuilder: _FixedTimelineBuilder(
       const RhythmTimeline(
@@ -192,6 +248,19 @@ RhythmTestNotifier _buildNotifier() {
       ),
     ),
   );
+}
+
+class _FixedMatcher extends RhythmMatcher {
+  const _FixedMatcher(this.result);
+
+  final RhythmTestResult result;
+
+  @override
+  RhythmTestResult match({
+    required List<ExpectedRhythmEvent> expectedEvents,
+    required List<TapInputEvent> tapEvents,
+    required double matchingWindowSeconds,
+  }) => result;
 }
 
 class _FixedTimelineBuilder extends RhythmTimelineBuilder {

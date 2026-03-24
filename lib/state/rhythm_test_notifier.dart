@@ -21,12 +21,14 @@ class RhythmTestNotifier extends ChangeNotifier {
     RhythmMatcher? matcher,
     RhythmTestDisplayConfig displayConfig = const RhythmTestDisplayConfig(),
     Stopwatch Function()? createStopwatch,
+    Future<void> Function()? waitBeforeScoring,
   }) : _score = score.copy(),
        _audioService = audioService ?? AudioService(),
        _timelineBuilder = timelineBuilder ?? const RhythmTimelineBuilder(),
        _matcher = matcher ?? const RhythmMatcher(),
        _displayConfig = displayConfig,
-       _createStopwatch = createStopwatch ?? Stopwatch.new {
+       _createStopwatch = createStopwatch ?? Stopwatch.new,
+       _waitBeforeScoring = waitBeforeScoring ?? _waitBeforeScoringDefault {
     _largeErrorThresholdBeats = displayConfig.largeErrorThresholdBeats;
     _timeline = _timelineBuilder.build(_score);
   }
@@ -37,6 +39,7 @@ class RhythmTestNotifier extends ChangeNotifier {
   final RhythmMatcher _matcher;
   final RhythmTestDisplayConfig _displayConfig;
   final Stopwatch Function() _createStopwatch;
+  final Future<void> Function() _waitBeforeScoring;
   late double _largeErrorThresholdBeats;
 
   late RhythmTimeline _timeline;
@@ -45,6 +48,8 @@ class RhythmTestNotifier extends ChangeNotifier {
   bool _isInitialized = false;
   String? _errorMessage;
   RhythmTestResult? _result;
+  bool _isScoringResult = false;
+  String? _scoringErrorMessage;
   final List<TapInputEvent> _tapEvents = [];
   int _nextTapId = 0;
   int _sessionId = 0;
@@ -72,6 +77,10 @@ class RhythmTestNotifier extends ChangeNotifier {
 
   RhythmTestResult? get result => _result;
 
+  bool get isScoringResult => _isScoringResult;
+
+  String? get scoringErrorMessage => _scoringErrorMessage;
+
   RhythmTestDisplayConfig get displayConfig => _displayConfig;
 
   double get largeErrorThresholdBeats => _largeErrorThresholdBeats;
@@ -89,7 +98,7 @@ class RhythmTestNotifier extends ChangeNotifier {
     ]..sort((a, b) => a.timeSeconds.compareTo(b.timeSeconds));
 
     return RhythmOverlayRenderData(
-      showExpectedEvents: _phase == RhythmTestPhase.finished,
+      showExpectedEvents: _phase == RhythmTestPhase.finished && _result != null,
       elapsedRunSeconds: _elapsedRunSeconds,
       playheadTimeSeconds: _playheadTimeSeconds,
       countInDurationSeconds: _timeline.countInDurationSeconds,
@@ -136,7 +145,8 @@ class RhythmTestNotifier extends ChangeNotifier {
       _isInitialized &&
       _timeline.expectedEvents.isNotEmpty;
 
-  bool get showCenteredResult => _result != null;
+  bool get showCenteredResult =>
+      _isScoringResult || _scoringErrorMessage != null || _result != null;
 
   int get resultErrorCount => _result?.errorCount ?? 0;
 
@@ -304,6 +314,7 @@ class RhythmTestNotifier extends ChangeNotifier {
       return;
     }
 
+    _sessionId += 1;
     _restartUnlockTimer?.cancel();
     _audioService.stopPlayback();
     _phase = RhythmTestPhase.idle;
@@ -320,6 +331,7 @@ class RhythmTestNotifier extends ChangeNotifier {
       return;
     }
 
+    _sessionId += 1;
     _restartUnlockTimer?.cancel();
     _audioService.stopPlayback();
     _score.bpm = bpm.clamp(40, 240);
@@ -439,7 +451,11 @@ class RhythmTestNotifier extends ChangeNotifier {
     }
 
     _sessionStopwatch?.stop();
-    _completeRun();
+    _completeRun(sessionId);
+  }
+
+  static Future<void> _waitBeforeScoringDefault() {
+    return Future<void>.delayed(Duration.zero);
   }
 
   Future<bool> _waitUntil({
@@ -507,26 +523,61 @@ class RhythmTestNotifier extends ChangeNotifier {
     _emitChange();
   }
 
-  void _completeRun() {
+  void _completeRun(int sessionId) {
     _phase = RhythmTestPhase.finished;
     _runningPulseIndex = null;
     _countInPulseIndex = null;
-    _result = _matcher.match(
-      expectedEvents: _timeline.expectedEvents,
-      tapEvents: _tapEvents,
-      matchingWindowSeconds: _timeline.matchingWindowSeconds,
-    );
+    _result = null;
+    _isScoringResult = true;
+    _scoringErrorMessage = null;
     _restartLocked = true;
     _restartUnlockTimer?.cancel();
-    final sessionId = _sessionId;
-    _restartUnlockTimer = Timer(resultRevealLockDuration, () {
-      if (sessionId != _sessionId || _phase != RhythmTestPhase.finished) {
+    _emitChange();
+    unawaited(_scoreResult(sessionId));
+  }
+
+  Future<void> _scoreResult(int sessionId) async {
+    await _waitBeforeScoring();
+    if (sessionId != _sessionId ||
+        _phase != RhythmTestPhase.finished ||
+        !_isScoringResult) {
+      return;
+    }
+
+    try {
+      final result = _matcher.match(
+        expectedEvents: _timeline.expectedEvents,
+        tapEvents: _tapEvents,
+        matchingWindowSeconds: _timeline.matchingWindowSeconds,
+      );
+      if (sessionId != _sessionId ||
+          _phase != RhythmTestPhase.finished ||
+          !_isScoringResult) {
         return;
       }
-      _restartLocked = false;
+
+      _result = result;
+      _isScoringResult = false;
+      _restartUnlockTimer = Timer(resultRevealLockDuration, () {
+        if (sessionId != _sessionId || _phase != RhythmTestPhase.finished) {
+          return;
+        }
+        _restartLocked = false;
+        _emitChange();
+      });
       _emitChange();
-    });
-    _emitChange();
+    } catch (error) {
+      if (sessionId != _sessionId ||
+          _phase != RhythmTestPhase.finished ||
+          !_isScoringResult) {
+        return;
+      }
+
+      _isScoringResult = false;
+      _restartLocked = false;
+      _scoringErrorMessage = 'Rhythm test result calculation failed: $error';
+      _emitChange();
+    }
   }
 
   void _emitChange() {
@@ -539,6 +590,8 @@ class RhythmTestNotifier extends ChangeNotifier {
   void _clearSessionData() {
     _restartUnlockTimer?.cancel();
     _result = null;
+    _isScoringResult = false;
+    _scoringErrorMessage = null;
     _tapEvents.clear();
     _nextTapId = 0;
     _performanceStartMicros = null;

@@ -1,3 +1,4 @@
+import '../models/note.dart';
 import '../models/score.dart';
 
 class ScorePlaybackStep {
@@ -68,9 +69,10 @@ ScorePlaybackTimeline buildScorePlaybackTimeline(
   final steps = <ScorePlaybackStep>[];
   final playbackNotes = <ScheduledPlaybackNote>[];
   var elapsedSeconds = 0.0;
+  final notes = score.notes;
 
-  for (var index = 0; index < score.notes.length; index++) {
-    final note = score.notes[index];
+  for (var index = 0; index < notes.length; index++) {
+    final note = notes[index];
     final durationSeconds = note.effectiveBeats * score.secondsPerQuarterNote;
 
     steps.add(
@@ -82,13 +84,20 @@ ScorePlaybackTimeline buildScorePlaybackTimeline(
       ),
     );
 
-    if (!note.isRest) {
+    if (!note.isRest && !_isTieContinuation(notes, index)) {
+      var soundingDurationSeconds = durationSeconds;
+      var chainIndex = index;
+      while (_isTieToNext(notes, chainIndex)) {
+        chainIndex += 1;
+        soundingDurationSeconds +=
+            notes[chainIndex].effectiveBeats * score.secondsPerQuarterNote;
+      }
       playbackNotes.add(
         ScheduledPlaybackNote(
           noteIndex: index,
           midi: note.midi,
           startSeconds: elapsedSeconds,
-          durationSeconds: durationSeconds,
+          durationSeconds: soundingDurationSeconds,
           velocity: velocity,
         ),
       );
@@ -102,6 +111,32 @@ ScorePlaybackTimeline buildScorePlaybackTimeline(
     playbackNotes: playbackNotes,
     totalDurationSeconds: elapsedSeconds,
   );
+}
+
+bool _isTieToNext(List<Note> notes, int index) {
+  if (index < 0 || index + 1 >= notes.length) {
+    return false;
+  }
+
+  final source = notes[index];
+  final target = notes[index + 1];
+  return source.slurToNext &&
+      !source.isRest &&
+      !target.isRest &&
+      source.midi == target.midi;
+}
+
+bool _isTieContinuation(List<Note> notes, int index) {
+  if (index <= 0 || index >= notes.length) {
+    return false;
+  }
+
+  final previous = notes[index - 1];
+  final note = notes[index];
+  return !previous.isRest &&
+      !note.isRest &&
+      previous.slurToNext &&
+      previous.midi == note.midi;
 }
 
 List<ScheduledPlaybackEvent> buildScheduledPlaybackEvents(

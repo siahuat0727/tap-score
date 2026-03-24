@@ -386,6 +386,35 @@ void main() {
     await tester.pump(const Duration(milliseconds: 600));
   });
 
+  testWidgets(
+    'duration selector disables duration changes for non-final triplet notes',
+    (WidgetTester tester) async {
+      final notifier = ScoreNotifier();
+      notifier.score.notes.addAll([
+        const Note(midi: 60, duration: NoteDuration.eighth, tripletGroupId: 3),
+        const Note(midi: 62, duration: NoteDuration.eighth, tripletGroupId: 3),
+        const Note(midi: 64, duration: NoteDuration.eighth, tripletGroupId: 3),
+      ]);
+      notifier.selectNote(1);
+
+      await tester.pumpWidget(
+        ChangeNotifierProvider.value(
+          value: notifier,
+          child: MaterialApp(home: Scaffold(body: _buildDurationSelector())),
+        ),
+      );
+
+      expect(
+        _buttonInkWell(tester, const ValueKey('duration-quarter')).onTap,
+        isNull,
+      );
+      expect(
+        _buttonInkWell(tester, const ValueKey('duration-half')).onTap,
+        isNull,
+      );
+    },
+  );
+
   testWidgets('duration selector disables slur on a selected rest', (
     WidgetTester tester,
   ) async {

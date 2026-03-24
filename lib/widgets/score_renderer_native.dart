@@ -5,17 +5,27 @@ import 'score_renderer_stub.dart';
 
 /// Native implementation using `webview_flutter`.
 Widget buildScoreRenderer({
+  required bool interactive,
   required OnScoreMessage onMessage,
   required OnRendererReady onReady,
 }) {
-  return _NativeScoreRenderer(onMessage: onMessage, onReady: onReady);
+  return _NativeScoreRenderer(
+    interactive: interactive,
+    onMessage: onMessage,
+    onReady: onReady,
+  );
 }
 
 class _NativeScoreRenderer extends StatefulWidget {
+  final bool interactive;
   final OnScoreMessage onMessage;
   final OnRendererReady onReady;
 
-  const _NativeScoreRenderer({required this.onMessage, required this.onReady});
+  const _NativeScoreRenderer({
+    required this.interactive,
+    required this.onMessage,
+    required this.onReady,
+  });
 
   @override
   State<_NativeScoreRenderer> createState() => _NativeScoreRendererState();
@@ -58,7 +68,10 @@ class _NativeScoreRendererState extends State<_NativeScoreRenderer> {
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        WebViewWidget(controller: _controller),
+        IgnorePointer(
+          ignoring: !widget.interactive,
+          child: WebViewWidget(controller: _controller),
+        ),
         if (!_ready) const Center(child: CircularProgressIndicator()),
       ],
     );

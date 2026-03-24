@@ -1,0 +1,402 @@
+{
+  "version": 1,
+  "name": "阿妹.43-47.T",
+  "score": {
+    "notes": [
+      {
+        "midi": 0,
+        "duration": "half",
+        "accidental": "none",
+        "isRest": true,
+        "isDotted": false,
+        "tripletGroupId": null,
+        "sourceMidi": null,
+        "slurToNext": false
+      },
+      {
+        "midi": 0,
+        "duration": "quarter",
+        "accidental": "none",
+        "isRest": true,
+        "isDotted": false,
+        "tripletGroupId": null,
+        "sourceMidi": null,
+        "slurToNext": false
+      },
+      {
+        "midi": 0,
+        "duration": "sixteenth",
+        "accidental": "none",
+        "isRest": true,
+        "isDotted": false,
+        "tripletGroupId": null,
+        "sourceMidi": null,
+        "slurToNext": false
+      },
+      {
+        "midi": 59,
+        "duration": "sixteenth",
+        "accidental": "none",
+        "isRest": false,
+        "isDotted": false,
+        "tripletGroupId": null,
+        "sourceMidi": null,
+        "slurToNext": false
+      },
+      {
+        "midi": 59,
+        "duration": "sixteenth",
+        "accidental": "none",
+        "isRest": false,
+        "isDotted": false,
+        "tripletGroupId": null,
+        "sourceMidi": null,
+        "slurToNext": false
+      },
+      {
+        "midi": 59,
+        "duration": "sixteenth",
+        "accidental": "none",
+        "isRest": false,
+        "isDotted": false,
+        "tripletGroupId": null,
+        "sourceMidi": null,
+        "slurToNext": false
+      },
+      {
+        "midi": 61,
+        "duration": "eighth",
+        "accidental": "none",
+        "isRest": false,
+        "isDotted": false,
+        "tripletGroupId": 2,
+        "sourceMidi": null,
+        "slurToNext": false
+      },
+      {
+        "midi": 63,
+        "duration": "eighth",
+        "accidental": "none",
+        "isRest": false,
+        "isDotted": false,
+        "tripletGroupId": 2,
+        "sourceMidi": null,
+        "slurToNext": false
+      },
+      {
+        "midi": 61,
+        "duration": "eighth",
+        "accidental": "none",
+        "isRest": false,
+        "isDotted": false,
+        "tripletGroupId": 2,
+        "sourceMidi": null,
+        "slurToNext": false
+      },
+      {
+        "midi": 61,
+        "duration": "eighth",
+        "accidental": "none",
+        "isRest": false,
+        "isDotted": false,
+        "tripletGroupId": 3,
+        "sourceMidi": null,
+        "slurToNext": false
+      },
+      {
+        "midi": 63,
+        "duration": "eighth",
+        "accidental": "none",
+        "isRest": false,
+        "isDotted": false,
+        "tripletGroupId": 3,
+        "sourceMidi": null,
+        "slurToNext": false
+      },
+      {
+        "midi": 61,
+        "duration": "eighth",
+        "accidental": "none",
+        "isRest": false,
+        "isDotted": false,
+        "tripletGroupId": 3,
+        "sourceMidi": null,
+        "slurToNext": true
+      },
+      {
+        "midi": 61,
+        "duration": "quarter",
+        "accidental": "none",
+        "isRest": false,
+        "isDotted": false,
+        "tripletGroupId": null,
+        "sourceMidi": null,
+        "slurToNext": false
+      },
+      {
+        "midi": 0,
+        "duration": "eighth",
+        "accidental": "none",
+        "isRest": true,
+        "isDotted": false,
+        "tripletGroupId": null,
+        "sourceMidi": null,
+        "slurToNext": false
+      },
+      {
+        "midi": 59,
+        "duration": "sixteenth",
+        "accidental": "none",
+        "isRest": false,
+        "isDotted": false,
+        "tripletGroupId": null,
+        "sourceMidi": null,
+        "slurToNext": false
+      },
+      {
+        "midi": 61,
+        "duration": "sixteenth",
+        "accidental": "none",
+        "isRest": false,
+        "isDotted": false,
+        "tripletGroupId": null,
+        "sourceMidi": null,
+        "slurToNext": false
+      },
+      {
+        "midi": 63,
+        "duration": "sixteenth",
+        "accidental": "none",
+        "isRest": false,
+        "isDotted": false,
+        "tripletGroupId": null,
+        "sourceMidi": null,
+        "slurToNext": false
+      },
+      {
+        "midi": 66,
+        "duration": "sixteenth",
+        "accidental": "none",
+        "isRest": false,
+        "isDotted": false,
+        "tripletGroupId": null,
+        "sourceMidi": null,
+        "slurToNext": false
+      },
+      {
+        "midi": 66,
+        "duration": "sixteenth",
+        "accidental": "none",
+        "isRest": false,
+        "isDotted": false,
+        "tripletGroupId": null,
+        "sourceMidi": null,
+        "slurToNext": false
+      },
+      {
+        "midi": 66,
+        "duration": "sixteenth",
+        "accidental": "none",
+        "isRest": false,
+        "isDotted": false,
+        "tripletGroupId": null,
+        "sourceMidi": null,
+        "slurToNext": false
+      },
+      {
+        "midi": 66,
+        "duration": "sixteenth",
+        "accidental": "none",
+        "isRest": false,
+        "isDotted": false,
+        "tripletGroupId": null,
+        "sourceMidi": null,
+        "slurToNext": false
+      },
+      {
+        "midi": 68,
+        "duration": "eighth",
+        "accidental": "none",
+        "isRest": false,
+        "isDotted": false,
+        "tripletGroupId": null,
+        "sourceMidi": null,
+        "slurToNext": false
+      },
+      {
+        "midi": 68,
+        "duration": "sixteenth",
+        "accidental": "none",
+        "isRest": false,
+        "isDotted": false,
+        "tripletGroupId": null,
+        "sourceMidi": null,
+        "slurToNext": true
+      },
+      {
+        "midi": 71,
+        "duration": "quarter",
+        "accidental": "none",
+        "isRest": false,
+        "isDotted": false,
+        "tripletGroupId": null,
+        "sourceMidi": null,
+        "slurToNext": false
+      },
+      {
+        "midi": 0,
+        "duration": "eighth",
+        "accidental": "none",
+        "isRest": true,
+        "isDotted": false,
+        "tripletGroupId": null,
+        "sourceMidi": null,
+        "slurToNext": false
+      },
+      {
+        "midi": 68,
+        "duration": "sixteenth",
+        "accidental": "none",
+        "isRest": false,
+        "isDotted": false,
+        "tripletGroupId": null,
+        "sourceMidi": null,
+        "slurToNext": false
+      },
+      {
+        "midi": 66,
+        "duration": "sixteenth",
+        "accidental": "none",
+        "isRest": false,
+        "isDotted": false,
+        "tripletGroupId": null,
+        "sourceMidi": null,
+        "slurToNext": false
+      },
+      {
+        "midi": 68,
+        "duration": "sixteenth",
+        "accidental": "none",
+        "isRest": false,
+        "isDotted": false,
+        "tripletGroupId": null,
+        "sourceMidi": null,
+        "slurToNext": false
+      },
+      {
+        "midi": 68,
+        "duration": "eighth",
+        "accidental": "none",
+        "isRest": false,
+        "isDotted": true,
+        "tripletGroupId": null,
+        "sourceMidi": null,
+        "slurToNext": false
+      },
+      {
+        "midi": 0,
+        "duration": "quarter",
+        "accidental": "none",
+        "isRest": true,
+        "isDotted": false,
+        "tripletGroupId": null,
+        "sourceMidi": null,
+        "slurToNext": false
+      },
+      {
+        "midi": 68,
+        "duration": "sixteenth",
+        "accidental": "none",
+        "isRest": false,
+        "isDotted": false,
+        "tripletGroupId": null,
+        "sourceMidi": null,
+        "slurToNext": false
+      },
+      {
+        "midi": 71,
+        "duration": "eighth",
+        "accidental": "none",
+        "isRest": false,
+        "isDotted": true,
+        "tripletGroupId": null,
+        "sourceMidi": null,
+        "slurToNext": false
+      },
+      {
+        "midi": 71,
+        "duration": "eighth",
+        "accidental": "none",
+        "isRest": false,
+        "isDotted": false,
+        "tripletGroupId": null,
+        "sourceMidi": null,
+        "slurToNext": false
+      },
+      {
+        "midi": 68,
+        "duration": "eighth",
+        "accidental": "none",
+        "isRest": false,
+        "isDotted": false,
+        "tripletGroupId": null,
+        "sourceMidi": null,
+        "slurToNext": false
+      },
+      {
+        "midi": 71,
+        "duration": "eighth",
+        "accidental": "none",
+        "isRest": false,
+        "isDotted": false,
+        "tripletGroupId": 5,
+        "sourceMidi": null,
+        "slurToNext": false
+      },
+      {
+        "midi": 68,
+        "duration": "eighth",
+        "accidental": "none",
+        "isRest": false,
+        "isDotted": false,
+        "tripletGroupId": 5,
+        "sourceMidi": null,
+        "slurToNext": false
+      },
+      {
+        "midi": 73,
+        "duration": "eighth",
+        "accidental": "none",
+        "isRest": false,
+        "isDotted": false,
+        "tripletGroupId": 5,
+        "sourceMidi": null,
+        "slurToNext": true
+      },
+      {
+        "midi": 73,
+        "duration": "half",
+        "accidental": "none",
+        "isRest": false,
+        "isDotted": false,
+        "tripletGroupId": null,
+        "sourceMidi": null,
+        "slurToNext": false
+      },
+      {
+        "midi": 0,
+        "duration": "quarter",
+        "accidental": "none",
+        "isRest": true,
+        "isDotted": false,
+        "tripletGroupId": null,
+        "sourceMidi": null,
+        "slurToNext": false
+      }
+    ],
+    "beatsPerMeasure": 4,
+    "beatUnit": 4,
+    "bpm": 64,
+    "keySignature": "bMajor"
+  }
+}

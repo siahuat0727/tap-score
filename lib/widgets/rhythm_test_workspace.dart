@@ -132,6 +132,59 @@ class _RhythmTestResultCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final notifier = context.watch<RhythmTestNotifier>();
+    if (notifier.isScoringResult) {
+      return _ResultCardShell(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: const [
+            SizedBox(
+              width: 28,
+              height: 28,
+              child: CircularProgressIndicator(strokeWidth: 3),
+            ),
+            SizedBox(height: 14),
+            Text(
+              'Calculating result…',
+              style: TextStyle(
+                color: _textColor,
+                fontSize: 22,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (notifier.scoringErrorMessage != null) {
+      return _ResultCardShell(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Scoring Error',
+              style: TextStyle(
+                color: _failureColor,
+                fontSize: 24,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              notifier.scoringErrorMessage!,
+              style: const TextStyle(
+                color: _textColor,
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                height: 1.4,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     if (notifier.result == null) {
       return const SizedBox.shrink();
     }
@@ -148,6 +201,96 @@ class _RhythmTestResultCard extends StatelessWidget {
       _ => _failureColor,
     };
 
+    return _ResultCardShell(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Text(
+                  notifier.resultStatusLabel,
+                  style: TextStyle(
+                    color: statusColor,
+                    fontSize: 28,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 0.2,
+                  ),
+                ),
+              ),
+              Flexible(
+                child: Text(
+                  notifier.resultParameterHint,
+                  key: const ValueKey('rhythm-test-result-params'),
+                  textAlign: TextAlign.right,
+                  style: const TextStyle(
+                    color: Color(0xFF8A7D6A),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    height: 1.35,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          Row(
+            children: [
+              Expanded(
+                child: _PrimaryMetric(
+                  key: const ValueKey('rhythm-test-mistakes'),
+                  label: 'Mistakes',
+                  value: notifier.resultErrorCountLabel,
+                  valueColor: mistakesColor,
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: _PrimaryMetric(
+                  key: const ValueKey('rhythm-test-large-offsets'),
+                  label: 'Large Offsets',
+                  value: notifier.resultLargeErrorCountLabel,
+                  valueColor: largeOffsetsColor,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: _SecondaryMetric(
+                  label: 'Avg abs error',
+                  value: notifier.resultAverageErrorBeats == null
+                      ? 'No matches'
+                      : '${notifier.resultAverageErrorBeats!.toStringAsFixed(2)} beat',
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: _SecondaryMetric(
+                  label: 'Max abs error',
+                  value: notifier.resultMaxErrorBeats == null
+                      ? 'No matches'
+                      : '${notifier.resultMaxErrorBeats!.toStringAsFixed(2)} beat',
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ResultCardShell extends StatelessWidget {
+  const _ResultCardShell({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
     return ConstrainedBox(
       constraints: const BoxConstraints(maxWidth: 560),
       child: DecoratedBox(
@@ -165,84 +308,7 @@ class _RhythmTestResultCard extends StatelessWidget {
         ),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(24, 20, 24, 22),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: Text(
-                      notifier.resultStatusLabel,
-                      style: TextStyle(
-                        color: statusColor,
-                        fontSize: 28,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 0.2,
-                      ),
-                    ),
-                  ),
-                  Flexible(
-                    child: Text(
-                      notifier.resultParameterHint,
-                      key: const ValueKey('rhythm-test-result-params'),
-                      textAlign: TextAlign.right,
-                      style: const TextStyle(
-                        color: Color(0xFF8A7D6A),
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        height: 1.35,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 18),
-              Row(
-                children: [
-                  Expanded(
-                    child: _PrimaryMetric(
-                      key: const ValueKey('rhythm-test-mistakes'),
-                      label: 'Mistakes',
-                      value: notifier.resultErrorCountLabel,
-                      valueColor: mistakesColor,
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: _PrimaryMetric(
-                      key: const ValueKey('rhythm-test-large-offsets'),
-                      label: 'Large Offsets',
-                      value: notifier.resultLargeErrorCountLabel,
-                      valueColor: largeOffsetsColor,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    child: _SecondaryMetric(
-                      label: 'Avg abs error',
-                      value: notifier.resultAverageErrorBeats == null
-                          ? 'No matches'
-                          : '${notifier.resultAverageErrorBeats!.toStringAsFixed(2)} beat',
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: _SecondaryMetric(
-                      label: 'Max abs error',
-                      value: notifier.resultMaxErrorBeats == null
-                          ? 'No matches'
-                          : '${notifier.resultMaxErrorBeats!.toStringAsFixed(2)} beat',
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
+          child: child,
         ),
       ),
     );

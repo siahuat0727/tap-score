@@ -272,11 +272,132 @@ void main() {
 
     await Future<void>.delayed(
       RhythmTestNotifier.resultRevealLockDuration +
-          const Duration(milliseconds: 80),
+          const Duration(milliseconds: 140),
     );
 
     expect(notifier.restartLocked, isFalse);
     expect(notifier.canStart, isTrue);
+  });
+
+  test(
+    'finished enters scoring state before result becomes available',
+    () async {
+      final scoringGate = Completer<void>();
+      final notifier = RhythmTestNotifier(
+        score: Score(
+          bpm: 120,
+          notes: const [Note(midi: 60, duration: NoteDuration.quarter)],
+        ),
+        audioService: _FakeAudioService(),
+        timelineBuilder: _FixedTimelineBuilder(
+          const RhythmTimeline(
+            expectedEvents: [
+              ExpectedRhythmEvent(id: 1, noteIndex: 0, timeSeconds: 0),
+            ],
+            playbackNotes: [
+              RhythmMelodyEvent(
+                noteIndex: 0,
+                midi: 60,
+                startSeconds: 0,
+                durationSeconds: 0.2,
+              ),
+            ],
+            measureBoundaryTimesSeconds: [0, 0.2],
+            totalDurationSeconds: 0.2,
+            pulseDurationSeconds: 0.1,
+            pulsesPerMeasure: 4,
+          ),
+        ),
+        matcher: _FixedMatcher(
+          const RhythmTestResult(
+            matchedPairs: [],
+            unmatchedExpectedEvents: [
+              ExpectedRhythmEvent(id: 1, noteIndex: 0, timeSeconds: 0),
+            ],
+            unmatchedTapEvents: [],
+            matchingWindowSeconds: 0.1,
+            appliedShiftSeconds: 0,
+          ),
+        ),
+        waitBeforeScoring: () => scoringGate.future,
+      );
+
+      addTearDown(notifier.dispose);
+
+      await notifier.start();
+      await Future<void>.delayed(const Duration(milliseconds: 860));
+
+      expect(notifier.phase, RhythmTestPhase.finished);
+      expect(notifier.isScoringResult, isTrue);
+      expect(notifier.result, isNull);
+      expect(notifier.showCenteredResult, isTrue);
+      expect(notifier.restartLocked, isTrue);
+
+      scoringGate.complete();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      expect(notifier.isScoringResult, isFalse);
+      expect(notifier.result, isNotNull);
+      expect(notifier.restartLocked, isTrue);
+    },
+  );
+
+  test('reset during scoring discards the stale result', () async {
+    final scoringGate = Completer<void>();
+    final notifier = RhythmTestNotifier(
+      score: Score(
+        bpm: 120,
+        notes: const [Note(midi: 60, duration: NoteDuration.quarter)],
+      ),
+      audioService: _FakeAudioService(),
+      timelineBuilder: _FixedTimelineBuilder(
+        const RhythmTimeline(
+          expectedEvents: [
+            ExpectedRhythmEvent(id: 1, noteIndex: 0, timeSeconds: 0),
+          ],
+          playbackNotes: [
+            RhythmMelodyEvent(
+              noteIndex: 0,
+              midi: 60,
+              startSeconds: 0,
+              durationSeconds: 0.2,
+            ),
+          ],
+          measureBoundaryTimesSeconds: [0, 0.2],
+          totalDurationSeconds: 0.2,
+          pulseDurationSeconds: 0.1,
+          pulsesPerMeasure: 4,
+        ),
+      ),
+      matcher: _FixedMatcher(
+        const RhythmTestResult(
+          matchedPairs: [],
+          unmatchedExpectedEvents: [
+            ExpectedRhythmEvent(id: 1, noteIndex: 0, timeSeconds: 0),
+          ],
+          unmatchedTapEvents: [],
+          matchingWindowSeconds: 0.1,
+          appliedShiftSeconds: 0,
+        ),
+      ),
+      waitBeforeScoring: () => scoringGate.future,
+    );
+
+    addTearDown(notifier.dispose);
+
+    await notifier.start();
+    await Future<void>.delayed(const Duration(milliseconds: 820));
+
+    expect(notifier.isScoringResult, isTrue);
+
+    notifier.reset();
+    scoringGate.complete();
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+
+    expect(notifier.phase, RhythmTestPhase.idle);
+    expect(notifier.isScoringResult, isFalse);
+    expect(notifier.result, isNull);
+    expect(notifier.showCenteredResult, isFalse);
   });
 
   test(
@@ -312,7 +433,7 @@ void main() {
       addTearDown(notifier.dispose);
 
       await notifier.start();
-      await Future<void>.delayed(const Duration(milliseconds: 820));
+      await Future<void>.delayed(const Duration(milliseconds: 860));
 
       expect(notifier.resultErrorCount, 1);
       expect(notifier.resultErrorCountLabel, '1');

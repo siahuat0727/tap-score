@@ -29,7 +29,26 @@ void main() {
 
       expect(html, contains("dur: '32'"));
       expect(html, contains('source.slurToNext'));
+      expect(
+        html,
+        contains('const isTieLikeConnection = source.midi === target.midi;'),
+      );
+      expect(html, contains('new StaveTie({'));
       expect(html, contains('new Curve('));
+    },
+  );
+
+  test(
+    'web score renderer disables pointer events for non-interactive views',
+    () {
+      final source = File(
+        'lib/widgets/score_renderer_web.dart',
+      ).readAsStringSync();
+
+      expect(
+        source,
+        contains("..pointerEvents = widget.interactive ? 'auto' : 'none';"),
+      );
     },
   );
 

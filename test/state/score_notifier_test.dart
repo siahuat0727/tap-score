@@ -395,6 +395,55 @@ void main() {
     expect(notifier.score.notes.first.slurToNext, isFalse);
   });
 
+  test('changing the last note of a triplet adds a tied continuation', () {
+    final notifier = ScoreNotifier();
+    notifier.score.notes.addAll([
+      const Note(midi: 60, duration: NoteDuration.eighth, tripletGroupId: 4),
+      const Note(midi: 62, duration: NoteDuration.eighth, tripletGroupId: 4),
+      const Note(midi: 64, duration: NoteDuration.eighth, tripletGroupId: 4),
+    ]);
+    notifier.selectNote(2);
+
+    notifier.setDuration(NoteDuration.quarter);
+
+    expect(notifier.score.notes, hasLength(4));
+    expect(
+      notifier.score.notes.take(3).map((note) => note.tripletGroupId).toSet(),
+      {4},
+    );
+    expect(notifier.score.notes.take(3).map((note) => note.duration).toList(), [
+      NoteDuration.eighth,
+      NoteDuration.eighth,
+      NoteDuration.eighth,
+    ]);
+    expect(notifier.score.notes[2].slurToNext, isTrue);
+    expect(notifier.score.notes[3].tripletGroupId, isNull);
+    expect(notifier.score.notes[3].midi, 64);
+    expect(notifier.score.notes[3].duration, NoteDuration.quarter);
+    expect(notifier.selectedIndex, 3);
+  });
+
+  test('changing a non-final triplet note duration is unsupported', () {
+    final notifier = ScoreNotifier();
+    notifier.score.notes.addAll([
+      const Note(midi: 60, duration: NoteDuration.eighth, tripletGroupId: 4),
+      const Note(midi: 62, duration: NoteDuration.eighth, tripletGroupId: 4),
+      const Note(midi: 64, duration: NoteDuration.eighth, tripletGroupId: 4),
+    ]);
+    notifier.selectNote(1);
+
+    expect(notifier.durationButtonsEnabled, isFalse);
+    notifier.setDuration(NoteDuration.quarter);
+
+    expect(notifier.score.notes, hasLength(3));
+    expect(notifier.score.notes.map((note) => note.duration).toList(), [
+      NoteDuration.eighth,
+      NoteDuration.eighth,
+      NoteDuration.eighth,
+    ]);
+    expect(notifier.selectedIndex, 1);
+  });
+
   test('rest cannot be marked with a slur', () {
     final notifier = ScoreNotifier();
     notifier.score.notes.addAll([
@@ -484,6 +533,69 @@ void main() {
       expect(notifier.isPlaying, isFalse);
     },
   );
+
+  test(
+    'play sustains tied same-pitch notes while highlights still advance',
+    () async {
+      final audioService = _FakeAudioService();
+      final notifier = ScoreNotifier(audioService: audioService);
+      final playbackIndices = <int>[];
+
+      notifier.addListener(() {
+        if (notifier.playbackIndex >= 0) {
+          playbackIndices.add(notifier.playbackIndex);
+        }
+      });
+      notifier.score.notes.addAll([
+        const Note(midi: 60, duration: NoteDuration.quarter, slurToNext: true),
+        const Note(midi: 60, duration: NoteDuration.quarter),
+      ]);
+
+      await notifier.play();
+
+      expect(audioService.events, ['start-60', 'stop-60']);
+      expect(playbackIndices, containsAllInOrder([0, 1]));
+      expect(notifier.playbackIndex, -1);
+      expect(notifier.isPlaying, isFalse);
+    },
+  );
+
+  test('triplet tie continuation does not retrigger playback', () async {
+    final audioService = _FakeAudioService();
+    final notifier = ScoreNotifier(audioService: audioService);
+    final playbackIndices = <int>[];
+
+    notifier.addListener(() {
+      if (notifier.playbackIndex >= 0) {
+        playbackIndices.add(notifier.playbackIndex);
+      }
+    });
+    notifier.score.notes.addAll([
+      const Note(midi: 60, duration: NoteDuration.eighth, tripletGroupId: 4),
+      const Note(midi: 62, duration: NoteDuration.eighth, tripletGroupId: 4),
+      const Note(
+        midi: 64,
+        duration: NoteDuration.eighth,
+        tripletGroupId: 4,
+        slurToNext: true,
+      ),
+      const Note(midi: 64, duration: NoteDuration.quarter),
+    ]);
+
+    await notifier.play();
+
+    expect(audioService.events, [
+      'start-60',
+      'stop-60',
+      'start-62',
+      'stop-62',
+      'start-64',
+      'stop-64',
+    ]);
+    expect(playbackIndices, containsAllInOrder([0, 1, 2, 3]));
+    expect(notifier.playbackIndex, -1);
+    expect(notifier.isPlaying, isFalse);
+  });
 }
 
 class _FakeAudioService extends AudioService {

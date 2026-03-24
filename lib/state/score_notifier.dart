@@ -174,6 +174,13 @@ class ScoreNotifier extends ChangeNotifier {
     null => _tripletMode,
     _ => false,
   };
+  bool get durationButtonsEnabled {
+    if (!timingControlsEnabled) {
+      return false;
+    }
+    return !_selectedTripletRequiresLockedDuration;
+  }
+
   bool get slurButtonEnabled {
     if (_selectionKind == null) {
       return _cursorIndex >= score.notes.length ||
@@ -266,6 +273,24 @@ class ScoreNotifier extends ChangeNotifier {
     final indices = _validTripletGroupIndices(groupId);
     if (indices == null || !indices.contains(index)) return null;
     return indices;
+  }
+
+  bool get _selectedTripletRequiresLockedDuration {
+    final selectedTriplet = _selectedValidTripletGroupIndices;
+    final selectedIndex = _selectedNoteIndex;
+    if (selectedTriplet == null || selectedIndex == null) {
+      return false;
+    }
+    return selectedIndex != selectedTriplet.last;
+  }
+
+  bool get _selectedTripletCanExtendWithTie {
+    final selectedTriplet = _selectedValidTripletGroupIndices;
+    final selectedIndex = _selectedNoteIndex;
+    if (selectedTriplet == null || selectedIndex == null) {
+      return false;
+    }
+    return selectedIndex == selectedTriplet.last;
   }
 
   void clearLibraryMessage() {
@@ -452,7 +477,7 @@ class ScoreNotifier extends ChangeNotifier {
 
   /// Set the active duration for future input, or edit the selected note/rest.
   void setDuration(NoteDuration duration) {
-    if (!timingControlsEnabled) return;
+    if (!durationButtonsEnabled) return;
 
     _currentDuration = duration;
 
@@ -941,6 +966,11 @@ class ScoreNotifier extends ChangeNotifier {
     }
 
     _currentDuration = duration;
+    if (_selectedTripletCanExtendWithTie) {
+      _createOrUpdateTripletTieContinuation(duration);
+      _notifyScoreChanged();
+      return;
+    }
     _applyDurationOrDotToSelectedGroup(
       (note) => note.copyWith(duration: duration),
     );
@@ -973,6 +1003,50 @@ class ScoreNotifier extends ChangeNotifier {
     final index = _selectedNoteIndex;
     if (index == null) return;
     score.replaceAt(index, transform(score.notes[index]));
+  }
+
+  void _createOrUpdateTripletTieContinuation(NoteDuration duration) {
+    final index = _selectedNoteIndex;
+    if (index == null) {
+      return;
+    }
+    final source = score.notes[index];
+    if (source.isRest) {
+      return;
+    }
+
+    final continuationIndex = index + 1;
+    score.replaceAt(index, source.copyWith(slurToNext: true));
+
+    final existingContinuation = continuationIndex < score.notes.length
+        ? score.notes[continuationIndex]
+        : null;
+    if (existingContinuation != null &&
+        existingContinuation.tripletGroupId == null &&
+        !existingContinuation.isRest &&
+        existingContinuation.midi == source.midi) {
+      score.replaceAt(
+        continuationIndex,
+        existingContinuation.copyWith(
+          duration: duration,
+          sourceMidi: () => null,
+        ),
+      );
+    } else {
+      score.addNote(
+        source.copyWith(
+          duration: duration,
+          tripletGroupId: () => null,
+          slurToNext: false,
+          sourceMidi: () => null,
+        ),
+        continuationIndex,
+      );
+    }
+
+    _selectedNoteIndex = continuationIndex;
+    _cursorIndex = continuationIndex + 1;
+    _sanitizeSlursInRange(index, continuationIndex);
   }
 
   void _sanitizeSlursInRange(int start, int end) {

@@ -7,17 +7,27 @@ import 'score_renderer_stub.dart';
 
 /// Web implementation using an iframe inside [HtmlElementView].
 Widget buildScoreRenderer({
+  required bool interactive,
   required OnScoreMessage onMessage,
   required OnRendererReady onReady,
 }) {
-  return _WebScoreRenderer(onMessage: onMessage, onReady: onReady);
+  return _WebScoreRenderer(
+    interactive: interactive,
+    onMessage: onMessage,
+    onReady: onReady,
+  );
 }
 
 class _WebScoreRenderer extends StatefulWidget {
+  final bool interactive;
   final OnScoreMessage onMessage;
   final OnRendererReady onReady;
 
-  const _WebScoreRenderer({required this.onMessage, required this.onReady});
+  const _WebScoreRenderer({
+    required this.interactive,
+    required this.onMessage,
+    required this.onReady,
+  });
 
   @override
   State<_WebScoreRenderer> createState() => _WebScoreRendererState();
@@ -45,7 +55,8 @@ class _WebScoreRendererState extends State<_WebScoreRenderer> {
       iframe.style
         ..border = 'none'
         ..width = '100%'
-        ..height = '100%';
+        ..height = '100%'
+        ..pointerEvents = widget.interactive ? 'auto' : 'none';
       _iframe = iframe;
       return iframe;
     });

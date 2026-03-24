@@ -1,58 +1,14 @@
 import 'rhythm_test_models.dart';
 
 class RhythmMatcher {
+  static const double _comparisonTolerance = 1e-9;
+
   const RhythmMatcher();
 
   RhythmTestResult match({
     required List<ExpectedRhythmEvent> expectedEvents,
     required List<TapInputEvent> tapEvents,
     required double matchingWindowSeconds,
-  }) {
-    if (expectedEvents.isEmpty || tapEvents.isEmpty) {
-      return _matchOrdered(
-        expectedEvents: expectedEvents,
-        tapEvents: tapEvents,
-        matchingWindowSeconds: matchingWindowSeconds,
-        appliedShiftSeconds: 0,
-      );
-    }
-
-    final baselineResult = _matchOrdered(
-      expectedEvents: expectedEvents,
-      tapEvents: tapEvents,
-      matchingWindowSeconds: matchingWindowSeconds,
-      appliedShiftSeconds: 0,
-    );
-    if (baselineResult.matchedCount < 2) {
-      return baselineResult;
-    }
-
-    final appliedShiftSeconds = _estimateShiftSeconds(baselineResult);
-    if (appliedShiftSeconds == 0) {
-      return baselineResult;
-    }
-
-    final shiftedTapEvents = tapEvents
-        .map(
-          (tap) => TapInputEvent(
-            id: tap.id,
-            timeSeconds: tap.timeSeconds - appliedShiftSeconds,
-          ),
-        )
-        .toList(growable: false);
-    return _matchOrdered(
-      expectedEvents: expectedEvents,
-      tapEvents: shiftedTapEvents,
-      matchingWindowSeconds: matchingWindowSeconds,
-      appliedShiftSeconds: appliedShiftSeconds,
-    );
-  }
-
-  RhythmTestResult _matchOrdered({
-    required List<ExpectedRhythmEvent> expectedEvents,
-    required List<TapInputEvent> tapEvents,
-    required double matchingWindowSeconds,
-    required double appliedShiftSeconds,
   }) {
     final rows = expectedEvents.length + 1;
     final columns = tapEvents.length + 1;
@@ -65,7 +21,11 @@ class RhythmMatcher {
       (_) => List<_Decision?>.filled(columns, null),
     );
 
-    dp[0][0] = const _MatchState(matchCount: 0, totalErrorSeconds: 0);
+    dp[0][0] = const _MatchState(
+      matchedCount: 0,
+      totalAbsoluteErrorSeconds: 0,
+      totalSquaredErrorSeconds: 0,
+    );
 
     for (var i = 0; i < rows; i++) {
       for (var j = 0; j < columns; j++) {
@@ -99,16 +59,20 @@ class RhythmMatcher {
         if (i < expectedEvents.length && j < tapEvents.length) {
           final errorSeconds =
               tapEvents[j].timeSeconds - expectedEvents[i].timeSeconds;
-          if (errorSeconds.abs() <= matchingWindowSeconds) {
+          final absoluteErrorSeconds = errorSeconds.abs();
+          if (absoluteErrorSeconds <= matchingWindowSeconds) {
             _updateState(
               dp: dp,
               decisions: decisions,
               row: i + 1,
               column: j + 1,
               candidate: _MatchState(
-                matchCount: current.matchCount + 1,
-                totalErrorSeconds:
-                    current.totalErrorSeconds + errorSeconds.abs(),
+                matchedCount: current.matchedCount + 1,
+                totalAbsoluteErrorSeconds:
+                    current.totalAbsoluteErrorSeconds + absoluteErrorSeconds,
+                totalSquaredErrorSeconds:
+                    current.totalSquaredErrorSeconds +
+                    absoluteErrorSeconds * absoluteErrorSeconds,
               ),
               decision: _Decision.match(errorSeconds),
             );
@@ -118,8 +82,8 @@ class RhythmMatcher {
     }
 
     final matchedPairs = <MatchedRhythmPair>[];
-    final unmatchedExpected = <ExpectedRhythmEvent>[];
-    final unmatchedTaps = <TapInputEvent>[];
+    final unmatchedExpectedEvents = <ExpectedRhythmEvent>[];
+    final unmatchedTapEvents = <TapInputEvent>[];
 
     var i = expectedEvents.length;
     var j = tapEvents.length;
@@ -127,11 +91,11 @@ class RhythmMatcher {
       final decision = decisions[i][j];
       if (decision == null) {
         if (i > 0) {
-          unmatchedExpected.add(expectedEvents[i - 1]);
+          unmatchedExpectedEvents.add(expectedEvents[i - 1]);
           i -= 1;
           continue;
         }
-        unmatchedTaps.add(tapEvents[j - 1]);
+        unmatchedTapEvents.add(tapEvents[j - 1]);
         j -= 1;
         continue;
       }
@@ -148,22 +112,22 @@ class RhythmMatcher {
           i -= 1;
           j -= 1;
         case _DecisionKind.skipExpected:
-          unmatchedExpected.add(expectedEvents[i - 1]);
+          unmatchedExpectedEvents.add(expectedEvents[i - 1]);
           i -= 1;
         case _DecisionKind.skipTap:
-          unmatchedTaps.add(tapEvents[j - 1]);
+          unmatchedTapEvents.add(tapEvents[j - 1]);
           j -= 1;
       }
     }
 
     return RhythmTestResult(
       matchedPairs: matchedPairs.reversed.toList(growable: false),
-      unmatchedExpectedEvents: unmatchedExpected.reversed.toList(
+      unmatchedExpectedEvents: unmatchedExpectedEvents.reversed.toList(
         growable: false,
       ),
-      unmatchedTapEvents: unmatchedTaps.reversed.toList(growable: false),
+      unmatchedTapEvents: unmatchedTapEvents.reversed.toList(growable: false),
       matchingWindowSeconds: matchingWindowSeconds,
-      appliedShiftSeconds: appliedShiftSeconds,
+      appliedShiftSeconds: 0,
     );
   }
 
@@ -181,44 +145,32 @@ class RhythmMatcher {
       decisions[row][column] = decision;
     }
   }
-
-  double _estimateShiftSeconds(RhythmTestResult baselineResult) {
-    final candidateErrors = baselineResult.matchedPairs.toList(
-      growable: false,
-    )..sort((a, b) => a.absoluteErrorSeconds.compareTo(b.absoluteErrorSeconds));
-    final selectedCount = (candidateErrors.length / 2).ceil();
-    final selectedErrors =
-        candidateErrors
-            .take(selectedCount)
-            .map((pair) => pair.errorSeconds)
-            .toList(growable: false)
-          ..sort();
-
-    if (selectedErrors.isEmpty) {
-      return 0;
-    }
-    final middle = selectedErrors.length ~/ 2;
-    if (selectedErrors.length.isOdd) {
-      return selectedErrors[middle];
-    }
-    return (selectedErrors[middle - 1] + selectedErrors[middle]) / 2;
-  }
 }
 
 class _MatchState {
-  final int matchCount;
-  final double totalErrorSeconds;
+  final int matchedCount;
+  final double totalAbsoluteErrorSeconds;
+  final double totalSquaredErrorSeconds;
 
   const _MatchState({
-    required this.matchCount,
-    required this.totalErrorSeconds,
+    required this.matchedCount,
+    required this.totalAbsoluteErrorSeconds,
+    required this.totalSquaredErrorSeconds,
   });
 
   bool isBetterThan(_MatchState other) {
-    if (matchCount != other.matchCount) {
-      return matchCount > other.matchCount;
+    if (matchedCount != other.matchedCount) {
+      return matchedCount > other.matchedCount;
     }
-    return totalErrorSeconds < other.totalErrorSeconds;
+    if ((totalAbsoluteErrorSeconds - other.totalAbsoluteErrorSeconds).abs() >
+        RhythmMatcher._comparisonTolerance) {
+      return totalAbsoluteErrorSeconds < other.totalAbsoluteErrorSeconds;
+    }
+    if ((totalSquaredErrorSeconds - other.totalSquaredErrorSeconds).abs() >
+        RhythmMatcher._comparisonTolerance) {
+      return totalSquaredErrorSeconds < other.totalSquaredErrorSeconds;
+    }
+    return false;
   }
 }
 
