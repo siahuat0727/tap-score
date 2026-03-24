@@ -28,6 +28,37 @@ flutter run -d android
 flutter run -d ios
 ```
 
+## Deploy To Cloudflare Pages
+
+This project can be deployed on Cloudflare's free Pages plan as a static Flutter Web site.
+
+### Recommended setup
+
+1. Push this repository to GitHub.
+2. In Cloudflare, create a new Pages project and connect the repository.
+3. Use these build settings:
+
+```text
+Framework preset: None
+Build command: ./tool/cloudflare_pages_build.sh
+Build output directory: build/web
+Root directory: /
+```
+
+The build script downloads and pins Flutter 3.38.1, enables web support, runs `flutter pub get`, and builds the app for Pages.
+
+### Why this setup
+
+- Cloudflare Pages does not provide Flutter by default.
+- The build script keeps the deployment reproducible by pinning the Flutter SDK version used by this project.
+- `web/_redirects` enables SPA fallback so direct requests still resolve to `index.html`.
+
+### First deployment checklist
+
+1. In Cloudflare Pages, ensure the production branch points to your main branch.
+2. Trigger the first deploy.
+3. If you want a custom domain, add it in Pages after the first successful build.
+
 ## Architecture
 
 ```
