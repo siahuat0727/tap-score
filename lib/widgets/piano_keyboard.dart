@@ -424,12 +424,12 @@ class _KeyboardControlPanel extends StatelessWidget {
             border: Border.all(color: AppColors.keyboardControlBorder),
           ),
           child: Padding(
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.all(8),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 _KeyboardModeToggle(notifier: notifier),
-                const SizedBox(height: 12),
+                const SizedBox(height: 6),
                 const Text(
                   'Navigate',
                   textAlign: TextAlign.center,
@@ -439,56 +439,50 @@ class _KeyboardControlPanel extends StatelessWidget {
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 4),
                 Expanded(
                   child: Center(
-                    child: SizedBox(
-                      width: 112,
-                      height: 112,
-                      child: Stack(
-                        children: [
-                          Positioned(
-                            left: 32,
-                            top: 0,
-                            child: _ArrowButton(
-                              key: const ValueKey('keyboard-nav-up'),
-                              icon: Icons.keyboard_arrow_up_rounded,
-                              tooltip: 'Move pitch up',
-                              onPressed: () => notifier.adjustSelection(1),
-                            ),
-                          ),
-                          Positioned(
-                            left: 0,
-                            top: 32,
-                            child: _ArrowButton(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            _ArrowButton(
                               key: const ValueKey('keyboard-nav-left'),
                               icon: Icons.keyboard_arrow_left_rounded,
                               tooltip: 'Move selection left',
                               onPressed: notifier.moveSelectionLeft,
                             ),
-                          ),
-                          Positioned(
-                            right: 0,
-                            top: 32,
-                            child: _ArrowButton(
+                            const SizedBox(width: 2),
+                            _ArrowButton(
                               key: const ValueKey('keyboard-nav-right'),
                               icon: Icons.keyboard_arrow_right_rounded,
                               tooltip: 'Move selection right',
                               onPressed: notifier.moveSelectionRight,
                             ),
-                          ),
-                          Positioned(
-                            left: 32,
-                            bottom: 0,
-                            child: _ArrowButton(
+                          ],
+                        ),
+                        const SizedBox(height: 2),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            _ArrowButton(
+                              key: const ValueKey('keyboard-nav-up'),
+                              icon: Icons.keyboard_arrow_up_rounded,
+                              tooltip: 'Move pitch up',
+                              onPressed: () => notifier.adjustSelection(1),
+                            ),
+                            const SizedBox(width: 2),
+                            _ArrowButton(
                               key: const ValueKey('keyboard-nav-down'),
                               icon: Icons.keyboard_arrow_down_rounded,
                               tooltip: 'Move pitch down',
                               onPressed: () => notifier.adjustSelection(-1),
                             ),
-                          ),
-                        ],
-                      ),
+                          ],
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -510,7 +504,7 @@ class _KeyboardModeToggle extends StatelessWidget {
   Widget build(BuildContext context) {
     final isKeySig =
         notifier.keyboardInputMode == KeyboardInputMode.keySignatureAware;
-    final modeLabel = isKeySig ? 'Mode: Key Signature' : 'Mode: Chromatic';
+    final modeLabel = isKeySig ? 'Key Sig' : 'Chromatic';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -643,16 +637,16 @@ class _ArrowButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return Material(
       color: AppColors.keyboardArrowButton,
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(12),
       child: InkWell(
         onTap: onPressed,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(12),
         child: Tooltip(
           message: tooltip,
           child: SizedBox(
-            width: 48,
-            height: 48,
-            child: Icon(icon, size: 28, color: Colors.white),
+            width: 36,
+            height: 36,
+            child: Icon(icon, size: 20, color: Colors.white),
           ),
         ),
       ),

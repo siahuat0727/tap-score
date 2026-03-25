@@ -122,6 +122,12 @@ class _ScoreViewWidgetState extends State<ScoreViewWidget> {
       };
     }).toList();
 
+    final label = notifier.currentScoreLabel;
+    var title = label == 'Draft' ? '' : label;
+    if (title.isNotEmpty && notifier.hasUnsavedChanges) {
+      title += ' \u2022';
+    }
+
     send({
       'type': 'render',
       'beatsPerMeasure': score.beatsPerMeasure,
@@ -135,6 +141,8 @@ class _ScoreViewWidgetState extends State<ScoreViewWidget> {
       'playbackIndex': notifier.playbackIndex,
       'selectionKind': notifier.selectionKind?.name ?? '',
       'rhythmTest': widget.rhythmOverlay?.toPayload(),
+      'title': title,
+      'bpm': score.bpm.round(),
     });
   }
 

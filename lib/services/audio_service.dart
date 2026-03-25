@@ -23,6 +23,8 @@ class AudioNoteHandle {
 }
 
 class AudioService {
+  AudioService({bool testMode = false}) : _testMode = testMode;
+
   static const int defaultPlaybackVelocity = 100;
   static const int rhythmTestMelodyVelocity = 90;
   static const int _accentedMetronomeMidi = 84;
@@ -30,6 +32,7 @@ class AudioService {
   static const int _rhythmTestAccentedMetronomeVelocity = 48;
   static const int _rhythmTestRegularMetronomeVelocity = 36;
 
+  final bool _testMode;
   final MidiPro _midiPro = MidiPro();
   final Map<int, AudioNoteHandle> _activeNoteHandles = {};
   int? _sfId;
@@ -66,6 +69,10 @@ class AudioService {
 
   Future<bool> _ensureInitialized() async {
     if (_initialized) return true;
+    if (_testMode) {
+      _initialized = true;
+      return true;
+    }
     if (_initializationFuture != null) {
       return _initializationFuture!;
     }

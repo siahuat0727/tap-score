@@ -599,6 +599,8 @@ void main() {
 }
 
 class _FakeAudioService extends AudioService {
+  _FakeAudioService() : super(testMode: true);
+
   final List<String> events = [];
   int _nextHandleId = 1;
 

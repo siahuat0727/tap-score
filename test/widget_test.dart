@@ -56,13 +56,6 @@ void main() {
     await tester.pump();
 
     expect(find.byType(ScoreEditorScreen), findsOneWidget);
-    expect(find.byKey(const ValueKey('score-overflow-menu')), findsOneWidget);
-
-    // Open overflow menu to verify Save/Load/Export items
-    await tester.tap(find.byKey(const ValueKey('score-overflow-menu')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
-
     expect(find.byKey(const ValueKey('save-score-button')), findsOneWidget);
     expect(find.byKey(const ValueKey('load-score-button')), findsOneWidget);
     expect(find.byKey(const ValueKey('export-score-button')), findsOneWidget);
@@ -295,10 +288,6 @@ void main() {
     );
     await tester.pump();
 
-    await tester.tap(find.byKey(const ValueKey('score-overflow-menu')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
-
     await tester.tap(find.byKey(const ValueKey('load-score-button')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
@@ -483,10 +472,9 @@ void main() {
     }
     expect(find.text('q'), findsWidgets);
     expect(find.text(']'), findsWidgets);
-    expect(find.text('Mode: Key Signature'), findsOneWidget);
+    expect(find.text('Key Sig'), findsOneWidget);
     expect(find.text('e'), findsOneWidget);
     expect(find.text('E'), findsNothing);
-    expect(find.text('Key Sig'), findsNothing);
     expect(find.text('Chromatic'), findsNothing);
     expect(find.text('C#4'), findsNothing);
     expect(find.text('A#3'), findsNothing);
@@ -540,7 +528,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('keyboard-mode-toggle')));
     await tester.pump();
     expect(notifier.keyboardInputMode.name, 'chromatic');
-    expect(find.text('Mode: Chromatic'), findsOneWidget);
+    expect(find.text('Chromatic'), findsOneWidget);
     expect(
       find.descendant(
         of: find.byKey(const ValueKey('piano-white-65')),

@@ -473,30 +473,6 @@ class _ScoreEditorScreenState extends State<ScoreEditorScreen> {
             builder: (context, notifier, _) {
               return Column(
                 children: [
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          notifier.currentScoreLabel,
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.textMuted,
-                          ),
-                        ),
-                        if (notifier.hasUnsavedChanges) ...[
-                          const SizedBox(width: 6),
-                          const Icon(
-                            Icons.circle,
-                            size: 7,
-                            color: AppColors.accentAmber,
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
                   Expanded(
                     child: ScoreViewWidget(
                       interactive: true,

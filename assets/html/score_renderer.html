@@ -341,11 +341,14 @@
 
       const { beatsPerMeasure, beatUnit, keySignatureStr, alteredPitches,
               accidentalOffset, notes, selectedIndex, cursorIndex,
-              playbackIndex, selectionKind, rhythmTest } = data;
+              playbackIndex, selectionKind, rhythmTest, title, bpm } = data;
 
       // ---- Layout constants ------------------------------------------------
-      const staveHeight = rhythmTest ? 292 : 160;
-      const staveTop = 40;
+      const hasTitle = title && title.length > 0;
+      const headerHeight = hasTitle ? 28 : 0;
+      const baseStaveHeight = rhythmTest ? 292 : 160;
+      const staveHeight = baseStaveHeight + headerHeight;
+      const staveTop = 40 + headerHeight;
       const noteSpacing = 48;
       const minMeasureWidth = 80;
       const firstMeasureLeadingWidth = measureFirstMeasureLeadingWidth(
@@ -591,6 +594,36 @@
       // ---- Draw highlights & cursor ----------------------------------------
       const svg = container.querySelector('svg');
       if (svg) {
+        // ---- Draw title & tempo marking as SVG text -------------------------
+        const ns = svg.namespaceURI;
+
+        if (hasTitle) {
+          const titleEl = document.createElementNS(ns, 'text');
+          titleEl.setAttribute('x', String(totalWidth / 2));
+          titleEl.setAttribute('y', '20');
+          titleEl.setAttribute('text-anchor', 'middle');
+          titleEl.setAttribute('font-family', 'Arial, sans-serif');
+          titleEl.setAttribute('font-size', '16');
+          titleEl.setAttribute('font-weight', '700');
+          titleEl.setAttribute('fill', '#555555');
+          titleEl.textContent = title;
+          svg.appendChild(titleEl);
+        }
+
+        if (bpm != null) {
+          const tempoX = firstMeasureLeadingWidth + 4;
+          const tempoY = staveTop - 8;
+          const tempoEl = document.createElementNS(ns, 'text');
+          tempoEl.setAttribute('x', String(tempoX));
+          tempoEl.setAttribute('y', String(tempoY));
+          tempoEl.setAttribute('font-family', 'Arial, sans-serif');
+          tempoEl.setAttribute('font-size', '12');
+          tempoEl.setAttribute('font-weight', '500');
+          tempoEl.setAttribute('fill', '#888888');
+          tempoEl.textContent = '\u2669 = ' + bpm;
+          svg.appendChild(tempoEl);
+        }
+
         _drawRhythmOverlay(
           svg,
           rhythmTest,

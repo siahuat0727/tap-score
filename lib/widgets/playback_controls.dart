@@ -52,10 +52,23 @@ class PlaybackControls extends StatelessWidget {
                     bpm: notifier.score.bpm,
                     enabled: !notifier.isPlaying,
                   ),
-                  _OverflowMenu(
-                    onSaveTap: onSaveTap,
-                    onLoadTap: onLoadTap,
-                    onExportTap: onExportTap,
+                  _ActionButton(
+                    key: const ValueKey('save-score-button'),
+                    icon: Icons.save_outlined,
+                    label: 'Save',
+                    onTap: onSaveTap,
+                  ),
+                  _ActionButton(
+                    key: const ValueKey('load-score-button'),
+                    icon: Icons.folder_open_outlined,
+                    label: 'Load',
+                    onTap: onLoadTap,
+                  ),
+                  _ActionButton(
+                    key: const ValueKey('export-score-button'),
+                    icon: Icons.file_download_outlined,
+                    label: 'Export',
+                    onTap: () => onExportTap(context),
                   ),
                 ],
               ),
@@ -190,63 +203,45 @@ class _TempoChip extends StatelessWidget {
   }
 }
 
-enum _OverflowAction { save, load, export }
-
-class _OverflowMenu extends StatelessWidget {
-  const _OverflowMenu({
-    required this.onSaveTap,
-    required this.onLoadTap,
-    required this.onExportTap,
+class _ActionButton extends StatelessWidget {
+  const _ActionButton({
+    super.key,
+    required this.icon,
+    required this.label,
+    required this.onTap,
   });
 
-  final VoidCallback onSaveTap;
-  final VoidCallback onLoadTap;
-  final ValueChanged<BuildContext> onExportTap;
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return PopupMenuButton<_OverflowAction>(
-      key: const ValueKey('score-overflow-menu'),
-      icon: const Icon(Icons.more_vert, color: AppColors.textMuted),
-      onSelected: (action) {
-        switch (action) {
-          case _OverflowAction.save:
-            onSaveTap();
-          case _OverflowAction.load:
-            onLoadTap();
-          case _OverflowAction.export:
-            onExportTap(context);
-        }
-      },
-      itemBuilder: (context) => const [
-        PopupMenuItem(
-          key: ValueKey('save-score-button'),
-          value: _OverflowAction.save,
-          child: ListTile(
-            leading: Icon(Icons.save_outlined),
-            title: Text('Save'),
-            dense: true,
-          ),
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: AppColors.surfaceContainerHigh,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: AppColors.surfaceBorder),
         ),
-        PopupMenuItem(
-          key: ValueKey('load-score-button'),
-          value: _OverflowAction.load,
-          child: ListTile(
-            leading: Icon(Icons.folder_open_outlined),
-            title: Text('Load'),
-            dense: true,
-          ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 14, color: AppColors.textMuted),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: const TextStyle(
+                fontWeight: FontWeight.w700,
+                fontSize: 13,
+                color: AppColors.textChip,
+              ),
+            ),
+          ],
         ),
-        PopupMenuItem(
-          key: ValueKey('export-score-button'),
-          value: _OverflowAction.export,
-          child: ListTile(
-            leading: Icon(Icons.file_download_outlined),
-            title: Text('Export'),
-            dense: true,
-          ),
-        ),
-      ],
+      ),
     );
   }
 }
