@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -46,6 +48,38 @@ DurationSelector _buildDurationSelector() {
   );
 }
 
+Widget _buildModifierAlignmentGolden() {
+  return ChangeNotifierProvider(
+    create: (_) => ScoreNotifier(),
+    child: MaterialApp(
+      home: Material(
+        color: const Color(0xFFFBF6EE),
+        child: Center(
+          child: RepaintBoundary(
+            key: const ValueKey('modifier-alignment-golden'),
+            child: SizedBox(
+              width: 281,
+              height: 64,
+              child: ClipRect(
+                child: Transform.translate(
+                  offset: const Offset(-224, 0),
+                  child: DurationSelector(
+                    onRhythmTestTap: () {},
+                    rhythmTestEnabled: true,
+                    rhythmTestActive: false,
+                    showRhythmTestButton: false,
+                    padding: EdgeInsets.zero,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
 void main() {
   setUpAll(() {
     WebViewPlatform.instance = FakeWebViewPlatform();
@@ -59,6 +93,180 @@ void main() {
     expect(find.byKey(const ValueKey('save-score-button')), findsOneWidget);
     expect(find.byKey(const ValueKey('load-score-button')), findsOneWidget);
     expect(find.byKey(const ValueKey('export-score-button')), findsOneWidget);
+  });
+
+  testWidgets('top action bar sits above the score surface', (
+    WidgetTester tester,
+  ) async {
+    final notifier = ScoreNotifier();
+    addTearDown(notifier.dispose);
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider.value(
+        value: notifier,
+        child: const MaterialApp(home: ScoreEditorScreen()),
+      ),
+    );
+    await tester.pump();
+
+    final saveRect = tester.getRect(
+      find.byKey(const ValueKey('save-score-button')),
+    );
+    final scoreRect = tester.getRect(
+      find.byKey(const ValueKey('score-view-surface')),
+    );
+
+    expect(find.byKey(const ValueKey('compose-action-bar')), findsOneWidget);
+    expect(saveRect.bottom, lessThan(scoreRect.top));
+  });
+
+  testWidgets('compose toolbar shows playback and signature controls inline', (
+    WidgetTester tester,
+  ) async {
+    final notifier = ScoreNotifier();
+    addTearDown(notifier.dispose);
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider.value(
+        value: notifier,
+        child: const MaterialApp(home: ScoreEditorScreen()),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byKey(const ValueKey('compose-toolbar')), findsOneWidget);
+    expect(find.byKey(const ValueKey('compose-play-button')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('compose-time-signature')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('compose-key-signature')), findsOneWidget);
+    expect(find.byKey(const ValueKey('compose-tempo')), findsOneWidget);
+    expect(find.byKey(const ValueKey('compose-rhythm-test')), findsOneWidget);
+    expect(find.byKey(const ValueKey('rest-tool')), findsOneWidget);
+    expect(find.byTooltip('Rhythm Test'), findsOneWidget);
+
+    final playRect = tester.getRect(
+      find.byKey(const ValueKey('compose-play-button')),
+    );
+    final restRect = tester.getRect(find.byKey(const ValueKey('rest-tool')));
+    final rhythmRect = tester.getRect(
+      find.byKey(const ValueKey('compose-rhythm-test')),
+    );
+    final toolbarRect = tester.getRect(
+      find.byKey(const ValueKey('compose-toolbar')),
+    );
+
+    expect(playRect.left - toolbarRect.left, lessThan(24));
+    expect(playRect.left, lessThan(restRect.left));
+    expect(toolbarRect.right - rhythmRect.right, lessThan(24));
+  });
+
+  testWidgets('modifier tools use the same baseline-aligned glyph slot', (
+    WidgetTester tester,
+  ) async {
+    final notifier = ScoreNotifier();
+    addTearDown(notifier.dispose);
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider.value(
+        value: notifier,
+        child: MaterialApp(home: Scaffold(body: _buildDurationSelector())),
+      ),
+    );
+    await tester.pump();
+
+    final dotGlyphSize = tester.getSize(
+      find.byKey(const ValueKey('dot-tool-glyph-box')),
+    );
+    final tieGlyphSize = tester.getSize(
+      find.byKey(const ValueKey('slur-tool-glyph-box')),
+    );
+    final tripletGlyphSize = tester.getSize(
+      find.byKey(const ValueKey('triplet-tool-glyph-box')),
+    );
+
+    expect(dotGlyphSize, equals(const Size(28, 30)));
+    expect(tieGlyphSize, equals(const Size(28, 30)));
+    expect(tripletGlyphSize, equals(const Size(28, 30)));
+  });
+
+  test('modifier glyph assets share one safe viewBox contract', () {
+    for (final asset in const [
+      'assets/icons/toolbar/note_quarter_up_with_dot.svg',
+      'assets/icons/toolbar/note_quarter_up_with_tie.svg',
+      'assets/icons/toolbar/tuplet_bracket_with_3.svg',
+    ]) {
+      final svg = File(asset).readAsStringSync();
+      expect(svg, contains('viewBox="0 0 28 30"'));
+    }
+  });
+
+  testWidgets('modifier buttons keep a shared baseline alignment', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(_buildModifierAlignmentGolden());
+    await tester.pumpAndSettle();
+
+    await expectLater(
+      find.byKey(const ValueKey('modifier-alignment-golden')),
+      matchesGoldenFile('goldens/modifier_button_alignment.png'),
+    );
+  });
+
+  testWidgets('library toast floats without shifting toolbar layout', (
+    WidgetTester tester,
+  ) async {
+    final notifier = ScoreNotifier();
+    addTearDown(notifier.dispose);
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider.value(
+        value: notifier,
+        child: const MaterialApp(home: ScoreEditorScreen()),
+      ),
+    );
+    await tester.pump();
+
+    final before = tester.getRect(
+      find.byKey(const ValueKey('compose-toolbar')),
+    );
+
+    notifier.showLibraryMessage('Loaded "Etude".', isError: false);
+    await tester.pump();
+
+    final after = tester.getRect(find.byKey(const ValueKey('compose-toolbar')));
+
+    expect(find.byKey(const ValueKey('library-toast')), findsOneWidget);
+    expect(find.text('Loaded "Etude".'), findsOneWidget);
+    expect(after, equals(before));
+
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pump(const Duration(milliseconds: 300));
+  });
+
+  testWidgets('compose screen stays stable on a compact-width viewport', (
+    WidgetTester tester,
+  ) async {
+    final notifier = ScoreNotifier();
+    addTearDown(notifier.dispose);
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 960);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider.value(
+        value: notifier,
+        child: const MaterialApp(home: ScoreEditorScreen()),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 150));
+
+    expect(find.byKey(const ValueKey('compose-toolbar')), findsOneWidget);
+    expect(find.byKey(const ValueKey('compose-tempo')), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('editor switches into inline rhythm test mode', (
@@ -216,10 +424,14 @@ void main() {
     notifier.handleRestAction();
     await tester.pump();
 
-    expect(find.text('𝄻'), findsWidgets);
-    expect(find.text('𝄼'), findsWidgets);
-    expect(find.text('𝄽'), findsWidgets);
-    expect(find.text('𝅀'), findsWidgets);
+    expect(
+      _borderColor(_buttonDecoration(tester, const ValueKey('rest-tool'))),
+      const Color(0xFF9C27B0),
+    );
+    expect(find.byKey(const ValueKey('duration-whole')), findsOneWidget);
+    expect(find.byKey(const ValueKey('duration-half')), findsOneWidget);
+    expect(find.byKey(const ValueKey('duration-quarter')), findsOneWidget);
+    expect(find.byKey(const ValueKey('duration-thirtySecond')), findsOneWidget);
   });
 
   testWidgets('duration selector reflects the selected rest timing state', (
@@ -236,7 +448,6 @@ void main() {
       ),
     );
 
-    expect(find.text('𝄼'), findsWidgets);
     expect(
       _borderColor(_buttonDecoration(tester, const ValueKey('rest-tool'))),
       const Color(0xFF9C27B0),

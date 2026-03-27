@@ -171,42 +171,27 @@ class _ScoreViewWidgetState extends State<ScoreViewWidget> {
           _renderNow(notifier);
         });
 
-        return Stack(
-          children: [
-            Container(
-              decoration: BoxDecoration(
-                color: AppColors.scoreBackground,
-                borderRadius: BorderRadius.circular(12),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withAlpha(13),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
+        return Container(
+          key: const ValueKey('score-view-surface'),
+          decoration: BoxDecoration(
+            color: AppColors.scoreBackground,
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withAlpha(13),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
               ),
-              margin: const EdgeInsets.all(16),
-              clipBehavior: Clip.hardEdge,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                // The platform renderer is stable (never rebuilt by Consumer)
-                // because it's passed via the `child` parameter.
-                child: child!,
-              ),
-            ),
-            Positioned(
-              left: 28,
-              top: 22,
-              child: Text(
-                '♩ = ${notifier.score.bpm.round()}',
-                style: TextStyle(
-                  color: AppColors.keyboardControlText,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-          ],
+            ],
+          ),
+          margin: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+          clipBehavior: Clip.hardEdge,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            // The platform renderer is stable (never rebuilt by Consumer)
+            // because it's passed via the `child` parameter.
+            child: child!,
+          ),
         );
       },
       // Build the platform renderer once — it survives Consumer rebuilds.

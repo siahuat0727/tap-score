@@ -1,10 +1,39 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:provider/provider.dart';
 
 import '../input/editor_shortcuts.dart';
 import '../models/enums.dart';
 import '../state/score_notifier.dart';
 import '../theme/app_colors.dart';
+import 'playback_controls.dart';
+
+const Map<NoteDuration, String> _noteGlyphAssets = {
+  NoteDuration.whole: 'assets/icons/toolbar/note_whole.svg',
+  NoteDuration.half: 'assets/icons/toolbar/note_half_up.svg',
+  NoteDuration.quarter: 'assets/icons/toolbar/note_quarter_up.svg',
+  NoteDuration.eighth: 'assets/icons/toolbar/note_8th_up.svg',
+  NoteDuration.sixteenth: 'assets/icons/toolbar/note_16th_up.svg',
+  NoteDuration.thirtySecond: 'assets/icons/toolbar/note_32nd_up.svg',
+};
+
+const Map<NoteDuration, String> _restGlyphAssets = {
+  NoteDuration.whole: 'assets/icons/toolbar/rest_whole.svg',
+  NoteDuration.half: 'assets/icons/toolbar/rest_half.svg',
+  NoteDuration.quarter: 'assets/icons/toolbar/rest_quarter.svg',
+  NoteDuration.eighth: 'assets/icons/toolbar/rest_8th.svg',
+  NoteDuration.sixteenth: 'assets/icons/toolbar/rest_16th.svg',
+  NoteDuration.thirtySecond: 'assets/icons/toolbar/rest_32nd.svg',
+};
+
+const String _noteQuarterWithDotAsset =
+    'assets/icons/toolbar/note_quarter_up_with_dot.svg';
+const String _noteQuarterWithTieAsset =
+    'assets/icons/toolbar/note_quarter_up_with_tie.svg';
+const String _tupletBracketWithThreeAsset =
+    'assets/icons/toolbar/tuplet_bracket_with_3.svg';
+const double _modifierGlyphWidth = 28;
+const double _modifierGlyphHeight = 30;
 
 /// A toolbar row showing note duration buttons and editing tools.
 class DurationSelector extends StatelessWidget {
@@ -12,25 +41,31 @@ class DurationSelector extends StatelessWidget {
     required this.onRhythmTestTap,
     required this.rhythmTestEnabled,
     required this.rhythmTestActive,
+    this.leadingControls = const [],
+    this.showRhythmTestButton = true,
+    this.padding = const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
     super.key,
   });
 
   final VoidCallback onRhythmTestTap;
   final bool rhythmTestEnabled;
   final bool rhythmTestActive;
+  final List<Widget> leadingControls;
+  final bool showRhythmTestButton;
+  final EdgeInsetsGeometry padding;
 
   @override
   Widget build(BuildContext context) {
     return Consumer<ScoreNotifier>(
       builder: (context, notifier, child) {
-        final durationGlyph = notifier.toolbarDuration.label;
         final buttons = [
+          ...leadingControls,
           _SquareButton(
             buttonKey: const ValueKey('rest-tool'),
             tooltip: 'Rest',
-            glyph: Text(
-              notifier.toolbarDuration.restLabel,
-              style: const TextStyle(fontSize: 22),
+            glyph: _DurationGlyph(
+              duration: notifier.toolbarDuration,
+              isRest: true,
             ),
             shortcutLabel: restShortcutLabel,
             isSelected: notifier.toolbarRestSelected,
@@ -43,11 +78,9 @@ class DurationSelector extends StatelessWidget {
             (duration) => _SquareButton(
               buttonKey: ValueKey('duration-${duration.name}'),
               tooltip: duration.name,
-              glyph: Text(
-                notifier.toolbarShowsRestDurations
-                    ? duration.restLabel
-                    : duration.label,
-                style: const TextStyle(fontSize: 22),
+              glyph: _DurationGlyph(
+                duration: duration,
+                isRest: notifier.toolbarShowsRestDurations,
               ),
               shortcutLabel: durationShortcutLabels[duration]!,
               isSelected: notifier.toolbarDuration == duration,
@@ -60,9 +93,9 @@ class DurationSelector extends StatelessWidget {
           _SquareButton(
             buttonKey: const ValueKey('dot-tool'),
             tooltip: 'Dot',
-            glyph: _CompoundGlyph(
-              base: durationGlyph,
-              overlay: const _GlyphDot(),
+            glyph: const _ModifierAssetGlyph(
+              _noteQuarterWithDotAsset,
+              boxKey: ValueKey('dot-tool-glyph-box'),
             ),
             shortcutLabel: dottedShortcutLabel,
             isSelected: notifier.toolbarDottedSelected,
@@ -73,10 +106,10 @@ class DurationSelector extends StatelessWidget {
           ),
           _SquareButton(
             buttonKey: const ValueKey('slur-tool'),
-            tooltip: 'Slur',
-            glyph: _CompoundGlyph(
-              base: durationGlyph,
-              overlay: const _GlyphArc(),
+            tooltip: 'Tie / Slur',
+            glyph: const _ModifierAssetGlyph(
+              _noteQuarterWithTieAsset,
+              boxKey: ValueKey('slur-tool-glyph-box'),
             ),
             shortcutLabel: slurShortcutLabel,
             isSelected: notifier.toolbarSlurSelected,
@@ -86,9 +119,9 @@ class DurationSelector extends StatelessWidget {
           _SquareButton(
             buttonKey: const ValueKey('triplet-tool'),
             tooltip: 'Triplet',
-            glyph: _CompoundGlyph(
-              base: durationGlyph,
-              overlay: const _GlyphTriplet(),
+            glyph: const _ModifierAssetGlyph(
+              _tupletBracketWithThreeAsset,
+              boxKey: ValueKey('triplet-tool-glyph-box'),
             ),
             shortcutLabel: tripletShortcutLabel,
             isSelected: notifier.toolbarTripletSelected,
@@ -107,26 +140,21 @@ class DurationSelector extends StatelessWidget {
                 : null,
             activeColor: AppColors.toolDelete,
           ),
-          _RhythmTestButton(
-            isEnabled: rhythmTestEnabled,
-            isSelected: rhythmTestActive,
-            onTap: onRhythmTestTap,
-          ),
+          if (showRhythmTestButton)
+            RhythmTestActionButton(
+              isEnabled: rhythmTestEnabled,
+              isSelected: rhythmTestActive,
+              onTap: onRhythmTestTap,
+            ),
         ];
 
         return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              if (constraints.maxWidth < 560) {
-                return Wrap(spacing: 2, runSpacing: 8, children: buttons);
-              }
-
-              return SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(children: buttons),
-              );
-            },
+          padding: padding,
+          child: Wrap(
+            spacing: 2,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: buttons,
           ),
         );
       },
@@ -224,11 +252,12 @@ class _SquareButton extends StatelessWidget {
   }
 }
 
-class _RhythmTestButton extends StatelessWidget {
-  const _RhythmTestButton({
+class RhythmTestActionButton extends StatelessWidget {
+  const RhythmTestActionButton({
     required this.isEnabled,
     required this.isSelected,
     required this.onTap,
+    super.key,
   });
 
   final bool isEnabled;
@@ -313,78 +342,146 @@ class _RhythmTestButton extends StatelessWidget {
   }
 }
 
-class _CompoundGlyph extends StatelessWidget {
-  const _CompoundGlyph({required this.base, required this.overlay});
+class _DurationGlyph extends StatelessWidget {
+  const _DurationGlyph({required this.duration, this.isRest = false});
 
-  final String base;
-  final Widget overlay;
+  final NoteDuration duration;
+  final bool isRest;
 
   @override
   Widget build(BuildContext context) {
+    final color = DefaultTextStyle.of(context).style.color ?? Colors.black;
+    final assetPath = (isRest ? _restGlyphAssets : _noteGlyphAssets)[duration]!;
+
     return SizedBox(
-      width: 24,
-      height: 24,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          Align(
-            alignment: Alignment.center,
-            child: Text(base, style: const TextStyle(fontSize: 20, height: 1)),
-          ),
-          Positioned.fill(child: overlay),
-        ],
+      width: 26,
+      height: 26,
+      child: SvgPicture.asset(
+        assetPath,
+        width: 26,
+        height: 26,
+        fit: BoxFit.contain,
+        colorFilter: ColorFilter.mode(color, BlendMode.srcIn),
       ),
     );
   }
 }
 
-class _GlyphDot extends StatelessWidget {
-  const _GlyphDot();
+class _ToolbarAssetGlyph extends StatelessWidget {
+  const _ToolbarAssetGlyph(
+    this.assetPath, {
+    this.boxKey,
+    this.width = 26,
+    this.height = 26,
+    this.alignment = Alignment.center,
+  });
+
+  final String assetPath;
+  final Key? boxKey;
+  final double width;
+  final double height;
+  final Alignment alignment;
 
   @override
   Widget build(BuildContext context) {
     final color = DefaultTextStyle.of(context).style.color ?? Colors.black;
     return Align(
-      alignment: const Alignment(0.9, 0.12),
-      child: Container(
-        width: 5,
-        height: 5,
-        decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-      ),
-    );
-  }
-}
-
-class _GlyphArc extends StatelessWidget {
-  const _GlyphArc();
-
-  @override
-  Widget build(BuildContext context) {
-    final color = DefaultTextStyle.of(context).style.color ?? Colors.black;
-    return Align(
-      alignment: const Alignment(0.0, -0.85),
-      child: Text('◠', style: TextStyle(fontSize: 12, color: color, height: 1)),
-    );
-  }
-}
-
-class _GlyphTriplet extends StatelessWidget {
-  const _GlyphTriplet();
-
-  @override
-  Widget build(BuildContext context) {
-    final color = DefaultTextStyle.of(context).style.color ?? Colors.black;
-    return Align(
-      alignment: const Alignment(0.9, -0.85),
-      child: Text(
-        '3',
-        style: TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w900,
-          color: color,
-          height: 1,
+      alignment: alignment,
+      child: SizedBox(
+        key: boxKey,
+        width: width,
+        height: height,
+        child: SvgPicture.asset(
+          assetPath,
+          fit: BoxFit.contain,
+          colorFilter: ColorFilter.mode(color, BlendMode.srcIn),
         ),
       ),
+    );
+  }
+}
+
+class _ModifierAssetGlyph extends StatelessWidget {
+  const _ModifierAssetGlyph(this.assetPath, {this.boxKey});
+
+  final String assetPath;
+  final Key? boxKey;
+
+  @override
+  Widget build(BuildContext context) {
+    return _ToolbarAssetGlyph(
+      assetPath,
+      boxKey: boxKey,
+      width: _modifierGlyphWidth,
+      height: _modifierGlyphHeight,
+      alignment: Alignment.bottomCenter,
+    );
+  }
+}
+
+class ToolbarEditStrip extends StatelessWidget {
+  const ToolbarEditStrip({
+    required this.onRhythmTestTap,
+    required this.rhythmTestEnabled,
+    required this.rhythmTestActive,
+    this.padding = EdgeInsets.zero,
+    super.key,
+  });
+
+  final VoidCallback onRhythmTestTap;
+  final bool rhythmTestEnabled;
+  final bool rhythmTestActive;
+  final EdgeInsetsGeometry padding;
+
+  @override
+  Widget build(BuildContext context) {
+    return DurationSelector(
+      onRhythmTestTap: onRhythmTestTap,
+      rhythmTestEnabled: rhythmTestEnabled,
+      rhythmTestActive: rhythmTestActive,
+      showRhythmTestButton: false,
+      padding: padding,
+    );
+  }
+}
+
+class ToolbarInfoChips extends StatelessWidget {
+  const ToolbarInfoChips({
+    required this.beatsPerMeasure,
+    required this.beatUnit,
+    required this.keyLabel,
+    required this.bpm,
+    required this.tempoEnabled,
+    super.key,
+  });
+
+  final int beatsPerMeasure;
+  final int beatUnit;
+  final String keyLabel;
+  final double bpm;
+  final bool tempoEnabled;
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 10,
+      runSpacing: 8,
+      children: [
+        ComposeTimeSigChip(
+          key: const ValueKey('compose-time-signature'),
+          beatsPerMeasure: beatsPerMeasure,
+          beatUnit: beatUnit,
+        ),
+        ComposeKeySigChip(
+          key: const ValueKey('compose-key-signature'),
+          label: keyLabel,
+        ),
+        ComposeTempoChip(
+          key: const ValueKey('compose-tempo'),
+          bpm: bpm,
+          enabled: tempoEnabled,
+        ),
+      ],
     );
   }
 }

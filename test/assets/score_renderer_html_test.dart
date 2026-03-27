@@ -22,6 +22,32 @@ void main() {
     expect(html, contains("code: e.code"));
   });
 
+  test('score renderer reserves a larger score header for title and tempo', () {
+    final html = File('assets/html/score_renderer.html').readAsStringSync();
+
+    expect(
+      html,
+      contains("const headerHeight = hasTitle ? 56 : hasTempo ? 38 : 0;"),
+    );
+    expect(html, contains("titleEl.setAttribute('font-size', '24');"));
+    expect(html, contains("tempoEl.setAttribute('font-size', '18');"));
+    expect(html, contains("const tempoY = hasTitle ? 62 : staveTop - 18;"));
+  });
+
+  test('flutter score view does not draw a duplicate tempo overlay', () {
+    final source = File(
+      'lib/widgets/score_view_widget.dart',
+    ).readAsStringSync();
+
+    expect(source, contains("key: const ValueKey('score-view-surface')"));
+    expect(
+      source,
+      isNot(
+        contains("Text(\n                '♩ = \${notifier.score.bpm.round()}'"),
+      ),
+    );
+  });
+
   test(
     'score renderer includes thirty-second durations and slur rendering',
     () {

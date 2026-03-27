@@ -5,9 +5,8 @@ import '../state/score_notifier.dart';
 import '../theme/app_colors.dart';
 import 'signature_pickers.dart';
 
-/// Playback control bar with play/stop, save/load, and tempo controls.
-class PlaybackControls extends StatelessWidget {
-  const PlaybackControls({
+class EditorActionBar extends StatelessWidget {
+  const EditorActionBar({
     required this.onSaveTap,
     required this.onLoadTap,
     required this.onExportTap,
@@ -20,113 +19,86 @@ class PlaybackControls extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<ScoreNotifier>(
-      builder: (context, notifier, child) {
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  _PlayButton(
-                    isPlaying: notifier.isPlaying,
-                    onTap: () {
-                      if (notifier.isPlaying) {
-                        notifier.stop();
-                      } else {
-                        notifier.play();
-                      }
-                    },
-                    enabled: notifier.score.notes.isNotEmpty,
-                  ),
-                  _TimeSigChip(
-                    beatsPerMeasure: notifier.score.beatsPerMeasure,
-                    beatUnit: notifier.score.beatUnit,
-                  ),
-                  _KeySigChip(label: notifier.score.keySignature.vexflowKey),
-                  _TempoChip(
-                    bpm: notifier.score.bpm,
-                    enabled: !notifier.isPlaying,
-                  ),
-                  _ActionButton(
-                    key: const ValueKey('save-score-button'),
-                    icon: Icons.save_outlined,
-                    label: 'Save',
-                    onTap: onSaveTap,
-                  ),
-                  _ActionButton(
-                    key: const ValueKey('load-score-button'),
-                    icon: Icons.folder_open_outlined,
-                    label: 'Load',
-                    onTap: onLoadTap,
-                  ),
-                  _ActionButton(
-                    key: const ValueKey('export-score-button'),
-                    icon: Icons.file_download_outlined,
-                    label: 'Export',
-                    onTap: () => onExportTap(context),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isCompact = constraints.maxWidth < 720;
+          final actionsWidth = isCompact
+              ? constraints.maxWidth
+              : constraints.maxWidth * 0.74;
+          return ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: constraints.maxWidth),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: AppColors.surfaceContainer.withAlpha(230),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: AppColors.surfaceBorder),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withAlpha(10),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
                   ),
                 ],
               ),
-              if (notifier.audioStatusMessage != null) ...[
-                const SizedBox(height: 10),
-                _LibraryMessage(
-                  message: notifier.audioStatusMessage!,
-                  isError: notifier.audioStatusIsError,
+              child: Padding(
+                padding: const EdgeInsets.all(6),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(maxWidth: actionsWidth),
+                      child: Wrap(
+                        alignment: WrapAlignment.end,
+                        spacing: 10,
+                        runSpacing: 10,
+                        children: [
+                          _ActionButton(
+                            key: const ValueKey('save-score-button'),
+                            icon: Icons.save_outlined,
+                            label: 'Save',
+                            onTap: onSaveTap,
+                          ),
+                          _ActionButton(
+                            key: const ValueKey('load-score-button'),
+                            icon: Icons.folder_open_outlined,
+                            label: 'Load',
+                            onTap: onLoadTap,
+                          ),
+                          _ActionButton(
+                            key: const ValueKey('export-score-button'),
+                            icon: Icons.file_download_outlined,
+                            label: 'Export',
+                            onTap: () => onExportTap(context),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 ),
-              ],
-              if (notifier.libraryMessage != null) ...[
-                const SizedBox(height: 10),
-                _LibraryMessage(
-                  message: notifier.libraryMessage!,
-                  isError: notifier.libraryMessageIsError,
-                ),
-              ],
-            ],
-          ),
-        );
-      },
+              ),
+            ),
+          );
+        },
+      ),
     );
   }
 }
 
-class _TempoChip extends StatelessWidget {
-  const _TempoChip({required this.bpm, required this.enabled});
+class ComposeTempoChip extends StatelessWidget {
+  const ComposeTempoChip({required this.bpm, required this.enabled, super.key});
 
   final double bpm;
   final bool enabled;
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return _CapsuleButton(
       onTap: enabled ? () => _showTempoSheet(context) : null,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          color: AppColors.surfaceContainerHigh,
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: AppColors.surfaceBorder),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.speed, size: 14, color: AppColors.textMuted),
-            const SizedBox(width: 4),
-            Text(
-              '♩ = ${bpm.round()}',
-              style: const TextStyle(
-                fontWeight: FontWeight.w700,
-                fontSize: 13,
-                color: AppColors.textChip,
-              ),
-            ),
-          ],
-        ),
-      ),
+      icon: Icons.speed_rounded,
+      label: '♩ = ${bpm.round()}',
     );
   }
 
@@ -203,80 +175,12 @@ class _TempoChip extends StatelessWidget {
   }
 }
 
-class _ActionButton extends StatelessWidget {
-  const _ActionButton({
-    super.key,
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          color: AppColors.surfaceContainerHigh,
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: AppColors.surfaceBorder),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 14, color: AppColors.textMuted),
-            const SizedBox(width: 4),
-            Text(
-              label,
-              style: const TextStyle(
-                fontWeight: FontWeight.w700,
-                fontSize: 13,
-                color: AppColors.textChip,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _LibraryMessage extends StatelessWidget {
-  const _LibraryMessage({required this.message, required this.isError});
-
-  final String message;
-  final bool isError;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = isError ? AppColors.statusError : AppColors.statusSuccess;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: color.withAlpha(18),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: color.withAlpha(60)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        child: Text(
-          message,
-          style: TextStyle(fontWeight: FontWeight.w700, color: color),
-        ),
-      ),
-    );
-  }
-}
-
-class _PlayButton extends StatefulWidget {
-  const _PlayButton({
+class ComposePlayButton extends StatefulWidget {
+  const ComposePlayButton({
     required this.isPlaying,
     required this.onTap,
     required this.enabled,
+    super.key,
   });
 
   final bool isPlaying;
@@ -284,87 +188,49 @@ class _PlayButton extends StatefulWidget {
   final bool enabled;
 
   @override
-  State<_PlayButton> createState() => _PlayButtonState();
+  State<ComposePlayButton> createState() => _ComposePlayButtonState();
 }
 
-class _TimeSigChip extends StatelessWidget {
-  const _TimeSigChip({required this.beatsPerMeasure, required this.beatUnit});
+class ComposeTimeSigChip extends StatelessWidget {
+  const ComposeTimeSigChip({
+    required this.beatsPerMeasure,
+    required this.beatUnit,
+    super.key,
+  });
 
   final int beatsPerMeasure;
   final int beatUnit;
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return _CapsuleButton(
       onTap: () {
         showTimeSigPicker(context, context.read<ScoreNotifier>());
       },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          color: AppColors.surfaceContainerHigh,
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: AppColors.surfaceBorder),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.music_note, size: 14, color: AppColors.textMuted),
-            const SizedBox(width: 4),
-            Text(
-              '$beatsPerMeasure/$beatUnit',
-              style: const TextStyle(
-                fontWeight: FontWeight.w700,
-                fontSize: 13,
-                color: AppColors.textChip,
-              ),
-            ),
-          ],
-        ),
-      ),
+      icon: Icons.music_note_rounded,
+      label: '$beatsPerMeasure/$beatUnit',
     );
   }
 }
 
-class _KeySigChip extends StatelessWidget {
-  const _KeySigChip({required this.label});
+class ComposeKeySigChip extends StatelessWidget {
+  const ComposeKeySigChip({required this.label, super.key});
 
   final String label;
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return _CapsuleButton(
       onTap: () {
         showKeySigPicker(context, context.read<ScoreNotifier>());
       },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          color: AppColors.surfaceContainerHigh,
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: AppColors.surfaceBorder),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.queue_music, size: 14, color: AppColors.textMuted),
-            const SizedBox(width: 4),
-            Text(
-              label,
-              style: const TextStyle(
-                fontWeight: FontWeight.w700,
-                fontSize: 13,
-                color: AppColors.textChip,
-              ),
-            ),
-          ],
-        ),
-      ),
+      icon: Icons.queue_music_rounded,
+      label: label,
     );
   }
 }
 
-class _PlayButtonState extends State<_PlayButton>
+class _ComposePlayButtonState extends State<ComposePlayButton>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
   late final Animation<double> _scaleAnimation;
@@ -378,7 +244,7 @@ class _PlayButtonState extends State<_PlayButton>
     );
     _scaleAnimation = Tween<double>(
       begin: 1.0,
-      end: 0.9,
+      end: 0.94,
     ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
   }
 
@@ -394,15 +260,17 @@ class _PlayButtonState extends State<_PlayButton>
       onTapDown: (_) => _controller.forward(),
       onTapUp: (_) {
         _controller.reverse();
-        if (widget.enabled) widget.onTap();
+        if (widget.enabled) {
+          widget.onTap();
+        }
       },
       onTapCancel: () => _controller.reverse(),
       child: ScaleTransition(
         scale: _scaleAnimation,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
-          width: 52,
-          height: 52,
+          width: 48,
+          height: 48,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             gradient: LinearGradient(
@@ -420,9 +288,9 @@ class _PlayButtonState extends State<_PlayButton>
                     (widget.isPlaying
                             ? AppColors.stopGradientStart
                             : AppColors.playGradientStart)
-                        .withAlpha(widget.enabled ? 102 : 0),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
+                        .withAlpha(widget.enabled ? 89 : 0),
+                blurRadius: 14,
+                offset: const Offset(0, 5),
               ),
             ],
           ),
@@ -430,6 +298,102 @@ class _PlayButtonState extends State<_PlayButton>
             widget.isPlaying ? Icons.stop_rounded : Icons.play_arrow_rounded,
             color: Colors.white,
             size: 28,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ActionButton extends StatelessWidget {
+  const _ActionButton({
+    super.key,
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return _CapsuleButton(
+      onTap: onTap,
+      icon: icon,
+      label: label,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+      foregroundColor: AppColors.textPrimary,
+      backgroundColor: AppColors.surfaceContainerHigh,
+    );
+  }
+}
+
+class _CapsuleButton extends StatelessWidget {
+  const _CapsuleButton({
+    required this.onTap,
+    required this.icon,
+    required this.label,
+    this.padding = const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+    this.foregroundColor = AppColors.textChip,
+    this.backgroundColor = AppColors.surfaceContainerHigh,
+  });
+
+  final VoidCallback? onTap;
+  final IconData icon;
+  final String label;
+  final EdgeInsets padding;
+  final Color foregroundColor;
+  final Color backgroundColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = onTap != null;
+    final resolvedForeground = enabled
+        ? foregroundColor
+        : AppColors.textMuted.withAlpha(122);
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          padding: padding,
+          decoration: BoxDecoration(
+            color: enabled ? backgroundColor : backgroundColor.withAlpha(168),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: enabled
+                  ? AppColors.surfaceBorder
+                  : AppColors.surfaceBorder.withAlpha(128),
+            ),
+            boxShadow: enabled
+                ? [
+                    BoxShadow(
+                      color: Colors.black.withAlpha(8),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ]
+                : const [],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 18, color: resolvedForeground),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 14,
+                  color: resolvedForeground,
+                ),
+              ),
+            ],
           ),
         ),
       ),

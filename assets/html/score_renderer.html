@@ -345,10 +345,11 @@
 
       // ---- Layout constants ------------------------------------------------
       const hasTitle = title && title.length > 0;
-      const headerHeight = hasTitle ? 28 : 0;
-      const baseStaveHeight = rhythmTest ? 292 : 160;
+      const hasTempo = bpm != null;
+      const headerHeight = hasTitle ? 56 : hasTempo ? 38 : 0;
+      const baseStaveHeight = rhythmTest ? 308 : 176;
       const staveHeight = baseStaveHeight + headerHeight;
-      const staveTop = 40 + headerHeight;
+      const staveTop = 34 + headerHeight;
       const noteSpacing = 48;
       const minMeasureWidth = 80;
       const firstMeasureLeadingWidth = measureFirstMeasureLeadingWidth(
@@ -600,26 +601,26 @@
         if (hasTitle) {
           const titleEl = document.createElementNS(ns, 'text');
           titleEl.setAttribute('x', String(totalWidth / 2));
-          titleEl.setAttribute('y', '20');
+          titleEl.setAttribute('y', '30');
           titleEl.setAttribute('text-anchor', 'middle');
           titleEl.setAttribute('font-family', 'Arial, sans-serif');
-          titleEl.setAttribute('font-size', '16');
-          titleEl.setAttribute('font-weight', '700');
-          titleEl.setAttribute('fill', '#555555');
+          titleEl.setAttribute('font-size', '24');
+          titleEl.setAttribute('font-weight', '800');
+          titleEl.setAttribute('fill', '#4f463b');
           titleEl.textContent = title;
           svg.appendChild(titleEl);
         }
 
         if (bpm != null) {
-          const tempoX = firstMeasureLeadingWidth + 4;
-          const tempoY = staveTop - 8;
+          const tempoX = firstMeasureLeadingWidth + 8;
+          const tempoY = hasTitle ? 62 : staveTop - 18;
           const tempoEl = document.createElementNS(ns, 'text');
           tempoEl.setAttribute('x', String(tempoX));
           tempoEl.setAttribute('y', String(tempoY));
           tempoEl.setAttribute('font-family', 'Arial, sans-serif');
-          tempoEl.setAttribute('font-size', '12');
-          tempoEl.setAttribute('font-weight', '500');
-          tempoEl.setAttribute('fill', '#888888');
+          tempoEl.setAttribute('font-size', '18');
+          tempoEl.setAttribute('font-weight', '600');
+          tempoEl.setAttribute('fill', '#6c5e4b');
           tempoEl.textContent = '\u2669 = ' + bpm;
           svg.appendChild(tempoEl);
         }

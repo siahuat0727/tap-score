@@ -473,6 +473,15 @@ class _ScoreEditorScreenState extends State<ScoreEditorScreen> {
             builder: (context, notifier, _) {
               return Column(
                 children: [
+                  Container(
+                    key: const ValueKey('compose-action-bar'),
+                    color: AppColors.surfaceDim,
+                    child: EditorActionBar(
+                      onSaveTap: _showSaveDialog,
+                      onLoadTap: _showLoadSheet,
+                      onExportTap: _exportCurrentScore,
+                    ),
+                  ),
                   Expanded(
                     child: ScoreViewWidget(
                       interactive: true,
@@ -481,21 +490,11 @@ class _ScoreEditorScreenState extends State<ScoreEditorScreen> {
                   ),
                   Container(height: 1, color: AppColors.surfaceDivider),
                   Container(
+                    key: const ValueKey('compose-toolbar'),
                     color: AppColors.surfaceContainer,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        DurationSelector(
-                          onRhythmTestTap: _enterRhythmTest,
-                          rhythmTestEnabled: notifier.score.notes.isNotEmpty,
-                          rhythmTestActive: _isRhythmTestActive,
-                        ),
-                        PlaybackControls(
-                          onSaveTap: _showSaveDialog,
-                          onLoadTap: _showLoadSheet,
-                          onExportTap: _exportCurrentScore,
-                        ),
-                      ],
+                    child: _ComposeToolbarLayout(
+                      notifier: notifier,
+                      onRhythmTestTap: _enterRhythmTest,
                     ),
                   ),
                   const PianoKeyboard(),
@@ -511,7 +510,120 @@ class _ScoreEditorScreenState extends State<ScoreEditorScreen> {
       child: Listener(
         behavior: HitTestBehavior.translucent,
         onPointerDown: (_) => _focusNode.requestFocus(),
-        child: Scaffold(body: SafeArea(child: body)),
+        child: Scaffold(
+          body: SafeArea(
+            child: Stack(children: [body, const _LibraryToastLayer()]),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ComposeToolbarLayout extends StatelessWidget {
+  const _ComposeToolbarLayout({
+    required this.notifier,
+    required this.onRhythmTestTap,
+  });
+
+  final ScoreNotifier notifier;
+  final VoidCallback onRhythmTestTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isCompact = constraints.maxWidth < 1100;
+
+        final playButton = ComposePlayButton(
+          key: const ValueKey('compose-play-button'),
+          isPlaying: notifier.isPlaying,
+          enabled: notifier.score.notes.isNotEmpty,
+          onTap: () {
+            if (notifier.isPlaying) {
+              notifier.stop();
+            } else {
+              notifier.play();
+            }
+          },
+        );
+
+        final infoChips = ToolbarInfoChips(
+          key: const ValueKey('compose-info-chips'),
+          beatsPerMeasure: notifier.score.beatsPerMeasure,
+          beatUnit: notifier.score.beatUnit,
+          keyLabel: notifier.score.keySignature.vexflowKey,
+          bpm: notifier.score.bpm,
+          tempoEnabled: !notifier.isPlaying,
+        );
+
+        final rhythmTestButton = RhythmTestActionButton(
+          key: const ValueKey('compose-rhythm-test'),
+          isEnabled: notifier.score.notes.isNotEmpty,
+          isSelected: false,
+          onTap: onRhythmTestTap,
+        );
+
+        final editStrip = ToolbarEditStrip(
+          onRhythmTestTap: onRhythmTestTap,
+          rhythmTestEnabled: notifier.score.notes.isNotEmpty,
+          rhythmTestActive: false,
+          padding: EdgeInsets.zero,
+        );
+
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (isCompact) ...[
+                Row(children: [playButton, const Spacer(), rhythmTestButton]),
+                const SizedBox(height: 10),
+                _ToolbarSection(
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: infoChips,
+                  ),
+                ),
+              ] else
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    playButton,
+                    const SizedBox(width: 12),
+                    Expanded(child: _ToolbarSection(child: infoChips)),
+                    const SizedBox(width: 12),
+                    rhythmTestButton,
+                  ],
+                ),
+              const SizedBox(height: 10),
+              _ToolbarSection(
+                child: Align(alignment: Alignment.centerLeft, child: editStrip),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _ToolbarSection extends StatelessWidget {
+  const _ToolbarSection({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: AppColors.surfaceContainerHigh.withAlpha(188),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: AppColors.surfaceBorder.withAlpha(160)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        child: child,
       ),
     );
   }
@@ -616,6 +728,129 @@ class _SaveScoreDialogState extends State<_SaveScoreDialog> {
           child: Text(_hasActiveSavedScore ? 'Update' : 'Save'),
         ),
       ],
+    );
+  }
+}
+
+class _LibraryToastLayer extends StatelessWidget {
+  const _LibraryToastLayer();
+
+  @override
+  Widget build(BuildContext context) {
+    return Consumer<ScoreNotifier>(
+      builder: (context, notifier, _) {
+        final libraryMessage = notifier.libraryMessage;
+        final audioErrorMessage = notifier.audioStatusIsError
+            ? notifier.audioStatusMessage
+            : null;
+        final message = libraryMessage ?? audioErrorMessage;
+        final isError = libraryMessage != null
+            ? notifier.libraryMessageIsError
+            : audioErrorMessage != null;
+
+        return Positioned.fill(
+          child: IgnorePointer(
+            ignoring: true,
+            child: Align(
+              alignment: Alignment.topRight,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 220),
+                  switchInCurve: Curves.easeOutCubic,
+                  switchOutCurve: Curves.easeInCubic,
+                  transitionBuilder: (child, animation) {
+                    final slide =
+                        Tween<Offset>(
+                          begin: const Offset(0.1, -0.12),
+                          end: Offset.zero,
+                        ).animate(
+                          CurvedAnimation(
+                            parent: animation,
+                            curve: Curves.easeOut,
+                          ),
+                        );
+                    return FadeTransition(
+                      opacity: animation,
+                      child: SlideTransition(position: slide, child: child),
+                    );
+                  },
+                  child: message == null
+                      ? const SizedBox.shrink(
+                          key: ValueKey('library-toast-empty'),
+                        )
+                      : _FloatingToast(
+                          key: ValueKey('library-toast-$message-$isError'),
+                          message: message,
+                          isError: isError,
+                        ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _FloatingToast extends StatelessWidget {
+  const _FloatingToast({
+    required this.message,
+    required this.isError,
+    super.key,
+  });
+
+  final String message;
+  final bool isError;
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = isError ? AppColors.statusError : AppColors.statusSuccess;
+
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 320),
+      child: DecoratedBox(
+        key: const ValueKey('library-toast'),
+        decoration: BoxDecoration(
+          color: AppColors.surfaceContainerHigh.withAlpha(245),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: accent.withAlpha(110)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withAlpha(22),
+              blurRadius: 18,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                isError
+                    ? Icons.error_outline_rounded
+                    : Icons.check_circle_outline_rounded,
+                color: accent,
+                size: 18,
+              ),
+              const SizedBox(width: 10),
+              Flexible(
+                child: Text(
+                  message,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                    color: accent,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
