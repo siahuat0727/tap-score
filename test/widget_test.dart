@@ -14,6 +14,7 @@ import 'package:tap_score/screens/score_editor_screen.dart';
 import 'package:tap_score/services/preset_score_repository.dart';
 import 'package:tap_score/services/score_library_repository.dart';
 import 'package:tap_score/state/score_notifier.dart';
+import 'package:tap_score/theme/app_colors.dart';
 import 'package:tap_score/widgets/duration_selector.dart';
 import 'package:tap_score/widgets/piano_keyboard.dart';
 import 'package:webview_flutter_platform_interface/webview_flutter_platform_interface.dart';
@@ -95,7 +96,7 @@ void main() {
     expect(find.byKey(const ValueKey('export-score-button')), findsOneWidget);
   });
 
-  testWidgets('top action bar sits above the score surface', (
+  testWidgets('floating actions overlay the score stage without using a row', (
     WidgetTester tester,
   ) async {
     final notifier = ScoreNotifier();
@@ -112,12 +113,21 @@ void main() {
     final saveRect = tester.getRect(
       find.byKey(const ValueKey('save-score-button')),
     );
+    final floatingRect = tester.getRect(
+      find.byKey(const ValueKey('compose-floating-actions')),
+    );
     final scoreRect = tester.getRect(
       find.byKey(const ValueKey('score-view-surface')),
     );
+    final toolbarRect = tester.getRect(
+      find.byKey(const ValueKey('compose-toolbar')),
+    );
 
-    expect(find.byKey(const ValueKey('compose-action-bar')), findsOneWidget);
-    expect(saveRect.bottom, lessThan(scoreRect.top));
+    expect(find.byKey(const ValueKey('compose-score-stage')), findsOneWidget);
+    expect(saveRect.top, greaterThan(scoreRect.top));
+    expect(saveRect.right, lessThan(scoreRect.right));
+    expect(floatingRect.width, lessThan(scoreRect.width / 2));
+    expect(floatingRect.bottom, lessThan(toolbarRect.top));
   });
 
   testWidgets('compose toolbar shows playback and signature controls inline', (
@@ -236,12 +246,53 @@ void main() {
     await tester.pump();
 
     final after = tester.getRect(find.byKey(const ValueKey('compose-toolbar')));
+    final toastRect = tester.getRect(
+      find.byKey(const ValueKey('library-toast')),
+    );
+    final floatingRect = tester.getRect(
+      find.byKey(const ValueKey('compose-floating-actions')),
+    );
 
     expect(find.byKey(const ValueKey('library-toast')), findsOneWidget);
     expect(find.text('Loaded "Etude".'), findsOneWidget);
     expect(after, equals(before));
+    expect(toastRect.overlaps(floatingRect), isFalse);
 
     await tester.pump(const Duration(seconds: 3));
+    await tester.pump(const Duration(milliseconds: 300));
+  });
+
+  testWidgets('save button emphasizes unsaved changes', (
+    WidgetTester tester,
+  ) async {
+    final notifier = ScoreNotifier();
+    addTearDown(notifier.dispose);
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider.value(
+        value: notifier,
+        child: const MaterialApp(home: ScoreEditorScreen()),
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      _borderColor(
+        _buttonDecoration(tester, const ValueKey('save-score-button')),
+      ),
+      AppColors.surfaceBorder,
+    );
+
+    notifier.setTempo(notifier.score.bpm + 1);
+    await tester.pump(const Duration(milliseconds: 200));
+
+    expect(
+      _borderColor(
+        _buttonDecoration(tester, const ValueKey('save-score-button')),
+      ),
+      AppColors.accentAmber.withAlpha(140),
+    );
+
     await tester.pump(const Duration(milliseconds: 300));
   });
 
@@ -264,8 +315,60 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 150));
 
+    final floatingRect = tester.getRect(
+      find.byKey(const ValueKey('compose-floating-actions')),
+    );
+    final toolbarRect = tester.getRect(
+      find.byKey(const ValueKey('compose-toolbar')),
+    );
+
     expect(find.byKey(const ValueKey('compose-toolbar')), findsOneWidget);
     expect(find.byKey(const ValueKey('compose-tempo')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('compose-floating-actions')),
+      findsOneWidget,
+    );
+    expect(floatingRect.bottom, lessThan(toolbarRect.top));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('floating actions stay compact on a wide viewport', (
+    WidgetTester tester,
+  ) async {
+    final notifier = ScoreNotifier();
+    addTearDown(notifier.dispose);
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1280, 960);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider.value(
+        value: notifier,
+        child: const MaterialApp(home: ScoreEditorScreen()),
+      ),
+    );
+    await tester.pump();
+
+    final floatingRect = tester.getRect(
+      find.byKey(const ValueKey('compose-floating-actions')),
+    );
+    final stageRect = tester.getRect(
+      find.byKey(const ValueKey('compose-score-stage')),
+    );
+    final saveRect = tester.getRect(
+      find.byKey(const ValueKey('save-score-button')),
+    );
+    final loadRect = tester.getRect(
+      find.byKey(const ValueKey('load-score-button')),
+    );
+    final exportRect = tester.getRect(
+      find.byKey(const ValueKey('export-score-button')),
+    );
+
+    expect(floatingRect.width, lessThan(stageRect.width * 0.4));
+    expect(saveRect.top, equals(loadRect.top));
+    expect(loadRect.top, equals(exportRect.top));
     expect(tester.takeException(), isNull);
   });
 

@@ -16,6 +16,10 @@ import '../widgets/score_view_widget.dart';
 
 enum _EditorSurfaceMode { compose, rhythmTest }
 
+const EdgeInsets _scoreSurfaceMargin = EdgeInsets.fromLTRB(16, 8, 16, 16);
+const double _floatingActionsInset = 12;
+const double _floatingActionsToastOffset = 92;
+
 /// Main editor screen assembling staff, toolbar, and keyboard.
 class ScoreEditorScreen extends StatefulWidget {
   const ScoreEditorScreen({super.key, this.scoreTransferService});
@@ -473,19 +477,47 @@ class _ScoreEditorScreenState extends State<ScoreEditorScreen> {
             builder: (context, notifier, _) {
               return Column(
                 children: [
-                  Container(
-                    key: const ValueKey('compose-action-bar'),
-                    color: AppColors.surfaceDim,
-                    child: EditorActionBar(
-                      onSaveTap: _showSaveDialog,
-                      onLoadTap: _showLoadSheet,
-                      onExportTap: _exportCurrentScore,
-                    ),
-                  ),
                   Expanded(
-                    child: ScoreViewWidget(
-                      interactive: true,
-                      onRendererKeyDown: _handleRendererKeyDown,
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        final maxFloatingWidth =
+                            constraints.maxWidth -
+                            _scoreSurfaceMargin.horizontal -
+                            (_floatingActionsInset * 2);
+
+                        return Stack(
+                          key: const ValueKey('compose-score-stage'),
+                          children: [
+                            Positioned.fill(
+                              child: ScoreViewWidget(
+                                interactive: true,
+                                onRendererKeyDown: _handleRendererKeyDown,
+                              ),
+                            ),
+                            Positioned(
+                              top:
+                                  _scoreSurfaceMargin.top +
+                                  _floatingActionsInset,
+                              right:
+                                  _scoreSurfaceMargin.right +
+                                  _floatingActionsInset,
+                              child: ConstrainedBox(
+                                constraints: BoxConstraints(
+                                  maxWidth: maxFloatingWidth > 0
+                                      ? maxFloatingWidth
+                                      : 0,
+                                ),
+                                child: EditorActionBar(
+                                  hasUnsavedChanges: notifier.hasUnsavedChanges,
+                                  onSaveTap: _showSaveDialog,
+                                  onLoadTap: _showLoadSheet,
+                                  onExportTap: _exportCurrentScore,
+                                ),
+                              ),
+                            ),
+                          ],
+                        );
+                      },
                     ),
                   ),
                   Container(height: 1, color: AppColors.surfaceDivider),
@@ -512,7 +544,12 @@ class _ScoreEditorScreenState extends State<ScoreEditorScreen> {
         onPointerDown: (_) => _focusNode.requestFocus(),
         child: Scaffold(
           body: SafeArea(
-            child: Stack(children: [body, const _LibraryToastLayer()]),
+            child: Stack(
+              children: [
+                body,
+                _LibraryToastLayer(composeModeActive: !_isRhythmTestActive),
+              ],
+            ),
           ),
         ),
       ),
@@ -733,7 +770,9 @@ class _SaveScoreDialogState extends State<_SaveScoreDialog> {
 }
 
 class _LibraryToastLayer extends StatelessWidget {
-  const _LibraryToastLayer();
+  const _LibraryToastLayer({required this.composeModeActive});
+
+  final bool composeModeActive;
 
   @override
   Widget build(BuildContext context) {
@@ -754,7 +793,12 @@ class _LibraryToastLayer extends StatelessWidget {
             child: Align(
               alignment: Alignment.topRight,
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                padding: EdgeInsets.fromLTRB(
+                  16,
+                  composeModeActive ? _floatingActionsToastOffset : 12,
+                  16,
+                  0,
+                ),
                 child: AnimatedSwitcher(
                   duration: const Duration(milliseconds: 220),
                   switchInCurve: Curves.easeOutCubic,
