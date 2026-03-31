@@ -1,12 +1,20 @@
+import 'score_seed_config.dart';
+
 class EditorLaunchConfig {
-  const EditorLaunchConfig.blank() : presetId = null;
+  const EditorLaunchConfig.blank()
+    : _seedConfig = const ScoreSeedConfig.blank();
 
-  const EditorLaunchConfig.preset(this.presetId);
+  EditorLaunchConfig.preset(String presetId)
+    : _seedConfig = ScoreSeedConfig.preset(presetId);
 
-  final String? presetId;
+  final ScoreSeedConfig _seedConfig;
 
-  bool get isBlank => presetId == null;
-  bool get isPreset => presetId != null;
+  ScoreSeedConfig get seedConfig => _seedConfig;
+
+  String? get presetId => _seedConfig.presetId;
+
+  bool get isBlank => _seedConfig.isBlank;
+  bool get isPreset => _seedConfig.isPreset;
 
   String get routeLocation {
     if (presetId case final presetId?) {

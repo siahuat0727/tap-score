@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
-import '../app/editor_launch_config.dart';
+import '../app/score_seed_config.dart';
 import '../input/editor_shortcuts.dart';
 import '../models/enums.dart';
 import '../models/key_signature.dart';
@@ -238,11 +238,11 @@ class ScoreNotifier extends ChangeNotifier {
   bool get audioStatusIsError => _audioStatus == AudioStatus.error;
 
   /// Initialize local storage and the editor entry state.
-  Future<void> init({EditorLaunchConfig? launchConfig}) {
-    return _initFuture ??= _initInternal(launchConfig: launchConfig);
+  Future<void> init({ScoreSeedConfig? initialScoreConfig}) {
+    return _initFuture ??= _initInternal(initialScoreConfig: initialScoreConfig);
   }
 
-  Future<void> _initInternal({EditorLaunchConfig? launchConfig}) async {
+  Future<void> _initInternal({ScoreSeedConfig? initialScoreConfig}) async {
     try {
       _presetScores = await _presetScoreRepository.loadPresets();
     } on PresetScoreException catch (error) {
@@ -255,7 +255,10 @@ class ScoreNotifier extends ChangeNotifier {
     try {
       final snapshot = await _scoreLibraryRepository.loadSnapshot();
       _savedScores = _sortSavedScores(snapshot?.savedScores ?? const []);
-      _applyInitialState(snapshot: snapshot, launchConfig: launchConfig);
+      _applyInitialState(
+        snapshot: snapshot,
+        initialScoreConfig: initialScoreConfig,
+      );
     } on ScoreLibraryStorageException catch (error) {
       _setLibraryMessage(error.message, isError: true);
     } catch (error) {
@@ -271,9 +274,9 @@ class ScoreNotifier extends ChangeNotifier {
 
   void _applyInitialState({
     required ScoreLibrarySnapshot? snapshot,
-    required EditorLaunchConfig? launchConfig,
+    required ScoreSeedConfig? initialScoreConfig,
   }) {
-    if (launchConfig case EditorLaunchConfig(:final presetId?)
+    if (initialScoreConfig case ScoreSeedConfig(:final presetId?)
         when presetId.isNotEmpty) {
       final entry = _presetScores.cast<PresetScoreEntry?>().firstWhere(
         (candidate) => candidate?.id == presetId,
@@ -288,7 +291,7 @@ class ScoreNotifier extends ChangeNotifier {
       return;
     }
 
-    if (launchConfig?.isBlank == true) {
+    if (initialScoreConfig?.isBlank == true) {
       _applyBlankDraft();
       return;
     }

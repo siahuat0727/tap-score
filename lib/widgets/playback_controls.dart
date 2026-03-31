@@ -78,7 +78,7 @@ class ComposeTempoChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _CapsuleButton(
+    return CapsuleActionButton(
       onTap: enabled ? () => _showTempoSheet(context) : null,
       icon: Icons.speed_rounded,
       label: '♩ = ${bpm.round()}',
@@ -186,7 +186,7 @@ class ComposeTimeSigChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _CapsuleButton(
+    return CapsuleActionButton(
       onTap: () {
         showTimeSigPicker(context, context.read<ScoreNotifier>());
       },
@@ -203,7 +203,7 @@ class ComposeKeySigChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _CapsuleButton(
+    return CapsuleActionButton(
       onTap: () {
         showKeySigPicker(context, context.read<ScoreNotifier>());
       },
@@ -311,7 +311,7 @@ class _ActionButton extends StatelessWidget {
         ? AppColors.accentAmber.withAlpha(24)
         : AppColors.surfaceContainerHigh;
 
-    return _CapsuleButton(
+    return CapsuleActionButton(
       onTap: onTap,
       icon: icon,
       label: label,
@@ -325,11 +325,12 @@ class _ActionButton extends StatelessWidget {
   }
 }
 
-class _CapsuleButton extends StatelessWidget {
-  const _CapsuleButton({
+class CapsuleActionButton extends StatelessWidget {
+  const CapsuleActionButton({
     required this.onTap,
     required this.icon,
     required this.label,
+    super.key,
     this.padding = const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
     this.foregroundColor = AppColors.textChip,
     this.backgroundColor = AppColors.surfaceContainerHigh,

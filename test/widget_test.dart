@@ -96,9 +96,7 @@ Future<BuildContext> _openBlankEditor(
   List<PresetScoreEntry> presets = const [],
   ScoreLibrarySnapshot? snapshot,
 }) async {
-  await tester.pumpWidget(
-    _buildTestApp(presets: presets, snapshot: snapshot),
-  );
+  await tester.pumpWidget(_buildTestApp(presets: presets, snapshot: snapshot));
   await tester.pump();
   await tester.tap(find.byKey(const ValueKey('launch-new-blank-card')));
   await tester.pump();
@@ -120,6 +118,8 @@ void main() {
     expect(find.byType(ScoreEditorScreen), findsNothing);
     expect(find.byKey(const ValueKey('launch-new-blank-card')), findsOneWidget);
     expect(find.byKey(const ValueKey('launch-preset-card')), findsOneWidget);
+    expect(find.text('Create New Score'), findsOneWidget);
+    expect(find.text('Practice from Preset'), findsOneWidget);
   });
 
   testWidgets('home blank entry navigates to a blank editor draft', (
@@ -136,7 +136,7 @@ void main() {
     expect(notifier.activePresetId, isNull);
   });
 
-  testWidgets('home preset entry opens picker and initializes preset draft', (
+  testWidgets('home preset entry opens picker and launches practice', (
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(
@@ -166,11 +166,10 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
 
-    final context = tester.element(find.byType(ScoreEditorScreen));
-    final notifier = Provider.of<ScoreNotifier>(context, listen: false);
-    expect(notifier.activePresetId, 'preset-1');
-    expect(notifier.currentScoreLabel, 'Triplet Study');
-    expect(notifier.score.notes.single.midi, 67);
+    expect(find.byType(ScoreEditorScreen), findsNothing);
+    expect(find.text('Rhythm Test'), findsOneWidget);
+    expect(find.text('Choose Another Preset'), findsOneWidget);
+    expect(find.text('Open in Editor'), findsOneWidget);
   });
 
   testWidgets('floating actions overlay the score stage without using a row', (
@@ -326,14 +325,11 @@ void main() {
     final toastRect = tester.getRect(
       find.byKey(const ValueKey('library-toast')),
     );
-    final floatingRect = tester.getRect(
-      find.byKey(const ValueKey('compose-floating-actions')),
-    );
 
     expect(find.byKey(const ValueKey('library-toast')), findsOneWidget);
     expect(find.text('Loaded "Etude".'), findsOneWidget);
     expect(after, equals(before));
-    expect(toastRect.overlaps(floatingRect), isFalse);
+    expect(toastRect.top, lessThan(after.top));
 
     await tester.pump(const Duration(seconds: 3));
     await tester.pump(const Duration(milliseconds: 300));
@@ -449,7 +445,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('editor switches into inline rhythm test mode', (
+  testWidgets('editor rhythm test shows a back-to-editor action', (
     WidgetTester tester,
   ) async {
     final notifier = ScoreNotifier();
@@ -470,10 +466,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
 
-    expect(
-      find.byKey(const ValueKey('exit-rhythm-test-button')),
-      findsOneWidget,
-    );
+    expect(find.text('Back to Editor'), findsOneWidget);
     expect(find.byKey(const ValueKey('rhythm-test-primary')), findsOneWidget);
     expect(find.byKey(const ValueKey('rhythm-test-tempo')), findsOneWidget);
     expect(
@@ -1118,7 +1111,7 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
 
-      await tester.tap(find.byTooltip('Exit Rhythm Test'));
+      await tester.tap(find.text('Back to Editor'));
       await tester.pump();
 
       notifier.selectNote(null);

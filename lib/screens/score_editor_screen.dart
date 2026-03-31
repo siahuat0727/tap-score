@@ -3,8 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../app/editor_launch_config.dart';
-import '../models/score_library.dart';
 import '../input/editor_shortcuts.dart';
+import '../models/score_library.dart';
 import '../services/score_transfer_service.dart';
 import '../state/rhythm_test_notifier.dart';
 import '../state/score_notifier.dart';
@@ -14,12 +14,13 @@ import '../widgets/piano_keyboard.dart';
 import '../widgets/playback_controls.dart';
 import '../widgets/rhythm_test_workspace.dart';
 import '../widgets/score_view_widget.dart';
+import '../widgets/workspace_top_bar.dart';
 
 enum _EditorSurfaceMode { compose, rhythmTest }
 
 const EdgeInsets _scoreSurfaceMargin = EdgeInsets.fromLTRB(16, 8, 16, 16);
 const double _floatingActionsInset = 12;
-const double _floatingActionsToastOffset = 92;
+const double _floatingActionsToastOffset = 152;
 
 /// Main editor screen assembling staff, toolbar, and keyboard.
 class ScoreEditorScreen extends StatefulWidget {
@@ -27,10 +28,12 @@ class ScoreEditorScreen extends StatefulWidget {
     super.key,
     this.launchConfig,
     this.scoreTransferService,
+    this.onGoHome,
   });
 
   final EditorLaunchConfig? launchConfig;
   final ScoreTransferService? scoreTransferService;
+  final VoidCallback? onGoHome;
 
   @override
   State<ScoreEditorScreen> createState() => _ScoreEditorScreenState();
@@ -48,7 +51,9 @@ class _ScoreEditorScreenState extends State<ScoreEditorScreen> {
   @override
   void initState() {
     super.initState();
-    context.read<ScoreNotifier>().init(launchConfig: widget.launchConfig);
+    context.read<ScoreNotifier>().init(
+      initialScoreConfig: widget.launchConfig?.seedConfig,
+    );
   }
 
   @override
@@ -468,77 +473,6 @@ class _ScoreEditorScreenState extends State<ScoreEditorScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final body = _isRhythmTestActive && _rhythmTestNotifier != null
-        ? ChangeNotifierProvider.value(
-            value: _rhythmTestNotifier!,
-            child: RhythmTestWorkspace(
-              onTempoChanged: _handleRhythmTempoChanged,
-              onRendererKeyDown: _handleRendererKeyDown,
-              onExit: _exitRhythmTest,
-            ),
-          )
-        : Consumer<ScoreNotifier>(
-            builder: (context, notifier, _) {
-              return Column(
-                children: [
-                  Expanded(
-                    child: LayoutBuilder(
-                      builder: (context, constraints) {
-                        final maxFloatingWidth =
-                            constraints.maxWidth -
-                            _scoreSurfaceMargin.horizontal -
-                            (_floatingActionsInset * 2);
-
-                        return Stack(
-                          key: const ValueKey('compose-score-stage'),
-                          children: [
-                            Positioned.fill(
-                              child: ScoreViewWidget(
-                                interactive: true,
-                                onRendererKeyDown: _handleRendererKeyDown,
-                              ),
-                            ),
-                            Positioned(
-                              top:
-                                  _scoreSurfaceMargin.top +
-                                  _floatingActionsInset,
-                              right:
-                                  _scoreSurfaceMargin.right +
-                                  _floatingActionsInset,
-                              child: ConstrainedBox(
-                                constraints: BoxConstraints(
-                                  maxWidth: maxFloatingWidth > 0
-                                      ? maxFloatingWidth
-                                      : 0,
-                                ),
-                                child: EditorActionBar(
-                                  hasUnsavedChanges: notifier.hasUnsavedChanges,
-                                  onSaveTap: _showSaveDialog,
-                                  onLoadTap: _showLoadSheet,
-                                  onExportTap: _exportCurrentScore,
-                                ),
-                              ),
-                            ),
-                          ],
-                        );
-                      },
-                    ),
-                  ),
-                  Container(height: 1, color: AppColors.surfaceDivider),
-                  Container(
-                    key: const ValueKey('compose-toolbar'),
-                    color: AppColors.surfaceContainer,
-                    child: _ComposeToolbarLayout(
-                      notifier: notifier,
-                      onRhythmTestTap: _enterRhythmTest,
-                    ),
-                  ),
-                  const PianoKeyboard(),
-                ],
-              );
-            },
-          );
-
     return Focus(
       focusNode: _focusNode,
       autofocus: true,
@@ -550,13 +484,123 @@ class _ScoreEditorScreenState extends State<ScoreEditorScreen> {
           body: SafeArea(
             child: Stack(
               children: [
-                body,
+                Consumer<ScoreNotifier>(
+                  builder: (context, notifier, _) {
+                    return _isRhythmTestActive && _rhythmTestNotifier != null
+                        ? _buildRhythmTestBody(notifier)
+                        : _buildComposeBody(notifier);
+                  },
+                ),
                 _LibraryToastLayer(composeModeActive: !_isRhythmTestActive),
               ],
             ),
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildComposeBody(ScoreNotifier notifier) {
+    return Column(
+      children: [
+        WorkspaceTopBar(
+          key: const ValueKey('editor-compose-top-bar'),
+          title: 'Compose',
+          subtitle: notifier.currentScoreLabel,
+          leadingActions: [
+            if (widget.onGoHome case final onGoHome?)
+              WorkspaceTopBarAction(
+                buttonKey: const ValueKey('editor-home-button'),
+                label: 'Home',
+                icon: Icons.home_outlined,
+                onTap: onGoHome,
+              ),
+          ],
+        ),
+        Expanded(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final maxFloatingWidth =
+                  constraints.maxWidth -
+                  _scoreSurfaceMargin.horizontal -
+                  (_floatingActionsInset * 2);
+
+              return Stack(
+                key: const ValueKey('compose-score-stage'),
+                children: [
+                  Positioned.fill(
+                    child: ScoreViewWidget(
+                      interactive: true,
+                      onRendererKeyDown: _handleRendererKeyDown,
+                    ),
+                  ),
+                  Positioned(
+                    top: _scoreSurfaceMargin.top + _floatingActionsInset,
+                    right: _scoreSurfaceMargin.right + _floatingActionsInset,
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxWidth: maxFloatingWidth > 0 ? maxFloatingWidth : 0,
+                      ),
+                      child: EditorActionBar(
+                        hasUnsavedChanges: notifier.hasUnsavedChanges,
+                        onSaveTap: _showSaveDialog,
+                        onLoadTap: _showLoadSheet,
+                        onExportTap: _exportCurrentScore,
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+        Container(height: 1, color: AppColors.surfaceDivider),
+        Container(
+          key: const ValueKey('compose-toolbar'),
+          color: AppColors.surfaceContainer,
+          child: _ComposeToolbarLayout(
+            notifier: notifier,
+            onRhythmTestTap: _enterRhythmTest,
+          ),
+        ),
+        const PianoKeyboard(),
+      ],
+    );
+  }
+
+  Widget _buildRhythmTestBody(ScoreNotifier notifier) {
+    return Column(
+      children: [
+        WorkspaceTopBar(
+          key: const ValueKey('editor-rhythm-test-top-bar'),
+          title: 'Rhythm Test',
+          subtitle: notifier.currentScoreLabel,
+          leadingActions: [
+            if (widget.onGoHome case final onGoHome?)
+              WorkspaceTopBarAction(
+                buttonKey: const ValueKey('editor-home-button'),
+                label: 'Home',
+                icon: Icons.home_outlined,
+                onTap: onGoHome,
+              ),
+            WorkspaceTopBarAction(
+              buttonKey: const ValueKey('editor-back-to-editor-button'),
+              label: 'Back to Editor',
+              icon: Icons.arrow_back_rounded,
+              onTap: _exitRhythmTest,
+            ),
+          ],
+        ),
+        Expanded(
+          child: ChangeNotifierProvider.value(
+            value: _rhythmTestNotifier!,
+            child: RhythmTestWorkspace(
+              onTempoChanged: _handleRhythmTempoChanged,
+              onRendererKeyDown: _handleRendererKeyDown,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

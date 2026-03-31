@@ -49,10 +49,7 @@ void main() {
       find.byKey(const ValueKey('rhythm-test-threshold-increment')),
       findsOneWidget,
     );
-    expect(
-      find.byKey(const ValueKey('exit-rhythm-test-button')),
-      findsOneWidget,
-    );
+    expect(find.byIcon(Icons.close_rounded), findsNothing);
 
     final buttonRect = tester.getRect(
       find.byKey(const ValueKey('rhythm-test-primary')),
@@ -197,7 +194,6 @@ Widget _wrap(RhythmTestNotifier notifier) {
         body: RhythmTestWorkspace(
           onTempoChanged: notifier.setTempo,
           onRendererKeyDown: _ignoreRendererKeyDown,
-          onExit: () {},
         ),
       ),
     ),

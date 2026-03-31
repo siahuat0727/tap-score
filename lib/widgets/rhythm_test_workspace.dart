@@ -10,13 +10,11 @@ class RhythmTestWorkspace extends StatelessWidget {
   const RhythmTestWorkspace({
     required this.onTempoChanged,
     required this.onRendererKeyDown,
-    required this.onExit,
     super.key,
   });
 
   final ValueChanged<double> onTempoChanged;
   final bool Function(String? key, String? code)? onRendererKeyDown;
-  final VoidCallback onExit;
 
   @override
   Widget build(BuildContext context) {
@@ -41,43 +39,6 @@ class RhythmTestWorkspace extends StatelessWidget {
                           interactive: false,
                           onRendererKeyDown: onRendererKeyDown,
                           rhythmOverlay: notifier.overlayRenderData,
-                        ),
-                      ),
-                      Positioned(
-                        top: 16,
-                        right: 16,
-                        child: SafeArea(
-                          bottom: false,
-                          child: Tooltip(
-                            message: 'Exit Rhythm Test',
-                            child: Material(
-                              key: const ValueKey('exit-rhythm-test-button'),
-                              color: Colors.transparent,
-                              child: InkWell(
-                                borderRadius: BorderRadius.circular(999),
-                                onTap: onExit,
-                                child: Ink(
-                                  width: 46,
-                                  height: 46,
-                                  decoration: const BoxDecoration(
-                                    color: AppColors.exitButtonBackground,
-                                    shape: BoxShape.circle,
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: Color(0x22000000),
-                                        blurRadius: 16,
-                                        offset: Offset(0, 6),
-                                      ),
-                                    ],
-                                  ),
-                                  child: const Icon(
-                                    Icons.close_rounded,
-                                    color: AppColors.exitButtonIcon,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
                         ),
                       ),
                       Positioned.fill(
