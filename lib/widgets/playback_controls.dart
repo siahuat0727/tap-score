@@ -5,71 +5,6 @@ import '../state/score_notifier.dart';
 import '../theme/app_colors.dart';
 import 'signature_pickers.dart';
 
-class EditorActionBar extends StatelessWidget {
-  const EditorActionBar({
-    required this.onSaveTap,
-    required this.onLoadTap,
-    required this.onExportTap,
-    required this.hasUnsavedChanges,
-    super.key,
-  });
-
-  final VoidCallback onSaveTap;
-  final VoidCallback onLoadTap;
-  final ValueChanged<BuildContext> onExportTap;
-  final bool hasUnsavedChanges;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: DecoratedBox(
-        key: const ValueKey('compose-floating-actions'),
-        decoration: BoxDecoration(
-          color: AppColors.surfaceContainerHigh.withAlpha(240),
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: AppColors.surfaceBorder.withAlpha(220)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withAlpha(20),
-              blurRadius: 18,
-              offset: const Offset(0, 8),
-            ),
-          ],
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(6),
-          child: Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _ActionButton(
-                key: const ValueKey('save-score-button'),
-                icon: Icons.save_outlined,
-                label: 'Save',
-                onTap: onSaveTap,
-                isHighlighted: hasUnsavedChanges,
-              ),
-              _ActionButton(
-                key: const ValueKey('load-score-button'),
-                icon: Icons.folder_open_outlined,
-                label: 'Load',
-                onTap: onLoadTap,
-              ),
-              _ActionButton(
-                key: const ValueKey('export-score-button'),
-                icon: Icons.file_download_outlined,
-                label: 'Export',
-                onTap: () => onExportTap(context),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class ComposeTempoChip extends StatelessWidget {
   const ComposeTempoChip({required this.bpm, required this.enabled, super.key});
 
@@ -284,43 +219,6 @@ class _ComposePlayButtonState extends State<ComposePlayButton>
           ),
         ),
       ),
-    );
-  }
-}
-
-class _ActionButton extends StatelessWidget {
-  const _ActionButton({
-    super.key,
-    required this.icon,
-    required this.label,
-    required this.onTap,
-    this.isHighlighted = false,
-  });
-
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-  final bool isHighlighted;
-
-  @override
-  Widget build(BuildContext context) {
-    final foregroundColor = isHighlighted
-        ? AppColors.accentAmber
-        : AppColors.textPrimary;
-    final backgroundColor = isHighlighted
-        ? AppColors.accentAmber.withAlpha(24)
-        : AppColors.surfaceContainerHigh;
-
-    return CapsuleActionButton(
-      onTap: onTap,
-      icon: icon,
-      label: label,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      foregroundColor: foregroundColor,
-      backgroundColor: backgroundColor,
-      borderColor: isHighlighted
-          ? AppColors.accentAmber.withAlpha(140)
-          : AppColors.surfaceBorder,
     );
   }
 }

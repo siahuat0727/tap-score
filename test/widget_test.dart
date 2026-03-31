@@ -4,13 +4,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
+import 'package:tap_score/app/workspace_launch_config.dart';
 import 'package:tap_score/main.dart';
 import 'package:tap_score/models/enums.dart';
 import 'package:tap_score/models/key_signature.dart';
 import 'package:tap_score/models/note.dart';
 import 'package:tap_score/models/score.dart';
 import 'package:tap_score/models/score_library.dart';
-import 'package:tap_score/screens/score_editor_screen.dart';
+import 'package:tap_score/screens/workspace_screen.dart';
 import 'package:tap_score/services/preset_score_repository.dart';
 import 'package:tap_score/services/score_library_repository.dart';
 import 'package:tap_score/state/score_notifier.dart';
@@ -42,11 +43,7 @@ InkWell _buttonInkWell(WidgetTester tester, Key key) {
 }
 
 DurationSelector _buildDurationSelector() {
-  return DurationSelector(
-    onRhythmTestTap: () {},
-    rhythmTestEnabled: true,
-    rhythmTestActive: false,
-  );
+  return const DurationSelector();
 }
 
 Widget _buildModifierAlignmentGolden() {
@@ -64,13 +61,7 @@ Widget _buildModifierAlignmentGolden() {
               child: ClipRect(
                 child: Transform.translate(
                   offset: const Offset(-224, 0),
-                  child: DurationSelector(
-                    onRhythmTestTap: () {},
-                    rhythmTestEnabled: true,
-                    rhythmTestActive: false,
-                    showRhythmTestButton: false,
-                    padding: EdgeInsets.zero,
-                  ),
+                  child: const DurationSelector(padding: EdgeInsets.zero),
                 ),
               ),
             ),
@@ -91,7 +82,17 @@ TapScoreApp _buildTestApp({
   );
 }
 
-Future<BuildContext> _openBlankEditor(
+Widget _buildWorkspace(
+  ScoreNotifier notifier, {
+  WorkspaceLaunchConfig launchConfig = const WorkspaceLaunchConfig.blank(),
+}) {
+  return ChangeNotifierProvider.value(
+    value: notifier,
+    child: MaterialApp(home: WorkspaceScreen(launchConfig: launchConfig)),
+  );
+}
+
+Future<BuildContext> _openBlankWorkspace(
   WidgetTester tester, {
   List<PresetScoreEntry> presets = const [],
   ScoreLibrarySnapshot? snapshot,
@@ -101,7 +102,7 @@ Future<BuildContext> _openBlankEditor(
   await tester.tap(find.byKey(const ValueKey('launch-new-blank-card')));
   await tester.pump();
   await tester.pump(const Duration(milliseconds: 300));
-  return tester.element(find.byType(ScoreEditorScreen));
+  return tester.element(find.byType(WorkspaceScreen));
 }
 
 void main() {
@@ -115,28 +116,30 @@ void main() {
     await tester.pumpWidget(_buildTestApp());
     await tester.pump();
 
-    expect(find.byType(ScoreEditorScreen), findsNothing);
+    expect(find.byType(WorkspaceScreen), findsNothing);
     expect(find.byKey(const ValueKey('launch-new-blank-card')), findsOneWidget);
     expect(find.byKey(const ValueKey('launch-preset-card')), findsOneWidget);
     expect(find.text('Create New Score'), findsOneWidget);
     expect(find.text('Practice from Preset'), findsOneWidget);
   });
 
-  testWidgets('home blank entry navigates to a blank editor draft', (
+  testWidgets('home blank entry navigates to a blank compose workspace', (
     WidgetTester tester,
   ) async {
-    final context = await _openBlankEditor(tester);
+    final context = await _openBlankWorkspace(tester);
     final notifier = Provider.of<ScoreNotifier>(context, listen: false);
 
-    expect(find.byType(ScoreEditorScreen), findsOneWidget);
+    expect(find.byType(WorkspaceScreen), findsOneWidget);
+    expect(find.byKey(const ValueKey('workspace-top-bar')), findsOneWidget);
     expect(find.byKey(const ValueKey('save-score-button')), findsOneWidget);
     expect(find.byKey(const ValueKey('load-score-button')), findsOneWidget);
     expect(find.byKey(const ValueKey('export-score-button')), findsOneWidget);
+    expect(find.byKey(const ValueKey('workspace-mode-compose')), findsOneWidget);
     expect(notifier.score.notes, isEmpty);
     expect(notifier.activePresetId, isNull);
   });
 
-  testWidgets('home preset entry opens picker and launches practice', (
+  testWidgets('home preset entry opens picker and launches rhythm test mode', (
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(
@@ -166,60 +169,49 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
 
-    expect(find.byType(ScoreEditorScreen), findsNothing);
+    expect(find.byType(WorkspaceScreen), findsOneWidget);
+    expect(find.byKey(const ValueKey('workspace-top-bar')), findsOneWidget);
     expect(find.text('Rhythm Test'), findsOneWidget);
-    expect(find.text('Choose Another Preset'), findsOneWidget);
-    expect(find.text('Open in Editor'), findsOneWidget);
+    expect(find.byKey(const ValueKey('rhythm-test-primary')), findsOneWidget);
+    expect(find.text('Choose Another Preset'), findsNothing);
+    expect(find.text('Open in Editor'), findsNothing);
   });
 
-  testWidgets('floating actions overlay the score stage without using a row', (
+  testWidgets('workspace keeps file actions in the top bar only', (
     WidgetTester tester,
   ) async {
     final notifier = ScoreNotifier();
     addTearDown(notifier.dispose);
 
-    await tester.pumpWidget(
-      ChangeNotifierProvider.value(
-        value: notifier,
-        child: const MaterialApp(home: ScoreEditorScreen()),
-      ),
-    );
+    await tester.pumpWidget(_buildWorkspace(notifier));
     await tester.pump();
 
     final saveRect = tester.getRect(
       find.byKey(const ValueKey('save-score-button')),
     );
-    final floatingRect = tester.getRect(
-      find.byKey(const ValueKey('compose-floating-actions')),
-    );
     final scoreRect = tester.getRect(
       find.byKey(const ValueKey('score-view-surface')),
     );
-    final toolbarRect = tester.getRect(
-      find.byKey(const ValueKey('compose-toolbar')),
-    );
 
-    expect(find.byKey(const ValueKey('compose-score-stage')), findsOneWidget);
-    expect(saveRect.top, greaterThan(scoreRect.top));
-    expect(saveRect.right, lessThan(scoreRect.right));
-    expect(floatingRect.width, lessThan(scoreRect.width / 2));
-    expect(floatingRect.bottom, lessThan(toolbarRect.top));
+    expect(find.byKey(const ValueKey('workspace-top-bar')), findsOneWidget);
+    expect(find.byKey(const ValueKey('compose-floating-actions')), findsNothing);
+    expect(saveRect.bottom, lessThan(scoreRect.top));
   });
 
-  testWidgets('compose toolbar shows playback and signature controls inline', (
+  testWidgets('compose mode keeps mode switching in the top bar, not the toolbar', (
     WidgetTester tester,
   ) async {
     final notifier = ScoreNotifier();
     addTearDown(notifier.dispose);
 
-    await tester.pumpWidget(
-      ChangeNotifierProvider.value(
-        value: notifier,
-        child: const MaterialApp(home: ScoreEditorScreen()),
-      ),
-    );
+    await tester.pumpWidget(_buildWorkspace(notifier));
     await tester.pump();
 
+    expect(find.byKey(const ValueKey('workspace-mode-compose')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('workspace-mode-rhythm-test')),
+      findsOneWidget,
+    );
     expect(find.byKey(const ValueKey('compose-toolbar')), findsOneWidget);
     expect(find.byKey(const ValueKey('compose-play-button')), findsOneWidget);
     expect(
@@ -228,24 +220,19 @@ void main() {
     );
     expect(find.byKey(const ValueKey('compose-key-signature')), findsOneWidget);
     expect(find.byKey(const ValueKey('compose-tempo')), findsOneWidget);
-    expect(find.byKey(const ValueKey('compose-rhythm-test')), findsOneWidget);
     expect(find.byKey(const ValueKey('rest-tool')), findsOneWidget);
-    expect(find.byTooltip('Rhythm Test'), findsOneWidget);
+    expect(find.byKey(const ValueKey('compose-rhythm-test')), findsNothing);
 
     final playRect = tester.getRect(
       find.byKey(const ValueKey('compose-play-button')),
     );
     final restRect = tester.getRect(find.byKey(const ValueKey('rest-tool')));
-    final rhythmRect = tester.getRect(
-      find.byKey(const ValueKey('compose-rhythm-test')),
-    );
     final toolbarRect = tester.getRect(
       find.byKey(const ValueKey('compose-toolbar')),
     );
 
     expect(playRect.left - toolbarRect.left, lessThan(24));
     expect(playRect.left, lessThan(restRect.left));
-    expect(toolbarRect.right - rhythmRect.right, lessThan(24));
   });
 
   testWidgets('modifier tools use the same baseline-aligned glyph slot', (
@@ -306,12 +293,7 @@ void main() {
     final notifier = ScoreNotifier();
     addTearDown(notifier.dispose);
 
-    await tester.pumpWidget(
-      ChangeNotifierProvider.value(
-        value: notifier,
-        child: const MaterialApp(home: ScoreEditorScreen()),
-      ),
-    );
+    await tester.pumpWidget(_buildWorkspace(notifier));
     await tester.pump();
 
     final before = tester.getRect(
@@ -341,12 +323,7 @@ void main() {
     final notifier = ScoreNotifier();
     addTearDown(notifier.dispose);
 
-    await tester.pumpWidget(
-      ChangeNotifierProvider.value(
-        value: notifier,
-        child: const MaterialApp(home: ScoreEditorScreen()),
-      ),
-    );
+    await tester.pumpWidget(_buildWorkspace(notifier));
     await tester.pump();
 
     expect(
@@ -379,33 +356,23 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    await tester.pumpWidget(
-      ChangeNotifierProvider.value(
-        value: notifier,
-        child: const MaterialApp(home: ScoreEditorScreen()),
-      ),
-    );
+    await tester.pumpWidget(_buildWorkspace(notifier));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 150));
 
-    final floatingRect = tester.getRect(
-      find.byKey(const ValueKey('compose-floating-actions')),
-    );
+    final topBarRect = tester.getRect(find.byKey(const ValueKey('workspace-top-bar')));
     final toolbarRect = tester.getRect(
       find.byKey(const ValueKey('compose-toolbar')),
     );
 
     expect(find.byKey(const ValueKey('compose-toolbar')), findsOneWidget);
     expect(find.byKey(const ValueKey('compose-tempo')), findsOneWidget);
-    expect(
-      find.byKey(const ValueKey('compose-floating-actions')),
-      findsOneWidget,
-    );
-    expect(floatingRect.bottom, lessThan(toolbarRect.top));
+    expect(find.byKey(const ValueKey('compose-floating-actions')), findsNothing);
+    expect(topBarRect.bottom, lessThan(toolbarRect.top));
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('floating actions stay compact on a wide viewport', (
+  testWidgets('top-bar actions stay aligned on a wide viewport', (
     WidgetTester tester,
   ) async {
     final notifier = ScoreNotifier();
@@ -415,20 +382,9 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    await tester.pumpWidget(
-      ChangeNotifierProvider.value(
-        value: notifier,
-        child: const MaterialApp(home: ScoreEditorScreen()),
-      ),
-    );
+    await tester.pumpWidget(_buildWorkspace(notifier));
     await tester.pump();
 
-    final floatingRect = tester.getRect(
-      find.byKey(const ValueKey('compose-floating-actions')),
-    );
-    final stageRect = tester.getRect(
-      find.byKey(const ValueKey('compose-score-stage')),
-    );
     final saveRect = tester.getRect(
       find.byKey(const ValueKey('save-score-button')),
     );
@@ -439,13 +395,13 @@ void main() {
       find.byKey(const ValueKey('export-score-button')),
     );
 
-    expect(floatingRect.width, lessThan(stageRect.width * 0.4));
     expect(saveRect.top, equals(loadRect.top));
     expect(loadRect.top, equals(exportRect.top));
+    expect(find.byKey(const ValueKey('compose-floating-actions')), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('editor rhythm test shows a back-to-editor action', (
+  testWidgets('workspace mode switch works both directions', (
     WidgetTester tester,
   ) async {
     final notifier = ScoreNotifier();
@@ -454,19 +410,14 @@ void main() {
       const Note(midi: 60, duration: NoteDuration.quarter),
     );
 
-    await tester.pumpWidget(
-      ChangeNotifierProvider.value(
-        value: notifier,
-        child: const MaterialApp(home: ScoreEditorScreen()),
-      ),
-    );
+    await tester.pumpWidget(_buildWorkspace(notifier));
     await tester.pump();
 
-    await tester.tap(find.byTooltip('Rhythm Test'));
+    await tester.tap(find.byKey(const ValueKey('workspace-mode-rhythm-test')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
 
-    expect(find.text('Back to Editor'), findsOneWidget);
+    expect(find.byKey(const ValueKey('workspace-top-bar')), findsOneWidget);
     expect(find.byKey(const ValueKey('rhythm-test-primary')), findsOneWidget);
     expect(find.byKey(const ValueKey('rhythm-test-tempo')), findsOneWidget);
     expect(
@@ -483,11 +434,18 @@ void main() {
     expect(find.textContaining('The score stays visible.'), findsNothing);
     expect(find.byType(SingleChildScrollView), findsNothing);
     expect(find.byType(PianoKeyboard), findsNothing);
+    expect(find.text('Back to Editor'), findsNothing);
 
     final buttonRect = tester.getRect(
       find.byKey(const ValueKey('rhythm-test-primary')),
     );
     expect(buttonRect.width, greaterThan(300));
+
+    await tester.tap(find.byKey(const ValueKey('workspace-mode-compose')));
+    await tester.pump();
+
+    expect(find.byKey(const ValueKey('compose-toolbar')), findsOneWidget);
+    expect(find.byKey(const ValueKey('rhythm-test-primary')), findsNothing);
   });
 
   testWidgets('rhythm test stays within a compact viewport', (
@@ -503,15 +461,10 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    await tester.pumpWidget(
-      ChangeNotifierProvider.value(
-        value: notifier,
-        child: const MaterialApp(home: ScoreEditorScreen()),
-      ),
-    );
+    await tester.pumpWidget(_buildWorkspace(notifier));
     await tester.pump();
 
-    await tester.tap(find.byTooltip('Rhythm Test'));
+    await tester.tap(find.byKey(const ValueKey('workspace-mode-rhythm-test')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
 
@@ -538,15 +491,10 @@ void main() {
       const Note(midi: 60, duration: NoteDuration.quarter),
     );
 
-    await tester.pumpWidget(
-      ChangeNotifierProvider.value(
-        value: notifier,
-        child: const MaterialApp(home: ScoreEditorScreen()),
-      ),
-    );
+    await tester.pumpWidget(_buildWorkspace(notifier));
     await tester.pump();
 
-    await tester.tap(find.byTooltip('Rhythm Test'));
+    await tester.tap(find.byKey(const ValueKey('workspace-mode-rhythm-test')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
 
@@ -665,10 +613,7 @@ void main() {
     await notifier.init();
 
     await tester.pumpWidget(
-      ChangeNotifierProvider.value(
-        value: notifier,
-        child: const MaterialApp(home: ScoreEditorScreen()),
-      ),
+      _buildWorkspace(notifier),
     );
     await tester.pump();
 
@@ -998,7 +943,7 @@ void main() {
   testWidgets('keyboard shortcuts insert rests and notes', (
     WidgetTester tester,
   ) async {
-    final context = await _openBlankEditor(tester);
+    final context = await _openBlankWorkspace(tester);
     final notifier = Provider.of<ScoreNotifier>(context, listen: false);
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.backquote);
@@ -1026,7 +971,7 @@ void main() {
   testWidgets(
     'keyboard shortcuts support thirty-second notes, slurs, and end delete',
     (WidgetTester tester) async {
-      final context = await _openBlankEditor(tester);
+      final context = await _openBlankWorkspace(tester);
       final notifier = Provider.of<ScoreNotifier>(context, listen: false);
 
       await tester.sendKeyDownEvent(LogicalKeyboardKey.digit6);
@@ -1054,7 +999,7 @@ void main() {
   testWidgets('keyboard shortcuts support octave shift and chromatic toggle', (
     WidgetTester tester,
   ) async {
-    final context = await _openBlankEditor(tester);
+    final context = await _openBlankWorkspace(tester);
     final notifier = Provider.of<ScoreNotifier>(context, listen: false);
 
     await tester.sendKeyEvent(LogicalKeyboardKey.keyQ);
@@ -1100,18 +1045,15 @@ void main() {
       );
 
       await tester.pumpWidget(
-        ChangeNotifierProvider.value(
-          value: notifier,
-          child: const MaterialApp(home: ScoreEditorScreen()),
-        ),
+        _buildWorkspace(notifier),
       );
       await tester.pump();
 
-      await tester.tap(find.byTooltip('Rhythm Test'));
+      await tester.tap(find.byKey(const ValueKey('workspace-mode-rhythm-test')));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
 
-      await tester.tap(find.text('Back to Editor'));
+      await tester.tap(find.byKey(const ValueKey('workspace-mode-compose')));
       await tester.pump();
 
       notifier.selectNote(null);

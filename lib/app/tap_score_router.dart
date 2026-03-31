@@ -2,14 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../screens/launch_screen.dart';
-import '../screens/practice_screen.dart';
-import '../screens/score_editor_screen.dart';
+import '../screens/workspace_screen.dart';
 import '../services/preset_score_repository.dart';
 import '../services/score_library_repository.dart';
 import '../services/score_transfer_service.dart';
 import '../state/score_notifier.dart';
-import 'editor_launch_config.dart';
-import 'practice_launch_config.dart';
+import 'workspace_launch_config.dart';
 
 sealed class TapScoreRouteState {
   const TapScoreRouteState();
@@ -24,22 +22,26 @@ class TapScoreHomeRouteState extends TapScoreRouteState {
   String get routeLocation => '/';
 }
 
-class TapScoreEditorRouteState extends TapScoreRouteState {
-  const TapScoreEditorRouteState(this.launchConfig);
+class TapScoreWorkspaceRouteState extends TapScoreRouteState {
+  const TapScoreWorkspaceRouteState({
+    required this.launchConfig,
+    required this.routeLocation,
+  });
 
-  final EditorLaunchConfig launchConfig;
-
-  @override
-  String get routeLocation => launchConfig.routeLocation;
-}
-
-class TapScorePracticeRouteState extends TapScoreRouteState {
-  const TapScorePracticeRouteState(this.launchConfig);
-
-  final PracticeLaunchConfig launchConfig;
+  final WorkspaceLaunchConfig launchConfig;
 
   @override
-  String get routeLocation => launchConfig.routeLocation;
+  final String routeLocation;
+
+  TapScoreWorkspaceRouteState copyWith({
+    WorkspaceLaunchConfig? launchConfig,
+    String? routeLocation,
+  }) {
+    return TapScoreWorkspaceRouteState(
+      launchConfig: launchConfig ?? this.launchConfig,
+      routeLocation: routeLocation ?? this.routeLocation,
+    );
+  }
 }
 
 class TapScoreRouteInformationParser extends RouteInformationParser<Object> {
@@ -56,19 +58,34 @@ class TapScoreRouteInformationParser extends RouteInformationParser<Object> {
     if (normalizedPath == '/editor') {
       final presetId = uri.queryParameters['preset']?.trim();
       if (presetId != null && presetId.isNotEmpty) {
-        return TapScoreEditorRouteState(EditorLaunchConfig.preset(presetId));
+        return TapScoreWorkspaceRouteState(
+          launchConfig: WorkspaceLaunchConfig.preset(
+            presetId,
+            initialMode: WorkspaceMode.compose,
+          ),
+          routeLocation: uri.toString(),
+        );
       }
 
       final mode = uri.queryParameters['mode']?.trim();
       if (mode == null || mode == 'blank') {
-        return const TapScoreEditorRouteState(EditorLaunchConfig.blank());
+        return const TapScoreWorkspaceRouteState(
+          launchConfig: WorkspaceLaunchConfig.blank(),
+          routeLocation: '/editor?mode=blank',
+        );
       }
     }
 
     if (normalizedPath == '/practice') {
       final presetId = uri.queryParameters['preset']?.trim();
       if (presetId != null && presetId.isNotEmpty) {
-        return TapScorePracticeRouteState(PracticeLaunchConfig(presetId));
+        return TapScoreWorkspaceRouteState(
+          launchConfig: WorkspaceLaunchConfig.preset(
+            presetId,
+            initialMode: WorkspaceMode.rhythmTest,
+          ),
+          routeLocation: uri.toString(),
+        );
       }
     }
 
@@ -99,6 +116,7 @@ class TapScoreRouterDelegate extends RouterDelegate<Object>
   final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
   TapScoreRouteState _routeState = const TapScoreHomeRouteState();
+  int _workspaceSession = 0;
 
   @override
   Object? get currentConfiguration => _routeState;
@@ -113,24 +131,52 @@ class TapScoreRouterDelegate extends RouterDelegate<Object>
     notifyListeners();
   }
 
-  void showBlankEditor() {
-    _routeState = const TapScoreEditorRouteState(EditorLaunchConfig.blank());
-    notifyListeners();
-  }
-
-  void showPresetEditor(String presetId) {
-    _routeState = TapScoreEditorRouteState(EditorLaunchConfig.preset(presetId));
-    notifyListeners();
+  void showBlankWorkspace() {
+    _showWorkspace(const WorkspaceLaunchConfig.blank());
   }
 
   void showPracticePreset(String presetId) {
-    _routeState = TapScorePracticeRouteState(PracticeLaunchConfig(presetId));
+    _showWorkspace(
+      WorkspaceLaunchConfig.preset(
+        presetId,
+        initialMode: WorkspaceMode.rhythmTest,
+      ),
+    );
+  }
+
+  void syncWorkspaceRoute(WorkspaceMode mode, String? shareablePresetId) {
+    final routeState = _routeState;
+    if (routeState is! TapScoreWorkspaceRouteState) {
+      return;
+    }
+
+    final nextLocation = WorkspaceLaunchConfig.routeLocationFor(
+      mode: mode,
+      presetId: shareablePresetId,
+    );
+    if (routeState.routeLocation == nextLocation) {
+      return;
+    }
+
+    _routeState = routeState.copyWith(routeLocation: nextLocation);
+    notifyListeners();
+  }
+
+  void _showWorkspace(WorkspaceLaunchConfig launchConfig) {
+    _workspaceSession += 1;
+    _routeState = TapScoreWorkspaceRouteState(
+      launchConfig: launchConfig,
+      routeLocation: launchConfig.routeLocation,
+    );
     notifyListeners();
   }
 
   @override
   Future<void> setNewRoutePath(Object configuration) async {
     _routeState = configuration as TapScoreRouteState;
+    if (configuration is TapScoreWorkspaceRouteState) {
+      _workspaceSession += 1;
+    }
   }
 
   @override
@@ -140,37 +186,22 @@ class TapScoreRouterDelegate extends RouterDelegate<Object>
         key: const ValueKey('tap-score-home-page'),
         child: LaunchScreen(
           presetScoreRepository: presetScoreRepository,
-          onStartBlank: showBlankEditor,
+          onStartBlank: showBlankWorkspace,
           onStartPracticePreset: showPracticePreset,
         ),
       ),
-      TapScoreEditorRouteState(:final launchConfig) => MaterialPage<void>(
-        key: ValueKey(launchConfig.routeLocation),
+      TapScoreWorkspaceRouteState(:final launchConfig) => MaterialPage<void>(
+        key: ValueKey('tap-score-workspace-page-$_workspaceSession'),
         child: ChangeNotifierProvider(
           create: (_) => ScoreNotifier(
             scoreLibraryRepository: scoreLibraryRepository,
             presetScoreRepository: presetScoreRepository,
           ),
-          child: ScoreEditorScreen(
+          child: WorkspaceScreen(
             launchConfig: launchConfig,
             scoreTransferService: scoreTransferService,
             onGoHome: showHome,
-          ),
-        ),
-      ),
-      TapScorePracticeRouteState(:final launchConfig) => MaterialPage<void>(
-        key: ValueKey(launchConfig.routeLocation),
-        child: ChangeNotifierProvider(
-          create: (_) => ScoreNotifier(
-            scoreLibraryRepository: scoreLibraryRepository,
-            presetScoreRepository: presetScoreRepository,
-          ),
-          child: PracticeScreen(
-            launchConfig: launchConfig,
-            presetScoreRepository: presetScoreRepository,
-            onGoHome: showHome,
-            onChoosePreset: showPracticePreset,
-            onOpenInEditor: showPresetEditor,
+            onRouteSync: syncWorkspaceRoute,
           ),
         ),
       ),

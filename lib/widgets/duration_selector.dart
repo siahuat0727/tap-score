@@ -38,20 +38,12 @@ const double _modifierGlyphHeight = 30;
 /// A toolbar row showing note duration buttons and editing tools.
 class DurationSelector extends StatelessWidget {
   const DurationSelector({
-    required this.onRhythmTestTap,
-    required this.rhythmTestEnabled,
-    required this.rhythmTestActive,
     this.leadingControls = const [],
-    this.showRhythmTestButton = true,
     this.padding = const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
     super.key,
   });
 
-  final VoidCallback onRhythmTestTap;
-  final bool rhythmTestEnabled;
-  final bool rhythmTestActive;
   final List<Widget> leadingControls;
-  final bool showRhythmTestButton;
   final EdgeInsetsGeometry padding;
 
   @override
@@ -140,12 +132,6 @@ class DurationSelector extends StatelessWidget {
                 : null,
             activeColor: AppColors.toolDelete,
           ),
-          if (showRhythmTestButton)
-            RhythmTestActionButton(
-              isEnabled: rhythmTestEnabled,
-              isSelected: rhythmTestActive,
-              onTap: onRhythmTestTap,
-            ),
         ];
 
         return Padding(
@@ -252,96 +238,6 @@ class _SquareButton extends StatelessWidget {
   }
 }
 
-class RhythmTestActionButton extends StatelessWidget {
-  const RhythmTestActionButton({
-    required this.isEnabled,
-    required this.isSelected,
-    required this.onTap,
-    super.key,
-  });
-
-  final bool isEnabled;
-  final bool isSelected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final borderColor = isSelected
-        ? AppColors.accentAmber
-        : isEnabled
-        ? AppColors.rhythmTestBorder
-        : Colors.grey.withAlpha(38);
-
-    return Tooltip(
-      message: 'Rhythm Test',
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 3),
-        child: Material(
-          key: const ValueKey('rhythm-test-tool'),
-          color: Colors.transparent,
-          child: InkWell(
-            borderRadius: BorderRadius.circular(12),
-            onTap: isEnabled ? onTap : null,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              width: 124,
-              height: 48,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: isEnabled
-                      ? [
-                          AppColors.rhythmTestGradientStart,
-                          AppColors.rhythmTestGradientEnd,
-                        ]
-                      : [const Color(0xFFE0E0E0), const Color(0xFFBDBDBD)],
-                ),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: borderColor, width: 1.5),
-                boxShadow: isEnabled
-                    ? const [
-                        BoxShadow(
-                          color: Color(0x33F59E0B),
-                          blurRadius: 16,
-                          offset: Offset(0, 4),
-                        ),
-                      ]
-                    : const [],
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.timer_outlined,
-                    size: 18,
-                    color: isEnabled
-                        ? AppColors.rhythmTestText
-                        : const Color(0xFF757575),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Rhythm Test',
-                      overflow: TextOverflow.fade,
-                      softWrap: false,
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w800,
-                        color: isEnabled
-                            ? AppColors.rhythmTestText
-                            : const Color(0xFF757575),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _DurationGlyph extends StatelessWidget {
   const _DurationGlyph({required this.duration, this.isRest = false});
 
@@ -420,28 +316,13 @@ class _ModifierAssetGlyph extends StatelessWidget {
 }
 
 class ToolbarEditStrip extends StatelessWidget {
-  const ToolbarEditStrip({
-    required this.onRhythmTestTap,
-    required this.rhythmTestEnabled,
-    required this.rhythmTestActive,
-    this.padding = EdgeInsets.zero,
-    super.key,
-  });
+  const ToolbarEditStrip({this.padding = EdgeInsets.zero, super.key});
 
-  final VoidCallback onRhythmTestTap;
-  final bool rhythmTestEnabled;
-  final bool rhythmTestActive;
   final EdgeInsetsGeometry padding;
 
   @override
   Widget build(BuildContext context) {
-    return DurationSelector(
-      onRhythmTestTap: onRhythmTestTap,
-      rhythmTestEnabled: rhythmTestEnabled,
-      rhythmTestActive: rhythmTestActive,
-      showRhythmTestButton: false,
-      padding: padding,
-    );
+    return DurationSelector(padding: padding);
   }
 }
 

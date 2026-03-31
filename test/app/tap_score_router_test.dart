@@ -1,13 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:tap_score/app/editor_launch_config.dart';
-import 'package:tap_score/app/practice_launch_config.dart';
 import 'package:tap_score/app/tap_score_router.dart';
+import 'package:tap_score/app/workspace_launch_config.dart';
 
 void main() {
   final parser = TapScoreRouteInformationParser();
 
-  test('route parser supports home, editor, and practice states', () async {
+  test('route parser converges editor and practice entry URLs', () async {
     final home = await parser.parseRouteInformation(
       RouteInformation(uri: Uri(path: '/')),
     );
@@ -21,7 +20,7 @@ void main() {
         uri: Uri(path: '/editor', queryParameters: {'preset': 'triplet-study'}),
       ),
     );
-    final practice = await parser.parseRouteInformation(
+    final practicePreset = await parser.parseRouteInformation(
       RouteInformation(
         uri: Uri(
           path: '/practice',
@@ -31,24 +30,38 @@ void main() {
     );
 
     expect(home, isA<TapScoreHomeRouteState>());
-    expect(blankEditor, isA<TapScoreEditorRouteState>());
+    expect(blankEditor, isA<TapScoreWorkspaceRouteState>());
     expect(
-      (blankEditor as TapScoreEditorRouteState).launchConfig.isBlank,
+      (blankEditor as TapScoreWorkspaceRouteState).launchConfig.isBlank,
       isTrue,
     );
-    expect(presetEditor, isA<TapScoreEditorRouteState>());
     expect(
-      (presetEditor as TapScoreEditorRouteState).launchConfig.presetId,
+      blankEditor.launchConfig.initialMode,
+      WorkspaceMode.compose,
+    );
+
+    expect(presetEditor, isA<TapScoreWorkspaceRouteState>());
+    expect(
+      (presetEditor as TapScoreWorkspaceRouteState).launchConfig.presetId,
       'triplet-study',
     );
-    expect(practice, isA<TapScorePracticeRouteState>());
     expect(
-      (practice as TapScorePracticeRouteState).launchConfig.presetId,
+      presetEditor.launchConfig.initialMode,
+      WorkspaceMode.compose,
+    );
+
+    expect(practicePreset, isA<TapScoreWorkspaceRouteState>());
+    expect(
+      (practicePreset as TapScoreWorkspaceRouteState).launchConfig.presetId,
       'triplet-study',
+    );
+    expect(
+      practicePreset.launchConfig.initialMode,
+      WorkspaceMode.rhythmTest,
     );
   });
 
-  test('route restoration returns stable locations', () {
+  test('route restoration returns unified workspace locations', () {
     expect(
       parser
           .restoreRouteInformation(const TapScoreHomeRouteState())
@@ -59,7 +72,10 @@ void main() {
     expect(
       parser
           .restoreRouteInformation(
-            const TapScoreEditorRouteState(EditorLaunchConfig.blank()),
+            const TapScoreWorkspaceRouteState(
+              launchConfig: WorkspaceLaunchConfig.blank(),
+              routeLocation: '/editor?mode=blank',
+            ),
           )
           ?.uri
           .toString(),
@@ -68,8 +84,12 @@ void main() {
     expect(
       parser
           .restoreRouteInformation(
-            TapScoreEditorRouteState(
-              EditorLaunchConfig.preset('triplet-study'),
+            TapScoreWorkspaceRouteState(
+              launchConfig: WorkspaceLaunchConfig.preset(
+                'triplet-study',
+                initialMode: WorkspaceMode.compose,
+              ),
+              routeLocation: '/editor?preset=triplet-study',
             ),
           )
           ?.uri
@@ -79,8 +99,12 @@ void main() {
     expect(
       parser
           .restoreRouteInformation(
-            const TapScorePracticeRouteState(
-              PracticeLaunchConfig('triplet-study'),
+            TapScoreWorkspaceRouteState(
+              launchConfig: WorkspaceLaunchConfig.preset(
+                'triplet-study',
+                initialMode: WorkspaceMode.rhythmTest,
+              ),
+              routeLocation: '/practice?preset=triplet-study',
             ),
           )
           ?.uri

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
-import '../app/editor_launch_config.dart';
+import '../app/workspace_launch_config.dart';
 import '../input/editor_shortcuts.dart';
 import '../models/score_library.dart';
 import '../services/score_transfer_service.dart';
@@ -16,45 +16,35 @@ import '../widgets/rhythm_test_workspace.dart';
 import '../widgets/score_view_widget.dart';
 import '../widgets/workspace_top_bar.dart';
 
-enum _EditorSurfaceMode { compose, rhythmTest }
+typedef WorkspaceRouteSync =
+    void Function(WorkspaceMode mode, String? shareablePresetId);
 
-const EdgeInsets _scoreSurfaceMargin = EdgeInsets.fromLTRB(16, 8, 16, 16);
-const double _floatingActionsInset = 12;
-const double _floatingActionsToastOffset = 152;
-
-/// Main editor screen assembling staff, toolbar, and keyboard.
-class ScoreEditorScreen extends StatefulWidget {
-  const ScoreEditorScreen({
-    super.key,
-    this.launchConfig,
+class WorkspaceScreen extends StatefulWidget {
+  const WorkspaceScreen({
+    this.launchConfig = const WorkspaceLaunchConfig.blank(),
     this.scoreTransferService,
     this.onGoHome,
+    this.onRouteSync,
+    super.key,
   });
 
-  final EditorLaunchConfig? launchConfig;
+  final WorkspaceLaunchConfig launchConfig;
   final ScoreTransferService? scoreTransferService;
   final VoidCallback? onGoHome;
+  final WorkspaceRouteSync? onRouteSync;
 
   @override
-  State<ScoreEditorScreen> createState() => _ScoreEditorScreenState();
+  State<WorkspaceScreen> createState() => _WorkspaceScreenState();
 }
 
-class _ScoreEditorScreenState extends State<ScoreEditorScreen> {
+class _WorkspaceScreenState extends State<WorkspaceScreen> {
   final FocusNode _focusNode = FocusNode();
   late final ScoreTransferService _scoreTransferService =
       widget.scoreTransferService ?? PlatformScoreTransferService();
-  _EditorSurfaceMode _surfaceMode = _EditorSurfaceMode.compose;
+  late WorkspaceMode _mode = widget.launchConfig.initialMode;
+  late final Future<void> _initializationFuture = _initializeWorkspace();
   RhythmTestNotifier? _rhythmTestNotifier;
-
-  bool get _isRhythmTestActive => _surfaceMode == _EditorSurfaceMode.rhythmTest;
-
-  @override
-  void initState() {
-    super.initState();
-    context.read<ScoreNotifier>().init(
-      initialScoreConfig: widget.launchConfig?.seedConfig,
-    );
-  }
+  bool _workspaceInitialized = false;
 
   @override
   void dispose() {
@@ -63,31 +53,103 @@ class _ScoreEditorScreenState extends State<ScoreEditorScreen> {
     super.dispose();
   }
 
-  void _enterRhythmTest() {
+  Future<void> _initializeWorkspace() async {
+    await context.read<ScoreNotifier>().init(
+      initialScoreConfig: widget.launchConfig.seedConfig,
+    );
+    if (!mounted) {
+      return;
+    }
+
+    _workspaceInitialized = true;
+    if (_mode == WorkspaceMode.rhythmTest) {
+      await _enterRhythmTest();
+      return;
+    }
+
+    _syncRoute();
+    setState(() {});
+    _focusNode.requestFocus();
+  }
+
+  Future<void> _switchMode(WorkspaceMode nextMode) async {
+    if (nextMode == _mode) {
+      return;
+    }
+
+    if (nextMode == WorkspaceMode.compose) {
+      final previousNotifier = _rhythmTestNotifier;
+      setState(() {
+        _mode = WorkspaceMode.compose;
+        _rhythmTestNotifier = null;
+      });
+      previousNotifier?.dispose();
+      _syncRoute();
+      _focusNode.requestFocus();
+      return;
+    }
+
+    await _enterRhythmTest();
+  }
+
+  Future<void> _enterRhythmTest() async {
     final scoreNotifier = context.read<ScoreNotifier>();
     if (scoreNotifier.score.notes.isEmpty) {
       return;
     }
 
     scoreNotifier.stop();
-    _rhythmTestNotifier?.dispose();
-    final rhythmNotifier = RhythmTestNotifier(score: scoreNotifier.score);
+    final previousNotifier = _rhythmTestNotifier;
+    final rhythmTestNotifier = RhythmTestNotifier(score: scoreNotifier.score);
     setState(() {
-      _surfaceMode = _EditorSurfaceMode.rhythmTest;
-      _rhythmTestNotifier = rhythmNotifier;
+      _mode = WorkspaceMode.rhythmTest;
+      _rhythmTestNotifier = rhythmTestNotifier;
     });
-    rhythmNotifier.init();
+    previousNotifier?.dispose();
+
+    await rhythmTestNotifier.init();
+    if (!mounted) {
+      rhythmTestNotifier.dispose();
+      return;
+    }
+
+    _syncRoute();
     _focusNode.requestFocus();
   }
 
-  void _exitRhythmTest() {
-    final rhythmNotifier = _rhythmTestNotifier;
-    setState(() {
-      _surfaceMode = _EditorSurfaceMode.compose;
-      _rhythmTestNotifier = null;
-    });
-    rhythmNotifier?.dispose();
+  Future<void> _refreshWorkspaceAfterScoreChange() async {
+    if (_mode == WorkspaceMode.rhythmTest) {
+      final scoreNotifier = context.read<ScoreNotifier>();
+      if (scoreNotifier.score.notes.isEmpty) {
+        final previousNotifier = _rhythmTestNotifier;
+        setState(() {
+          _rhythmTestNotifier = null;
+        });
+        previousNotifier?.dispose();
+        _syncRoute();
+        return;
+      }
+      await _enterRhythmTest();
+      return;
+    }
+
+    _syncRoute();
     _focusNode.requestFocus();
+  }
+
+  String? _shareablePresetId(ScoreNotifier notifier) {
+    if (notifier.hasUnsavedChanges) {
+      return null;
+    }
+    return notifier.activePresetId;
+  }
+
+  void _syncRoute() {
+    final onRouteSync = widget.onRouteSync;
+    if (onRouteSync == null) {
+      return;
+    }
+    onRouteSync(_mode, _shareablePresetId(context.read<ScoreNotifier>()));
   }
 
   Future<void> _showSaveDialog() async {
@@ -172,6 +234,7 @@ class _ScoreEditorScreenState extends State<ScoreEditorScreen> {
                 for (final entry in notifier.savedScores)
                   _LoadSheetItem.saved(entry),
               ];
+
               return Padding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
                 child: Column(
@@ -200,17 +263,18 @@ class _ScoreEditorScreenState extends State<ScoreEditorScreen> {
                               final confirmed = await _confirmLoad(
                                 document.name,
                               );
-                              if (!confirmed || !mounted) {
+                              if (!confirmed || !mounted || !sheetContext.mounted) {
                                 return;
                               }
                               Navigator.of(sheetContext).pop();
                               await notifier.importScoreDocument(document);
+                              await _refreshWorkspaceAfterScoreChange();
                             } on ScoreTransferException catch (error) {
                               notifier.showLibraryMessage(
                                 error.message,
                                 isError: true,
                               );
-                            } catch (error) {
+                            } catch (_) {
                               notifier.showLibraryMessage(
                                 'Failed to import the selected score document.',
                                 isError: true,
@@ -247,7 +311,7 @@ class _ScoreEditorScreenState extends State<ScoreEditorScreen> {
                                 ? item.presetEntry!.id ==
                                       notifier.activePresetId
                                 : item.savedEntry!.id == notifier.activeScoreId;
-                            final name = item.name;
+
                             return ListTile(
                               key: ValueKey(
                                 '${item.source.name}-score-${item.id}',
@@ -260,7 +324,7 @@ class _ScoreEditorScreenState extends State<ScoreEditorScreen> {
                                 color: AppColors.textMuted,
                               ),
                               title: Text(
-                                name,
+                                item.name,
                                 style: const TextStyle(
                                   fontWeight: FontWeight.w700,
                                 ),
@@ -311,24 +375,21 @@ class _ScoreEditorScreenState extends State<ScoreEditorScreen> {
                                 ],
                               ),
                               onTap: () async {
-                                final confirmed = await _confirmLoad(name);
-                                if (!confirmed) {
-                                  return;
-                                }
-                                if (!mounted) {
+                                final confirmed = await _confirmLoad(item.name);
+                                if (!confirmed || !mounted || !sheetContext.mounted) {
                                   return;
                                 }
                                 Navigator.of(sheetContext).pop();
-                                if (item.source ==
-                                    _LoadSheetItemSource.preset) {
+                                if (item.source == _LoadSheetItemSource.preset) {
                                   await notifier.loadPresetScore(
                                     item.presetEntry!.id,
                                   );
-                                  return;
+                                } else {
+                                  await notifier.loadSavedScore(
+                                    item.savedEntry!.id,
+                                  );
                                 }
-                                await notifier.loadSavedScore(
-                                  item.savedEntry!.id,
-                                );
+                                await _refreshWorkspaceAfterScoreChange();
                               },
                             );
                           },
@@ -371,7 +432,7 @@ class _ScoreEditorScreenState extends State<ScoreEditorScreen> {
       notifier.showLibraryMessage('Exported "$fileName".', isError: false);
     } on ScoreTransferException catch (error) {
       notifier.showLibraryMessage(error.message, isError: true);
-    } catch (error) {
+    } catch (_) {
       notifier.showLibraryMessage(
         'Failed to export the current score.',
         isError: true,
@@ -393,7 +454,7 @@ class _ScoreEditorScreenState extends State<ScoreEditorScreen> {
   }
 
   bool _handleRendererKeyDown(String? key, String? code) {
-    if (!_isRhythmTestActive) {
+    if (_mode == WorkspaceMode.compose) {
       if (key == ' ' || code == 'Space') {
         final notifier = context.read<ScoreNotifier>();
         if (notifier.isPlaying) {
@@ -415,7 +476,7 @@ class _ScoreEditorScreenState extends State<ScoreEditorScreen> {
   }
 
   KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
-    if (_isRhythmTestActive) {
+    if (_mode == WorkspaceMode.rhythmTest) {
       if (event is KeyDownEvent) {
         final key = event.logicalKey;
         if (key == LogicalKeyboardKey.enter ||
@@ -443,16 +504,20 @@ class _ScoreEditorScreenState extends State<ScoreEditorScreen> {
     if (key == LogicalKeyboardKey.arrowLeft) {
       notifier.moveSelectionLeft();
       return KeyEventResult.handled;
-    } else if (key == LogicalKeyboardKey.arrowRight) {
+    }
+    if (key == LogicalKeyboardKey.arrowRight) {
       notifier.moveSelectionRight();
       return KeyEventResult.handled;
-    } else if (key == LogicalKeyboardKey.arrowUp) {
+    }
+    if (key == LogicalKeyboardKey.arrowUp) {
       notifier.adjustSelection(1);
       return KeyEventResult.handled;
-    } else if (key == LogicalKeyboardKey.arrowDown) {
+    }
+    if (key == LogicalKeyboardKey.arrowDown) {
       notifier.adjustSelection(-1);
       return KeyEventResult.handled;
-    } else if (key == LogicalKeyboardKey.delete ||
+    }
+    if (key == LogicalKeyboardKey.delete ||
         key == LogicalKeyboardKey.backspace) {
       notifier.deleteSelected();
       return KeyEventResult.handled;
@@ -467,101 +532,85 @@ class _ScoreEditorScreenState extends State<ScoreEditorScreen> {
       return KeyEventResult.ignored;
     }
     notifier.handleEditorShortcut(shortcut);
-
     return KeyEventResult.handled;
   }
 
   @override
   Widget build(BuildContext context) {
-    return Focus(
-      focusNode: _focusNode,
-      autofocus: true,
-      onKeyEvent: _handleKeyEvent,
-      child: Listener(
-        behavior: HitTestBehavior.translucent,
-        onPointerDown: (_) => _focusNode.requestFocus(),
-        child: Scaffold(
-          body: SafeArea(
-            child: Stack(
-              children: [
-                Consumer<ScoreNotifier>(
-                  builder: (context, notifier, _) {
-                    return _isRhythmTestActive && _rhythmTestNotifier != null
-                        ? _buildRhythmTestBody(notifier)
-                        : _buildComposeBody(notifier);
-                  },
+    return FutureBuilder<void>(
+      future: _initializationFuture,
+      builder: (context, _) {
+        return Focus(
+          focusNode: _focusNode,
+          autofocus: true,
+          onKeyEvent: _handleKeyEvent,
+          child: Listener(
+            behavior: HitTestBehavior.translucent,
+            onPointerDown: (_) => _focusNode.requestFocus(),
+            child: Scaffold(
+              body: SafeArea(
+                child: Stack(
+                  children: [
+                    Consumer<ScoreNotifier>(
+                      builder: (context, notifier, _) {
+                        return Column(
+                          children: [
+                            WorkspaceTopBar(
+                              key: const ValueKey('workspace-top-bar'),
+                              scoreLabel: notifier.currentScoreLabel,
+                              mode: _mode,
+                              rhythmTestEnabled:
+                                  notifier.score.notes.isNotEmpty ||
+                                  _mode == WorkspaceMode.rhythmTest,
+                              hasUnsavedChanges: notifier.hasUnsavedChanges,
+                              onGoHome: widget.onGoHome ?? () {},
+                              onSelectMode: _switchMode,
+                              onLoad: _showLoadSheet,
+                              onSave: _showSaveDialog,
+                              onExport: _exportCurrentScore,
+                            ),
+                            Expanded(child: _buildWorkspaceBody(notifier)),
+                          ],
+                        );
+                      },
+                    ),
+                    const _LibraryToastLayer(),
+                  ],
                 ),
-                _LibraryToastLayer(composeModeActive: !_isRhythmTestActive),
-              ],
+              ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
+  }
+
+  Widget _buildWorkspaceBody(ScoreNotifier notifier) {
+    if (_mode == WorkspaceMode.compose) {
+      return _buildComposeBody(notifier);
+    }
+
+    if (!_workspaceInitialized && _rhythmTestNotifier == null) {
+      return const _WorkspaceLoadingView();
+    }
+
+    return _buildRhythmTestBody(notifier);
   }
 
   Widget _buildComposeBody(ScoreNotifier notifier) {
     return Column(
       children: [
-        WorkspaceTopBar(
-          key: const ValueKey('editor-compose-top-bar'),
-          title: 'Compose',
-          subtitle: notifier.currentScoreLabel,
-          leadingActions: [
-            if (widget.onGoHome case final onGoHome?)
-              WorkspaceTopBarAction(
-                buttonKey: const ValueKey('editor-home-button'),
-                label: 'Home',
-                icon: Icons.home_outlined,
-                onTap: onGoHome,
-              ),
-          ],
-        ),
         Expanded(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final maxFloatingWidth =
-                  constraints.maxWidth -
-                  _scoreSurfaceMargin.horizontal -
-                  (_floatingActionsInset * 2);
-
-              return Stack(
-                key: const ValueKey('compose-score-stage'),
-                children: [
-                  Positioned.fill(
-                    child: ScoreViewWidget(
-                      interactive: true,
-                      onRendererKeyDown: _handleRendererKeyDown,
-                    ),
-                  ),
-                  Positioned(
-                    top: _scoreSurfaceMargin.top + _floatingActionsInset,
-                    right: _scoreSurfaceMargin.right + _floatingActionsInset,
-                    child: ConstrainedBox(
-                      constraints: BoxConstraints(
-                        maxWidth: maxFloatingWidth > 0 ? maxFloatingWidth : 0,
-                      ),
-                      child: EditorActionBar(
-                        hasUnsavedChanges: notifier.hasUnsavedChanges,
-                        onSaveTap: _showSaveDialog,
-                        onLoadTap: _showLoadSheet,
-                        onExportTap: _exportCurrentScore,
-                      ),
-                    ),
-                  ),
-                ],
-              );
-            },
+          child: ScoreViewWidget(
+            interactive: true,
+            onRendererKeyDown: _handleRendererKeyDown,
           ),
         ),
         Container(height: 1, color: AppColors.surfaceDivider),
         Container(
           key: const ValueKey('compose-toolbar'),
           color: AppColors.surfaceContainer,
-          child: _ComposeToolbarLayout(
-            notifier: notifier,
-            onRhythmTestTap: _enterRhythmTest,
-          ),
+          child: _ComposeToolbarLayout(notifier: notifier),
         ),
         const PianoKeyboard(),
       ],
@@ -569,57 +618,35 @@ class _ScoreEditorScreenState extends State<ScoreEditorScreen> {
   }
 
   Widget _buildRhythmTestBody(ScoreNotifier notifier) {
-    return Column(
-      children: [
-        WorkspaceTopBar(
-          key: const ValueKey('editor-rhythm-test-top-bar'),
-          title: 'Rhythm Test',
-          subtitle: notifier.currentScoreLabel,
-          leadingActions: [
-            if (widget.onGoHome case final onGoHome?)
-              WorkspaceTopBarAction(
-                buttonKey: const ValueKey('editor-home-button'),
-                label: 'Home',
-                icon: Icons.home_outlined,
-                onTap: onGoHome,
-              ),
-            WorkspaceTopBarAction(
-              buttonKey: const ValueKey('editor-back-to-editor-button'),
-              label: 'Back to Editor',
-              icon: Icons.arrow_back_rounded,
-              onTap: _exitRhythmTest,
-            ),
-          ],
-        ),
-        Expanded(
-          child: ChangeNotifierProvider.value(
-            value: _rhythmTestNotifier!,
-            child: RhythmTestWorkspace(
-              onTempoChanged: _handleRhythmTempoChanged,
-              onRendererKeyDown: _handleRendererKeyDown,
-            ),
-          ),
-        ),
-      ],
+    final rhythmTestNotifier = _rhythmTestNotifier;
+    if (rhythmTestNotifier == null || notifier.score.notes.isEmpty) {
+      return _WorkspaceUnavailableView(
+        title: 'Rhythm test unavailable',
+        message:
+            notifier.libraryMessage ??
+            'Rhythm test needs at least one note in the current score.',
+      );
+    }
+
+    return ChangeNotifierProvider.value(
+      value: rhythmTestNotifier,
+      child: RhythmTestWorkspace(
+        onTempoChanged: _handleRhythmTempoChanged,
+        onRendererKeyDown: _handleRendererKeyDown,
+      ),
     );
   }
 }
 
 class _ComposeToolbarLayout extends StatelessWidget {
-  const _ComposeToolbarLayout({
-    required this.notifier,
-    required this.onRhythmTestTap,
-  });
+  const _ComposeToolbarLayout({required this.notifier});
 
   final ScoreNotifier notifier;
-  final VoidCallback onRhythmTestTap;
 
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final isCompact = constraints.maxWidth < 1100;
-
         final playButton = ComposePlayButton(
           key: const ValueKey('compose-play-button'),
           isPlaying: notifier.isPlaying,
@@ -642,48 +669,43 @@ class _ComposeToolbarLayout extends StatelessWidget {
           tempoEnabled: !notifier.isPlaying,
         );
 
-        final rhythmTestButton = RhythmTestActionButton(
-          key: const ValueKey('compose-rhythm-test'),
-          isEnabled: notifier.score.notes.isNotEmpty,
-          isSelected: false,
-          onTap: onRhythmTestTap,
-        );
-
-        final editStrip = ToolbarEditStrip(
-          onRhythmTestTap: onRhythmTestTap,
-          rhythmTestEnabled: notifier.score.notes.isNotEmpty,
-          rhythmTestActive: false,
-          padding: EdgeInsets.zero,
-        );
+        final toolbarControls = const ToolbarEditStrip(padding: EdgeInsets.zero);
+        final isCompact = constraints.maxWidth < 1100;
 
         return Padding(
           padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (isCompact) ...[
-                Row(children: [playButton, const Spacer(), rhythmTestButton]),
-                const SizedBox(height: 10),
+              if (isCompact)
                 _ToolbarSection(
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: infoChips,
+                  child: Row(
+                    children: [
+                      playButton,
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: infoChips,
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-              ] else
+                )
+              else
                 Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     playButton,
                     const SizedBox(width: 12),
                     Expanded(child: _ToolbarSection(child: infoChips)),
-                    const SizedBox(width: 12),
-                    rhythmTestButton,
                   ],
                 ),
               const SizedBox(height: 10),
               _ToolbarSection(
-                child: Align(alignment: Alignment.centerLeft, child: editStrip),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: toolbarControls,
+                ),
               ),
             ],
           ),
@@ -779,7 +801,6 @@ class _SaveScoreDialogState extends State<_SaveScoreDialog> {
     });
 
     await widget.notifier.saveCurrentScore(trimmed, createNew: createNew);
-
     if (!mounted) {
       return;
     }
@@ -818,9 +839,7 @@ class _SaveScoreDialogState extends State<_SaveScoreDialog> {
 }
 
 class _LibraryToastLayer extends StatelessWidget {
-  const _LibraryToastLayer({required this.composeModeActive});
-
-  final bool composeModeActive;
+  const _LibraryToastLayer();
 
   @override
   Widget build(BuildContext context) {
@@ -841,12 +860,7 @@ class _LibraryToastLayer extends StatelessWidget {
             child: Align(
               alignment: Alignment.topRight,
               child: Padding(
-                padding: EdgeInsets.fromLTRB(
-                  16,
-                  composeModeActive ? _floatingActionsToastOffset : 12,
-                  16,
-                  0,
-                ),
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
                 child: AnimatedSwitcher(
                   duration: const Duration(milliseconds: 220),
                   switchInCurve: Curves.easeOutCubic,
@@ -922,24 +936,96 @@ class _FloatingToast extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
-                isError
-                    ? Icons.error_outline_rounded
-                    : Icons.check_circle_outline_rounded,
-                color: accent,
+                isError ? Icons.error_outline : Icons.check_circle_outline,
                 size: 18,
+                color: accent,
               ),
               const SizedBox(width: 10),
               Flexible(
                 child: Text(
                   message,
-                  style: TextStyle(
+                  style: const TextStyle(
+                    color: AppColors.textBody,
                     fontWeight: FontWeight.w700,
-                    fontSize: 14,
-                    color: accent,
+                    height: 1.3,
                   ),
                 ),
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _WorkspaceLoadingView extends StatelessWidget {
+  const _WorkspaceLoadingView();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Center(
+      child: SizedBox(
+        width: 30,
+        height: 30,
+        child: CircularProgressIndicator(strokeWidth: 2.8),
+      ),
+    );
+  }
+}
+
+class _WorkspaceUnavailableView extends StatelessWidget {
+  const _WorkspaceUnavailableView({
+    required this.title,
+    required this.message,
+  });
+
+  final String title;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 520),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: AppColors.surfaceContainerHigh,
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: AppColors.surfaceBorder),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withAlpha(10),
+                blurRadius: 20,
+                offset: const Offset(0, 10),
+              ),
+            ],
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 22, 24, 22),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w900,
+                    color: AppColors.textBody,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  message,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textMuted,
+                    height: 1.4,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
