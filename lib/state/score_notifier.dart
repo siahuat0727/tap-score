@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import '../app/editor_launch_config.dart';
 import '../input/editor_shortcuts.dart';
 import '../models/enums.dart';
 import '../models/key_signature.dart';
@@ -236,12 +237,12 @@ class ScoreNotifier extends ChangeNotifier {
   String? get audioStatusMessage => _audioStatusMessage;
   bool get audioStatusIsError => _audioStatus == AudioStatus.error;
 
-  /// Initialize local storage and the audio service.
-  Future<void> init() {
-    return _initFuture ??= _initInternal();
+  /// Initialize local storage and the editor entry state.
+  Future<void> init({EditorLaunchConfig? launchConfig}) {
+    return _initFuture ??= _initInternal(launchConfig: launchConfig);
   }
 
-  Future<void> _initInternal() async {
+  Future<void> _initInternal({EditorLaunchConfig? launchConfig}) async {
     try {
       _presetScores = await _presetScoreRepository.loadPresets();
     } on PresetScoreException catch (error) {
@@ -253,13 +254,8 @@ class ScoreNotifier extends ChangeNotifier {
 
     try {
       final snapshot = await _scoreLibraryRepository.loadSnapshot();
-      if (snapshot != null) {
-        _savedScores = _sortSavedScores(snapshot.savedScores);
-        _draftBaseline = snapshot.draft.copy();
-        _draftLabel = null;
-        _applyScore(snapshot.draft, activeScoreId: snapshot.activeScoreId);
-        _hasUnsavedChanges = _computeHasUnsavedChanges(score);
-      }
+      _savedScores = _sortSavedScores(snapshot?.savedScores ?? const []);
+      _applyInitialState(snapshot: snapshot, launchConfig: launchConfig);
     } on ScoreLibraryStorageException catch (error) {
       _setLibraryMessage(error.message, isError: true);
     } catch (error) {
@@ -270,8 +266,72 @@ class ScoreNotifier extends ChangeNotifier {
       debugPrint('Score library load failed: $error');
     }
 
-    unawaited(_audioService.preload());
     notifyListeners();
+  }
+
+  void _applyInitialState({
+    required ScoreLibrarySnapshot? snapshot,
+    required EditorLaunchConfig? launchConfig,
+  }) {
+    if (launchConfig case EditorLaunchConfig(:final presetId?)
+        when presetId.isNotEmpty) {
+      final entry = _presetScores.cast<PresetScoreEntry?>().firstWhere(
+        (candidate) => candidate?.id == presetId,
+        orElse: () => null,
+      );
+      if (entry == null) {
+        _setLibraryMessage('Preset "$presetId" does not exist.', isError: true);
+        _applyBlankDraft();
+        return;
+      }
+      _applyPresetDraft(entry);
+      return;
+    }
+
+    if (launchConfig?.isBlank == true) {
+      _applyBlankDraft();
+      return;
+    }
+
+    if (snapshot != null) {
+      _draftBaseline = snapshot.draft.copy();
+      _draftLabel = null;
+      _applyScore(snapshot.draft, activeScoreId: snapshot.activeScoreId);
+      _hasUnsavedChanges = _computeHasUnsavedChanges(score);
+      return;
+    }
+
+    _draftBaseline = score.copy();
+    _draftLabel = null;
+    _activeScoreId = null;
+    _activePresetId = null;
+    _hasUnsavedChanges = false;
+  }
+
+  void _applyBlankDraft() {
+    final blank = Score();
+    _draftBaseline = blank.copy();
+    _draftLabel = null;
+    _applyScore(blank, activeScoreId: null);
+    _hasUnsavedChanges = false;
+    unawaited(_persistSnapshotSafely());
+  }
+
+  void _applyPresetDraft(PresetScoreEntry entry) {
+    _draftBaseline = entry.score.copy();
+    _draftLabel = entry.name;
+    _applyScore(entry.score, activeScoreId: null, activePresetId: entry.id);
+    _hasUnsavedChanges = false;
+    unawaited(_persistSnapshotSafely());
+  }
+
+  Future<void> _persistSnapshotSafely() async {
+    try {
+      await _persistSnapshot();
+      notifyListeners();
+    } on ScoreLibraryStorageException {
+      notifyListeners();
+    }
   }
 
   void _syncAudioState({bool notify = true}) {

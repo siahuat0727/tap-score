@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tap_score/app/editor_launch_config.dart';
 import 'package:tap_score/models/enums.dart';
 import 'package:tap_score/models/note.dart';
 import 'package:tap_score/models/portable_score_document.dart';
@@ -197,6 +198,97 @@ void main() {
     expect(notifier.savedScores, isEmpty);
     expect(notifier.currentScoreLabel, 'Triplet Study');
   });
+
+  test('blank launch starts a new empty draft without preloading audio', () async {
+    final repository = _MemoryScoreLibraryRepository(
+      ScoreLibrarySnapshot(
+        draft: Score(
+          notes: const [Note(midi: 64, duration: NoteDuration.quarter)],
+          bpm: 90,
+        ),
+        savedScores: [
+          SavedScoreEntry(
+            id: 'saved-1',
+            name: 'Saved Piece',
+            updatedAt: DateTime.utc(2026, 3, 23, 12),
+            score: Score(
+              notes: const [Note(midi: 60, duration: NoteDuration.half)],
+            ),
+          ),
+        ],
+      ),
+    );
+    final audioService = _FakeAudioService();
+    final notifier = ScoreNotifier(
+      audioService: audioService,
+      scoreLibraryRepository: repository,
+      presetScoreRepository: _MemoryPresetScoreRepository(),
+    );
+    addTearDown(notifier.dispose);
+
+    await notifier.init(launchConfig: const EditorLaunchConfig.blank());
+
+    expect(notifier.score.notes, isEmpty);
+    expect(notifier.activeScoreId, isNull);
+    expect(notifier.activePresetId, isNull);
+    expect(notifier.savedScores, hasLength(1));
+    expect(notifier.currentScoreLabel, 'Draft');
+    expect(audioService.preloadCalls, 0);
+    expect(repository.snapshot?.draft.notes, isEmpty);
+  });
+
+  test('preset launch starts a draft initialized from the chosen preset', () async {
+    final repository = _MemoryScoreLibraryRepository(
+      ScoreLibrarySnapshot(
+        draft: Score(
+          notes: const [Note(midi: 64, duration: NoteDuration.quarter)],
+        ),
+        savedScores: [
+          SavedScoreEntry(
+            id: 'saved-1',
+            name: 'Saved Piece',
+            updatedAt: DateTime.utc(2026, 3, 23, 12),
+            score: Score(
+              notes: const [Note(midi: 60, duration: NoteDuration.half)],
+            ),
+          ),
+        ],
+      ),
+    );
+    final audioService = _FakeAudioService();
+    final presetScore = Score(
+      notes: const [Note(midi: 67, duration: NoteDuration.quarter)],
+      bpm: 96,
+    );
+    final notifier = ScoreNotifier(
+      audioService: audioService,
+      scoreLibraryRepository: repository,
+      presetScoreRepository: _MemoryPresetScoreRepository(
+        presets: [
+          PresetScoreEntry(
+            id: 'preset-1',
+            name: 'Triplet Study',
+            assetPath: 'assets/presets/triplet_study.json',
+            score: presetScore,
+          ),
+        ],
+      ),
+    );
+    addTearDown(notifier.dispose);
+
+    await notifier.init(
+      launchConfig: const EditorLaunchConfig.preset('preset-1'),
+    );
+
+    expect(notifier.score.notes, hasLength(1));
+    expect(notifier.score.notes.single.midi, 67);
+    expect(notifier.activeScoreId, isNull);
+    expect(notifier.activePresetId, 'preset-1');
+    expect(notifier.savedScores, hasLength(1));
+    expect(notifier.currentScoreLabel, 'Triplet Study');
+    expect(audioService.preloadCalls, 0);
+    expect(repository.snapshot?.draft.notes.single.midi, 67);
+  });
 }
 
 class _MemoryScoreLibraryRepository implements ScoreLibraryRepository {
@@ -223,8 +315,16 @@ class _MemoryPresetScoreRepository implements PresetScoreRepository {
 }
 
 class _FakeAudioService extends AudioService {
+  int preloadCalls = 0;
+
   @override
   Future<bool> init() async => true;
+
+  @override
+  Future<bool> preload() async {
+    preloadCalls += 1;
+    return true;
+  }
 
   @override
   Future<void> stopNoteHandle(AudioNoteHandle handle) async {}

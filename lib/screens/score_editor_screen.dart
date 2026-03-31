@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../app/editor_launch_config.dart';
 import '../models/score_library.dart';
 import '../input/editor_shortcuts.dart';
 import '../services/score_transfer_service.dart';
@@ -22,8 +23,13 @@ const double _floatingActionsToastOffset = 92;
 
 /// Main editor screen assembling staff, toolbar, and keyboard.
 class ScoreEditorScreen extends StatefulWidget {
-  const ScoreEditorScreen({super.key, this.scoreTransferService});
+  const ScoreEditorScreen({
+    super.key,
+    this.launchConfig,
+    this.scoreTransferService,
+  });
 
+  final EditorLaunchConfig? launchConfig;
   final ScoreTransferService? scoreTransferService;
 
   @override
@@ -42,9 +48,7 @@ class _ScoreEditorScreenState extends State<ScoreEditorScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<ScoreNotifier>().init();
-    });
+    context.read<ScoreNotifier>().init(launchConfig: widget.launchConfig);
   }
 
   @override

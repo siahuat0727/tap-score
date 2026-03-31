@@ -81,19 +81,96 @@ Widget _buildModifierAlignmentGolden() {
   );
 }
 
+TapScoreApp _buildTestApp({
+  List<PresetScoreEntry> presets = const [],
+  ScoreLibrarySnapshot? snapshot,
+}) {
+  return TapScoreApp(
+    presetScoreRepository: _WidgetPresetScoreRepository(presets),
+    scoreLibraryRepository: _WidgetMemoryScoreLibraryRepository(snapshot),
+  );
+}
+
+Future<BuildContext> _openBlankEditor(
+  WidgetTester tester, {
+  List<PresetScoreEntry> presets = const [],
+  ScoreLibrarySnapshot? snapshot,
+}) async {
+  await tester.pumpWidget(
+    _buildTestApp(presets: presets, snapshot: snapshot),
+  );
+  await tester.pump();
+  await tester.tap(find.byKey(const ValueKey('launch-new-blank-card')));
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 300));
+  return tester.element(find.byType(ScoreEditorScreen));
+}
+
 void main() {
   setUpAll(() {
     WebViewPlatform.instance = FakeWebViewPlatform();
   });
 
-  testWidgets('App launches without crashing', (WidgetTester tester) async {
-    await tester.pumpWidget(const TapScoreApp());
+  testWidgets('app launches to the lightweight home screen', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(_buildTestApp());
     await tester.pump();
+
+    expect(find.byType(ScoreEditorScreen), findsNothing);
+    expect(find.byKey(const ValueKey('launch-new-blank-card')), findsOneWidget);
+    expect(find.byKey(const ValueKey('launch-preset-card')), findsOneWidget);
+  });
+
+  testWidgets('home blank entry navigates to a blank editor draft', (
+    WidgetTester tester,
+  ) async {
+    final context = await _openBlankEditor(tester);
+    final notifier = Provider.of<ScoreNotifier>(context, listen: false);
 
     expect(find.byType(ScoreEditorScreen), findsOneWidget);
     expect(find.byKey(const ValueKey('save-score-button')), findsOneWidget);
     expect(find.byKey(const ValueKey('load-score-button')), findsOneWidget);
     expect(find.byKey(const ValueKey('export-score-button')), findsOneWidget);
+    expect(notifier.score.notes, isEmpty);
+    expect(notifier.activePresetId, isNull);
+  });
+
+  testWidgets('home preset entry opens picker and initializes preset draft', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      _buildTestApp(
+        presets: [
+          PresetScoreEntry(
+            id: 'preset-1',
+            name: 'Triplet Study',
+            assetPath: 'assets/presets/triplet_study.json',
+            score: Score(
+              notes: const [Note(midi: 67, duration: NoteDuration.quarter)],
+              bpm: 96,
+            ),
+          ),
+        ],
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey('launch-preset-card')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.byKey(const ValueKey('launch-preset-modal')), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('preset-option-preset-1')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    final context = tester.element(find.byType(ScoreEditorScreen));
+    final notifier = Provider.of<ScoreNotifier>(context, listen: false);
+    expect(notifier.activePresetId, 'preset-1');
+    expect(notifier.currentScoreLabel, 'Triplet Study');
+    expect(notifier.score.notes.single.midi, 67);
   });
 
   testWidgets('floating actions overlay the score stage without using a row', (
@@ -928,10 +1005,7 @@ void main() {
   testWidgets('keyboard shortcuts insert rests and notes', (
     WidgetTester tester,
   ) async {
-    await tester.pumpWidget(const TapScoreApp());
-    await tester.pump();
-
-    final context = tester.element(find.byType(ScoreEditorScreen));
+    final context = await _openBlankEditor(tester);
     final notifier = Provider.of<ScoreNotifier>(context, listen: false);
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.backquote);
@@ -959,10 +1033,7 @@ void main() {
   testWidgets(
     'keyboard shortcuts support thirty-second notes, slurs, and end delete',
     (WidgetTester tester) async {
-      await tester.pumpWidget(const TapScoreApp());
-      await tester.pump();
-
-      final context = tester.element(find.byType(ScoreEditorScreen));
+      final context = await _openBlankEditor(tester);
       final notifier = Provider.of<ScoreNotifier>(context, listen: false);
 
       await tester.sendKeyDownEvent(LogicalKeyboardKey.digit6);
@@ -990,10 +1061,7 @@ void main() {
   testWidgets('keyboard shortcuts support octave shift and chromatic toggle', (
     WidgetTester tester,
   ) async {
-    await tester.pumpWidget(const TapScoreApp());
-    await tester.pump();
-
-    final context = tester.element(find.byType(ScoreEditorScreen));
+    final context = await _openBlankEditor(tester);
     final notifier = Provider.of<ScoreNotifier>(context, listen: false);
 
     await tester.sendKeyEvent(LogicalKeyboardKey.keyQ);
