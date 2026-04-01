@@ -1,3 +1,11 @@
 - If anything not clear, ask explicitly
 - Should works on android, ipad and web. The main logic of different platforms should shared. Will use `flutter run -d chrome` for testing.
 - Avoid defensive programming. Don't do silence fallback.
+- Prefer refactor over patch.
+- Consolidate. Do not layer.
+- One concept, one architecture.
+- Delete obsolete code.
+- Prefer replace over wrap.
+- Remove duplicate abstractions.
+- Simpler beats smaller diff.
+- If old and new coexist, refactor is incomplete.
