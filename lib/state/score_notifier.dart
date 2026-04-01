@@ -276,6 +276,12 @@ class ScoreNotifier extends ChangeNotifier {
     required ScoreLibrarySnapshot? snapshot,
     required ScoreSeedConfig? initialScoreConfig,
   }) {
+    if (initialScoreConfig case ScoreSeedConfig(:final document?)
+        when initialScoreConfig.isImported) {
+      _applyImportedDraft(document);
+      return;
+    }
+
     if (initialScoreConfig case ScoreSeedConfig(:final presetId?)
         when presetId.isNotEmpty) {
       final entry = _presetScores.cast<PresetScoreEntry?>().firstWhere(
@@ -316,6 +322,14 @@ class ScoreNotifier extends ChangeNotifier {
     _draftBaseline = blank.copy();
     _draftLabel = null;
     _applyScore(blank, activeScoreId: null);
+    _hasUnsavedChanges = false;
+    unawaited(_persistSnapshotSafely());
+  }
+
+  void _applyImportedDraft(PortableScoreDocument document) {
+    _draftBaseline = document.score.copy();
+    _draftLabel = document.name;
+    _applyScore(document.score, activeScoreId: null);
     _hasUnsavedChanges = false;
     unawaited(_persistSnapshotSafely());
   }

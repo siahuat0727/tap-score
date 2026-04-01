@@ -9,11 +9,13 @@ import 'package:tap_score/main.dart';
 import 'package:tap_score/models/enums.dart';
 import 'package:tap_score/models/key_signature.dart';
 import 'package:tap_score/models/note.dart';
+import 'package:tap_score/models/portable_score_document.dart';
 import 'package:tap_score/models/score.dart';
 import 'package:tap_score/models/score_library.dart';
 import 'package:tap_score/screens/workspace_screen.dart';
 import 'package:tap_score/services/preset_score_repository.dart';
 import 'package:tap_score/services/score_library_repository.dart';
+import 'package:tap_score/services/score_transfer_service.dart';
 import 'package:tap_score/state/score_notifier.dart';
 import 'package:tap_score/theme/app_colors.dart';
 import 'package:tap_score/widgets/duration_selector.dart';
@@ -75,10 +77,12 @@ Widget _buildModifierAlignmentGolden() {
 TapScoreApp _buildTestApp({
   List<PresetScoreEntry> presets = const [],
   ScoreLibrarySnapshot? snapshot,
+  ScoreTransferService? scoreTransferService,
 }) {
   return TapScoreApp(
     presetScoreRepository: _WidgetPresetScoreRepository(presets),
     scoreLibraryRepository: _WidgetMemoryScoreLibraryRepository(snapshot),
+    scoreTransferService: scoreTransferService,
   );
 }
 
@@ -117,10 +121,12 @@ void main() {
     await tester.pump();
 
     expect(find.byType(WorkspaceScreen), findsNothing);
+    expect(find.byKey(const ValueKey('launch-practice-card')), findsOneWidget);
     expect(find.byKey(const ValueKey('launch-new-blank-card')), findsOneWidget);
-    expect(find.byKey(const ValueKey('launch-preset-card')), findsOneWidget);
-    expect(find.text('Create New Score'), findsOneWidget);
-    expect(find.text('Practice from Preset'), findsOneWidget);
+    expect(find.byKey(const ValueKey('launch-import-card')), findsOneWidget);
+    expect(find.text('Practice'), findsOneWidget);
+    expect(find.text('Create'), findsOneWidget);
+    expect(find.text('Import'), findsOneWidget);
   });
 
   testWidgets('home blank entry navigates to a blank compose workspace', (
@@ -132,14 +138,13 @@ void main() {
     expect(find.byType(WorkspaceScreen), findsOneWidget);
     expect(find.byKey(const ValueKey('workspace-top-bar')), findsOneWidget);
     expect(find.byKey(const ValueKey('save-score-button')), findsOneWidget);
-    expect(find.byKey(const ValueKey('load-score-button')), findsOneWidget);
     expect(find.byKey(const ValueKey('export-score-button')), findsOneWidget);
     expect(find.byKey(const ValueKey('workspace-mode-compose')), findsOneWidget);
     expect(notifier.score.notes, isEmpty);
     expect(notifier.activePresetId, isNull);
   });
 
-  testWidgets('home preset entry opens picker and launches rhythm test mode', (
+  testWidgets('home practice entry opens picker and launches rhythm test mode', (
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(
@@ -159,13 +164,13 @@ void main() {
     );
     await tester.pump();
 
-    await tester.tap(find.byKey(const ValueKey('launch-preset-card')));
+    await tester.tap(find.byKey(const ValueKey('launch-practice-card')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
 
-    expect(find.byKey(const ValueKey('launch-preset-modal')), findsOneWidget);
+    expect(find.byKey(const ValueKey('launch-practice-modal')), findsOneWidget);
 
-    await tester.tap(find.byKey(const ValueKey('preset-option-preset-1')));
+    await tester.tap(find.byKey(const ValueKey('practice-preset-preset-1')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
 
@@ -388,15 +393,11 @@ void main() {
     final saveRect = tester.getRect(
       find.byKey(const ValueKey('save-score-button')),
     );
-    final loadRect = tester.getRect(
-      find.byKey(const ValueKey('load-score-button')),
-    );
     final exportRect = tester.getRect(
       find.byKey(const ValueKey('export-score-button')),
     );
 
-    expect(saveRect.top, equals(loadRect.top));
-    expect(loadRect.top, equals(exportRect.top));
+    expect(saveRect.top, equals(exportRect.top));
     expect(find.byKey(const ValueKey('compose-floating-actions')), findsNothing);
     expect(tester.takeException(), isNull);
   });
@@ -581,12 +582,12 @@ void main() {
     await tester.pump(const Duration(milliseconds: 600));
   });
 
-  testWidgets('load sheet shows presets and saved scores in one list', (
+  testWidgets('practice picker shows presets and saved scores in one list', (
     WidgetTester tester,
   ) async {
-    final notifier = ScoreNotifier(
-      scoreLibraryRepository: _WidgetMemoryScoreLibraryRepository(
-        ScoreLibrarySnapshot(
+    await tester.pumpWidget(
+      _buildTestApp(
+        snapshot: ScoreLibrarySnapshot(
           draft: Score(),
           savedScores: [
             SavedScoreEntry(
@@ -599,35 +600,61 @@ void main() {
             ),
           ],
         ),
+        presets: [
+          PresetScoreEntry(
+            id: 'preset-1',
+            name: 'Basic 4/4',
+            assetPath: 'assets/presets/basic_4_4.json',
+            score: Score(),
+          ),
+        ],
       ),
-      presetScoreRepository: _WidgetPresetScoreRepository([
-        PresetScoreEntry(
-          id: 'preset-1',
-          name: 'Basic 4/4',
-          assetPath: 'assets/presets/basic_4_4.json',
-          score: Score(),
-        ),
-      ]),
-    );
-    addTearDown(notifier.dispose);
-    await notifier.init();
-
-    await tester.pumpWidget(
-      _buildWorkspace(notifier),
     );
     await tester.pump();
 
-    await tester.tap(find.byKey(const ValueKey('load-score-button')));
+    await tester.tap(find.byKey(const ValueKey('launch-practice-card')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
 
-    expect(find.text('Scores'), findsOneWidget);
-    expect(find.byKey(const ValueKey('import-score-button')), findsOneWidget);
-    expect(find.byKey(const ValueKey('preset-score-preset-1')), findsOneWidget);
-    expect(find.byKey(const ValueKey('saved-score-saved-1')), findsOneWidget);
-    expect(find.text('Saved Scores'), findsNothing);
-    expect(find.byTooltip('Delete Saved Etude'), findsOneWidget);
-    expect(find.byTooltip('Delete Basic 4/4'), findsNothing);
+    expect(find.text('Practice'), findsWidgets);
+    expect(find.byKey(const ValueKey('practice-preset-preset-1')), findsOneWidget);
+    expect(find.byKey(const ValueKey('practice-saved-saved-1')), findsOneWidget);
+    expect(find.text('Preset'), findsOneWidget);
+    expect(find.text('Saved score'), findsOneWidget);
+  });
+
+  testWidgets('home import opens editor with the imported score', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      _buildTestApp(
+        scoreTransferService: _FakeScoreTransferService(
+          importedDocument: PortableScoreDocument(
+            version: PortableScoreDocument.currentVersion,
+            name: 'Imported Groove',
+            score: Score(
+              notes: const [Note(midi: 72, duration: NoteDuration.quarter)],
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey('launch-import-card')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    final context = tester.element(find.byType(WorkspaceScreen));
+    final notifier = Provider.of<ScoreNotifier>(context, listen: false);
+
+    expect(find.byType(WorkspaceScreen), findsOneWidget);
+    expect(find.byKey(const ValueKey('workspace-mode-compose')), findsOneWidget);
+    expect(find.byKey(const ValueKey('save-score-button')), findsOneWidget);
+    expect(find.byKey(const ValueKey('export-score-button')), findsOneWidget);
+    expect(notifier.score.notes.single.midi, 72);
+    expect(notifier.currentScoreLabel, 'Imported Groove');
+    expect(notifier.activePresetId, isNull);
   });
 
   testWidgets('duration selector edits the selected note duration', (
@@ -1099,4 +1126,20 @@ class _WidgetPresetScoreRepository implements PresetScoreRepository {
 
   @override
   Future<List<PresetScoreEntry>> loadPresets() async => _presets;
+}
+
+class _FakeScoreTransferService implements ScoreTransferService {
+  const _FakeScoreTransferService({this.importedDocument});
+
+  final PortableScoreDocument? importedDocument;
+
+  @override
+  Future<PortableScoreDocument?> importDocument() async => importedDocument;
+
+  @override
+  Future<void> exportDocument(
+    PortableScoreDocument document, {
+    required String fileName,
+    Rect? sharePositionOrigin,
+  }) async {}
 }

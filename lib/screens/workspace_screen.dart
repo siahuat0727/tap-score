@@ -4,7 +4,6 @@ import 'package:provider/provider.dart';
 
 import '../app/workspace_launch_config.dart';
 import '../input/editor_shortcuts.dart';
-import '../models/score_library.dart';
 import '../services/score_transfer_service.dart';
 import '../state/rhythm_test_notifier.dart';
 import '../state/score_notifier.dart';
@@ -94,11 +93,19 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
 
   Future<void> _enterRhythmTest() async {
     final scoreNotifier = context.read<ScoreNotifier>();
+    scoreNotifier.stop();
     if (scoreNotifier.score.notes.isEmpty) {
+      final previousNotifier = _rhythmTestNotifier;
+      setState(() {
+        _mode = WorkspaceMode.rhythmTest;
+        _rhythmTestNotifier = null;
+      });
+      previousNotifier?.dispose();
+      _syncRoute();
+      _focusNode.requestFocus();
       return;
     }
 
-    scoreNotifier.stop();
     final previousNotifier = _rhythmTestNotifier;
     final rhythmTestNotifier = RhythmTestNotifier(score: scoreNotifier.score);
     setState(() {
@@ -110,26 +117,6 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     await rhythmTestNotifier.init();
     if (!mounted) {
       rhythmTestNotifier.dispose();
-      return;
-    }
-
-    _syncRoute();
-    _focusNode.requestFocus();
-  }
-
-  Future<void> _refreshWorkspaceAfterScoreChange() async {
-    if (_mode == WorkspaceMode.rhythmTest) {
-      final scoreNotifier = context.read<ScoreNotifier>();
-      if (scoreNotifier.score.notes.isEmpty) {
-        final previousNotifier = _rhythmTestNotifier;
-        setState(() {
-          _rhythmTestNotifier = null;
-        });
-        previousNotifier?.dispose();
-        _syncRoute();
-        return;
-      }
-      await _enterRhythmTest();
       return;
     }
 
@@ -157,251 +144,6 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     await showDialog<void>(
       context: context,
       builder: (_) => _SaveScoreDialog(notifier: notifier),
-    );
-  }
-
-  Future<bool> _confirmLoad(String scoreName) async {
-    final notifier = context.read<ScoreNotifier>();
-    if (!notifier.hasUnsavedChanges) {
-      return true;
-    }
-
-    final result = await showDialog<bool>(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('Load Score?'),
-          content: Text(
-            'Current edits stay available in Draft. Load "$scoreName" now?',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Load'),
-            ),
-          ],
-        );
-      },
-    );
-
-    return result ?? false;
-  }
-
-  Future<bool> _confirmDeleteSavedScore(String scoreName) async {
-    final result = await showDialog<bool>(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('Delete Saved Score?'),
-          content: Text(
-            '"$scoreName" will be removed from the local score library.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              style: FilledButton.styleFrom(
-                backgroundColor: AppColors.statusError,
-              ),
-              child: const Text('Delete'),
-            ),
-          ],
-        );
-      },
-    );
-
-    return result ?? false;
-  }
-
-  Future<void> _showLoadSheet() async {
-    await showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      builder: (sheetContext) {
-        return SafeArea(
-          child: Consumer<ScoreNotifier>(
-            builder: (context, notifier, _) {
-              final items = <_LoadSheetItem>[
-                for (final entry in notifier.presetScores)
-                  _LoadSheetItem.preset(entry),
-                for (final entry in notifier.savedScores)
-                  _LoadSheetItem.saved(entry),
-              ];
-
-              return Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        const Expanded(
-                          child: Text(
-                            'Scores',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ),
-                        OutlinedButton.icon(
-                          key: const ValueKey('import-score-button'),
-                          onPressed: () async {
-                            try {
-                              final document = await _scoreTransferService
-                                  .importDocument();
-                              if (document == null) {
-                                return;
-                              }
-                              final confirmed = await _confirmLoad(
-                                document.name,
-                              );
-                              if (!confirmed || !mounted || !sheetContext.mounted) {
-                                return;
-                              }
-                              Navigator.of(sheetContext).pop();
-                              await notifier.importScoreDocument(document);
-                              await _refreshWorkspaceAfterScoreChange();
-                            } on ScoreTransferException catch (error) {
-                              notifier.showLibraryMessage(
-                                error.message,
-                                isError: true,
-                              );
-                            } catch (_) {
-                              notifier.showLibraryMessage(
-                                'Failed to import the selected score document.',
-                                isError: true,
-                              );
-                            }
-                          },
-                          icon: const Icon(Icons.upload_file_outlined),
-                          label: const Text('Import'),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    if (items.isEmpty)
-                      const Expanded(
-                        child: Center(
-                          child: Text(
-                            'No scores available.',
-                            style: TextStyle(
-                              color: AppColors.textMuted,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      )
-                    else
-                      Expanded(
-                        child: ListView.separated(
-                          itemCount: items.length,
-                          separatorBuilder: (_, _) => const Divider(height: 1),
-                          itemBuilder: (context, index) {
-                            final item = items[index];
-                            final isActive =
-                                item.source == _LoadSheetItemSource.preset
-                                ? item.presetEntry!.id ==
-                                      notifier.activePresetId
-                                : item.savedEntry!.id == notifier.activeScoreId;
-
-                            return ListTile(
-                              key: ValueKey(
-                                '${item.source.name}-score-${item.id}',
-                              ),
-                              contentPadding: EdgeInsets.zero,
-                              leading: Icon(
-                                item.source == _LoadSheetItemSource.preset
-                                    ? Icons.library_music_outlined
-                                    : Icons.save_outlined,
-                                color: AppColors.textMuted,
-                              ),
-                              title: Text(
-                                item.name,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                              subtitle:
-                                  item.source == _LoadSheetItemSource.saved
-                                  ? Text(
-                                      'Updated ${item.savedEntry!.updatedAt.toLocal()}',
-                                      style: const TextStyle(fontSize: 12),
-                                    )
-                                  : const Text(
-                                      'Preset score',
-                                      style: TextStyle(fontSize: 12),
-                                    ),
-                              trailing: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  if (isActive)
-                                    const Padding(
-                                      padding: EdgeInsets.only(right: 8),
-                                      child: Text(
-                                        'Current',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w700,
-                                          color: AppColors.accentAmber,
-                                        ),
-                                      ),
-                                    ),
-                                  if (item.source == _LoadSheetItemSource.saved)
-                                    IconButton(
-                                      tooltip:
-                                          'Delete ${item.savedEntry!.name}',
-                                      onPressed: () async {
-                                        final confirmed =
-                                            await _confirmDeleteSavedScore(
-                                              item.savedEntry!.name,
-                                            );
-                                        if (!confirmed) {
-                                          return;
-                                        }
-                                        await notifier.deleteSavedScore(
-                                          item.savedEntry!.id,
-                                        );
-                                      },
-                                      icon: const Icon(Icons.delete_outline),
-                                    ),
-                                ],
-                              ),
-                              onTap: () async {
-                                final confirmed = await _confirmLoad(item.name);
-                                if (!confirmed || !mounted || !sheetContext.mounted) {
-                                  return;
-                                }
-                                Navigator.of(sheetContext).pop();
-                                if (item.source == _LoadSheetItemSource.preset) {
-                                  await notifier.loadPresetScore(
-                                    item.presetEntry!.id,
-                                  );
-                                } else {
-                                  await notifier.loadSavedScore(
-                                    item.savedEntry!.id,
-                                  );
-                                }
-                                await _refreshWorkspaceAfterScoreChange();
-                              },
-                            );
-                          },
-                        ),
-                      ),
-                  ],
-                ),
-              );
-            },
-          ),
-        );
-      },
     );
   }
 
@@ -557,15 +299,11 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                           children: [
                             WorkspaceTopBar(
                               key: const ValueKey('workspace-top-bar'),
-                              scoreLabel: notifier.currentScoreLabel,
                               mode: _mode,
-                              rhythmTestEnabled:
-                                  notifier.score.notes.isNotEmpty ||
-                                  _mode == WorkspaceMode.rhythmTest,
+                              showsEditorActions: _mode == WorkspaceMode.compose,
                               hasUnsavedChanges: notifier.hasUnsavedChanges,
                               onGoHome: widget.onGoHome ?? () {},
                               onSelectMode: _switchMode,
-                              onLoad: _showLoadSheet,
                               onSave: _showSaveDialog,
                               onExport: _exportCurrentScore,
                             ),
@@ -734,26 +472,6 @@ class _ToolbarSection extends StatelessWidget {
       ),
     );
   }
-}
-
-enum _LoadSheetItemSource { preset, saved }
-
-class _LoadSheetItem {
-  const _LoadSheetItem.preset(this.presetEntry)
-    : savedEntry = null,
-      source = _LoadSheetItemSource.preset;
-
-  const _LoadSheetItem.saved(this.savedEntry)
-    : presetEntry = null,
-      source = _LoadSheetItemSource.saved;
-
-  final _LoadSheetItemSource source;
-  final PresetScoreEntry? presetEntry;
-  final SavedScoreEntry? savedEntry;
-
-  String get id => presetEntry?.id ?? savedEntry!.id;
-
-  String get name => presetEntry?.name ?? savedEntry!.name;
 }
 
 class _SaveScoreDialog extends StatefulWidget {

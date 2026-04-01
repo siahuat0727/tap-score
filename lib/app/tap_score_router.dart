@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../models/portable_score_document.dart';
+import '../models/score_library.dart';
 import '../screens/launch_screen.dart';
 import '../screens/workspace_screen.dart';
 import '../services/preset_score_repository.dart';
@@ -68,12 +70,19 @@ class TapScoreRouteInformationParser extends RouteInformationParser<Object> {
       }
 
       final mode = uri.queryParameters['mode']?.trim();
-      if (mode == null || mode == 'blank') {
+      if (mode == 'blank') {
         return const TapScoreWorkspaceRouteState(
           launchConfig: WorkspaceLaunchConfig.blank(),
           routeLocation: '/editor?mode=blank',
         );
       }
+
+      return const TapScoreWorkspaceRouteState(
+        launchConfig: WorkspaceLaunchConfig.restore(
+          initialMode: WorkspaceMode.compose,
+        ),
+        routeLocation: '/editor',
+      );
     }
 
     if (normalizedPath == '/practice') {
@@ -87,6 +96,13 @@ class TapScoreRouteInformationParser extends RouteInformationParser<Object> {
           routeLocation: uri.toString(),
         );
       }
+
+      return const TapScoreWorkspaceRouteState(
+        launchConfig: WorkspaceLaunchConfig.restore(
+          initialMode: WorkspaceMode.rhythmTest,
+        ),
+        routeLocation: '/practice',
+      );
     }
 
     return const TapScoreHomeRouteState();
@@ -123,6 +139,9 @@ class TapScoreRouterDelegate extends RouterDelegate<Object>
 
   bool get _isHomeRoute => _routeState is TapScoreHomeRouteState;
 
+  ScoreLibraryRepository get _scoreLibraryRepository =>
+      scoreLibraryRepository ?? SharedPreferencesScoreLibraryRepository();
+
   void showHome() {
     if (_isHomeRoute) {
       return;
@@ -142,6 +161,42 @@ class TapScoreRouterDelegate extends RouterDelegate<Object>
         initialMode: WorkspaceMode.rhythmTest,
       ),
     );
+  }
+
+  Future<void> showPracticeSaved(String savedScoreId) async {
+    final snapshot =
+        await _scoreLibraryRepository.loadSnapshot() ?? ScoreLibrarySnapshot.empty();
+    final entry = snapshot.savedScores.firstWhere(
+      (candidate) => candidate.id == savedScoreId,
+      orElse: () => throw ArgumentError.value(
+        savedScoreId,
+        'savedScoreId',
+        'Saved score does not exist',
+      ),
+    );
+    await _scoreLibraryRepository.saveSnapshot(
+      snapshot.copyWith(
+        draft: entry.score.copy(),
+        activeScoreId: () => entry.id,
+      ),
+    );
+    _showWorkspace(
+      const WorkspaceLaunchConfig.restore(
+        initialMode: WorkspaceMode.rhythmTest,
+      ),
+    );
+  }
+
+  Future<void> showImportedDocument(PortableScoreDocument document) async {
+    final snapshot =
+        await _scoreLibraryRepository.loadSnapshot() ?? ScoreLibrarySnapshot.empty();
+    await _scoreLibraryRepository.saveSnapshot(
+      snapshot.copyWith(
+        draft: document.score.copy(),
+        activeScoreId: () => null,
+      ),
+    );
+    _showWorkspace(WorkspaceLaunchConfig.imported(document));
   }
 
   void syncWorkspaceRoute(WorkspaceMode mode, String? shareablePresetId) {
@@ -186,8 +241,12 @@ class TapScoreRouterDelegate extends RouterDelegate<Object>
         key: const ValueKey('tap-score-home-page'),
         child: LaunchScreen(
           presetScoreRepository: presetScoreRepository,
+          scoreLibraryRepository: scoreLibraryRepository,
+          scoreTransferService: scoreTransferService,
           onStartBlank: showBlankWorkspace,
           onStartPracticePreset: showPracticePreset,
+          onStartPracticeSaved: showPracticeSaved,
+          onImportDocument: showImportedDocument,
         ),
       ),
       TapScoreWorkspaceRouteState(:final launchConfig) => MaterialPage<void>(

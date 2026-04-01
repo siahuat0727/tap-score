@@ -1,3 +1,4 @@
+import '../models/portable_score_document.dart';
 import 'score_seed_config.dart';
 
 enum WorkspaceMode { compose, rhythmTest }
@@ -7,6 +8,10 @@ class WorkspaceLaunchConfig {
     required this.seedConfig,
     required this.initialMode,
   });
+
+  const WorkspaceLaunchConfig.restore({required WorkspaceMode initialMode})
+    : seedConfig = const ScoreSeedConfig.restore(),
+      initialMode = initialMode;
 
   const WorkspaceLaunchConfig.blank()
     : seedConfig = const ScoreSeedConfig.blank(),
@@ -20,6 +25,12 @@ class WorkspaceLaunchConfig {
          initialMode: initialMode,
        );
 
+  WorkspaceLaunchConfig.imported(PortableScoreDocument document)
+    : this(
+        seedConfig: ScoreSeedConfig.imported(document),
+        initialMode: WorkspaceMode.compose,
+      );
+
   final ScoreSeedConfig seedConfig;
   final WorkspaceMode initialMode;
 
@@ -27,8 +38,12 @@ class WorkspaceLaunchConfig {
 
   bool get isBlank => seedConfig.isBlank;
 
-  String get routeLocation =>
-      routeLocationFor(mode: initialMode, presetId: presetId);
+  String get routeLocation {
+    if (seedConfig.isBlank) {
+      return '/editor?mode=blank';
+    }
+    return routeLocationFor(mode: initialMode, presetId: presetId);
+  }
 
   static String routeLocationFor({
     required WorkspaceMode mode,
@@ -42,6 +57,9 @@ class WorkspaceLaunchConfig {
       };
     }
 
-    return '/editor?mode=blank';
+    return switch (mode) {
+      WorkspaceMode.compose => '/editor',
+      WorkspaceMode.rhythmTest => '/practice',
+    };
   }
 }

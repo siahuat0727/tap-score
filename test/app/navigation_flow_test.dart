@@ -40,16 +40,16 @@ void main() {
     expect(notifier.score.notes, isEmpty);
   });
 
-  testWidgets('practice from preset opens the same workspace in rhythm test', (
+  testWidgets('practice opens the same workspace in rhythm test', (
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(_buildTestApp(presets: _presets));
     await tester.pump();
 
-    await tester.tap(find.byKey(const ValueKey('launch-preset-card')));
+    await tester.tap(find.byKey(const ValueKey('launch-practice-card')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
-    await tester.tap(find.byKey(const ValueKey('preset-option-preset-1')));
+    await tester.tap(find.byKey(const ValueKey('practice-preset-preset-1')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
 
@@ -71,10 +71,10 @@ void main() {
     await tester.pumpWidget(_buildTestApp(presets: _presets));
     await tester.pump();
 
-    await tester.tap(find.byKey(const ValueKey('launch-preset-card')));
+    await tester.tap(find.byKey(const ValueKey('launch-practice-card')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
-    await tester.tap(find.byKey(const ValueKey('preset-option-preset-1')));
+    await tester.tap(find.byKey(const ValueKey('practice-preset-preset-1')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
 
