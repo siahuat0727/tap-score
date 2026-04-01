@@ -48,6 +48,7 @@ class MatchedRhythmPair {
 
 class RhythmTimeline {
   final List<ExpectedRhythmEvent> expectedEvents;
+  final List<ScorePlaybackStep> playbackSteps;
   final List<ScheduledPlaybackNote> playbackNotes;
   final List<double> measureBoundaryTimesSeconds;
   final double totalDurationSeconds;
@@ -56,6 +57,7 @@ class RhythmTimeline {
 
   const RhythmTimeline({
     required this.expectedEvents,
+    this.playbackSteps = const <ScorePlaybackStep>[],
     required this.playbackNotes,
     required this.measureBoundaryTimesSeconds,
     required this.totalDurationSeconds,
@@ -138,6 +140,7 @@ class RhythmTestResult {
 
 class RhythmOverlayRenderData {
   final bool showExpectedEvents;
+  final bool shouldAutoFollowPlayback;
   final double elapsedRunSeconds;
   final double playheadTimeSeconds;
   final double countInDurationSeconds;
@@ -157,6 +160,7 @@ class RhythmOverlayRenderData {
 
   const RhythmOverlayRenderData({
     required this.showExpectedEvents,
+    required this.shouldAutoFollowPlayback,
     required this.elapsedRunSeconds,
     required this.playheadTimeSeconds,
     required this.countInDurationSeconds,
@@ -178,6 +182,7 @@ class RhythmOverlayRenderData {
   Map<String, dynamic> toPayload() {
     return {
       'showExpectedEvents': showExpectedEvents,
+      'shouldAutoFollowPlayback': shouldAutoFollowPlayback,
       'elapsedRunSeconds': elapsedRunSeconds,
       'playheadTimeSeconds': playheadTimeSeconds,
       'countInDurationSeconds': countInDurationSeconds,

@@ -18,6 +18,7 @@ typedef OnRendererReady =
 ///    ready to accept render commands.
 Widget buildScoreRenderer({
   required bool interactive,
+  required bool pointerInputEnabled,
   required OnScoreMessage onMessage,
   required OnRendererReady onReady,
 }) {

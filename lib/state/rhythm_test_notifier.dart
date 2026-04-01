@@ -9,7 +9,7 @@ import '../rhythm_test/rhythm_timeline_builder.dart';
 import '../services/audio_service.dart';
 import '../services/playback_schedule.dart';
 
-enum RhythmTestPhase { idle, countIn, running, finished, cancelled }
+enum RhythmTestPhase { idle, countIn, running, finished }
 
 class RhythmTestNotifier extends ChangeNotifier {
   static const Duration resultRevealLockDuration = Duration(seconds: 1);
@@ -57,12 +57,14 @@ class RhythmTestNotifier extends ChangeNotifier {
   int? _performanceStartMicros;
   int? _countInPulseIndex;
   int? _runningPulseIndex;
+  int _playbackNoteIndex = -1;
   double _elapsedRunSeconds = 0;
   double _playheadTimeSeconds = 0;
   final double _postRollPulseCount = 1.0;
   bool _restartLocked = false;
   Timer? _restartUnlockTimer;
   final Map<int, AudioNoteHandle> _activePlaybackHandles = {};
+  bool _resultCardVisible = true;
   bool _isDisposed = false;
 
   Score get score => _score;
@@ -99,6 +101,9 @@ class RhythmTestNotifier extends ChangeNotifier {
 
     return RhythmOverlayRenderData(
       showExpectedEvents: _phase == RhythmTestPhase.finished && _result != null,
+      shouldAutoFollowPlayback:
+          _phase == RhythmTestPhase.countIn ||
+          _phase == RhythmTestPhase.running,
       elapsedRunSeconds: _elapsedRunSeconds,
       playheadTimeSeconds: _playheadTimeSeconds,
       countInDurationSeconds: _timeline.countInDurationSeconds,
@@ -127,6 +132,8 @@ class RhythmTestNotifier extends ChangeNotifier {
 
   int? get runningPulseIndex => _runningPulseIndex;
 
+  int get playbackNoteIndex => _playbackNoteIndex;
+
   double get elapsedRunSeconds => _elapsedRunSeconds;
 
   double get playheadTimeSeconds => _playheadTimeSeconds;
@@ -146,7 +153,11 @@ class RhythmTestNotifier extends ChangeNotifier {
       _timeline.expectedEvents.isNotEmpty;
 
   bool get showCenteredResult =>
-      _isScoringResult || _scoringErrorMessage != null || _result != null;
+      _resultCardVisible &&
+      (_isScoringResult || _scoringErrorMessage != null || _result != null);
+
+  bool get canStop =>
+      _phase == RhythmTestPhase.countIn || _phase == RhythmTestPhase.running;
 
   int get resultErrorCount => _result?.errorCount ?? 0;
 
@@ -200,12 +211,15 @@ class RhythmTestNotifier extends ChangeNotifier {
     return 'Perfect';
   }
 
-  String get resultParameterHint =>
-      'BPM ${_score.bpm.round()} · Threshold ${_largeErrorThresholdBeats.toStringAsFixed(2)} beat · Shift $resultShiftLabel';
+  String get resultSummaryLabel =>
+      'BPM ${_score.bpm.round()} · Shift $resultShiftLabel';
+
+  String get largeOffsetThresholdLabel =>
+      '${_largeErrorThresholdBeats.toStringAsFixed(2)} beat';
 
   String get primaryActionLabel => isBusy ? 'Tap' : 'Start';
 
-  String? get primaryActionHint => isBusy ? 'Enter' : null;
+  String get primaryActionHint => 'Enter';
 
   bool get primaryActionEnabled => isBusy || canStart;
 
@@ -247,13 +261,12 @@ class RhythmTestNotifier extends ChangeNotifier {
     }
 
     _sessionId += 1;
-    _clearSessionData();
     _audioService.stopPlayback();
+    _resetSessionState(phase: RhythmTestPhase.countIn);
     _countInPulseIndex = 0;
     _runningPulseIndex = null;
     _elapsedRunSeconds = 0;
     _playheadTimeSeconds = -_timeline.countInDurationSeconds;
-    _phase = RhythmTestPhase.countIn;
     _emitChange();
 
     unawaited(_runSession(_sessionId));
@@ -294,36 +307,17 @@ class RhythmTestNotifier extends ChangeNotifier {
   }
 
   void stop() {
-    if (_phase == RhythmTestPhase.idle) {
+    if (_phase == RhythmTestPhase.idle &&
+        _tapEvents.isEmpty &&
+        _result == null &&
+        !_isScoringResult &&
+        _scoringErrorMessage == null) {
       return;
     }
 
     _sessionId += 1;
-    _restartUnlockTimer?.cancel();
-    _sessionStopwatch?.stop();
     _audioService.stopPlayback();
-    _phase = RhythmTestPhase.cancelled;
-    _countInPulseIndex = null;
-    _runningPulseIndex = null;
-    _playheadTimeSeconds = 0;
-    _restartLocked = false;
-    _emitChange();
-  }
-
-  void reset() {
-    if (isBusy) {
-      return;
-    }
-
-    _sessionId += 1;
-    _restartUnlockTimer?.cancel();
-    _audioService.stopPlayback();
-    _phase = RhythmTestPhase.idle;
-    _countInPulseIndex = null;
-    _runningPulseIndex = null;
-    _elapsedRunSeconds = 0;
-    _playheadTimeSeconds = 0;
-    _clearSessionData();
+    _resetSessionState(phase: RhythmTestPhase.idle);
     _emitChange();
   }
 
@@ -333,16 +327,10 @@ class RhythmTestNotifier extends ChangeNotifier {
     }
 
     _sessionId += 1;
-    _restartUnlockTimer?.cancel();
     _audioService.stopPlayback();
     _score.bpm = bpm.clamp(40, 240);
     _timeline = _timelineBuilder.build(_score);
-    _phase = RhythmTestPhase.idle;
-    _countInPulseIndex = null;
-    _runningPulseIndex = null;
-    _elapsedRunSeconds = 0;
-    _playheadTimeSeconds = 0;
-    _clearSessionData();
+    _resetSessionState(phase: RhythmTestPhase.idle);
     _emitChange();
   }
 
@@ -352,6 +340,14 @@ class RhythmTestNotifier extends ChangeNotifier {
     }
 
     _largeErrorThresholdBeats = beats.clamp(0.05, 0.5);
+    _emitChange();
+  }
+
+  void dismissResultCard() {
+    if (!_resultCardVisible) {
+      return;
+    }
+    _resultCardVisible = false;
     _emitChange();
   }
 
@@ -391,6 +387,7 @@ class RhythmTestNotifier extends ChangeNotifier {
     _phase = RhythmTestPhase.running;
     _countInPulseIndex = null;
     _runningPulseIndex = 0;
+    _playbackNoteIndex = _playbackNoteIndexForElapsed(0);
     _elapsedRunSeconds = 0;
     _playheadTimeSeconds = 0;
     _emitChange();
@@ -440,6 +437,7 @@ class RhythmTestNotifier extends ChangeNotifier {
 
     _elapsedRunSeconds = _timeline.totalDurationSeconds;
     _playheadTimeSeconds = _timeline.totalDurationSeconds;
+    _playbackNoteIndex = -1;
     _emitChange();
 
     final graceMicros = (pulseMicros * _postRollPulseCount).round();
@@ -520,6 +518,7 @@ class RhythmTestNotifier extends ChangeNotifier {
           .clamp(0, maxPulseIndex)
           .toInt();
       _runningPulseIndex = nextPulseIndex;
+      _playbackNoteIndex = _playbackNoteIndexForElapsed(nextElapsed);
     }
     _emitChange();
   }
@@ -528,10 +527,12 @@ class RhythmTestNotifier extends ChangeNotifier {
     _phase = RhythmTestPhase.finished;
     _runningPulseIndex = null;
     _countInPulseIndex = null;
+    _playbackNoteIndex = -1;
     _result = null;
     _isScoringResult = true;
     _scoringErrorMessage = null;
     _restartLocked = true;
+    _resultCardVisible = true;
     _restartUnlockTimer?.cancel();
     _emitChange();
     unawaited(_scoreResult(sessionId));
@@ -559,6 +560,7 @@ class RhythmTestNotifier extends ChangeNotifier {
 
       _result = result;
       _isScoringResult = false;
+      _resultCardVisible = true;
       _restartUnlockTimer = Timer(resultRevealLockDuration, () {
         if (sessionId != _sessionId || _phase != RhythmTestPhase.finished) {
           return;
@@ -577,6 +579,7 @@ class RhythmTestNotifier extends ChangeNotifier {
       _isScoringResult = false;
       _restartLocked = false;
       _scoringErrorMessage = 'Rhythm test result calculation failed: $error';
+      _resultCardVisible = true;
       _emitChange();
     }
   }
@@ -588,18 +591,44 @@ class RhythmTestNotifier extends ChangeNotifier {
     notifyListeners();
   }
 
-  void _clearSessionData() {
+  void _resetSessionState({required RhythmTestPhase phase}) {
     _restartUnlockTimer?.cancel();
+    _sessionStopwatch?.stop();
+    _phase = phase;
+    _countInPulseIndex = null;
+    _runningPulseIndex = null;
+    _playbackNoteIndex = -1;
+    _elapsedRunSeconds = 0;
+    _playheadTimeSeconds = 0;
     _result = null;
     _isScoringResult = false;
     _scoringErrorMessage = null;
+    _resultCardVisible = true;
     _tapEvents.clear();
     _nextTapId = 0;
     _performanceStartMicros = null;
     _sessionStopwatch = null;
-    _playheadTimeSeconds = 0;
     _restartLocked = false;
     _activePlaybackHandles.clear();
+  }
+
+  int _playbackNoteIndexForElapsed(double elapsedSeconds) {
+    if (elapsedSeconds < 0 ||
+        elapsedSeconds >= _timeline.totalDurationSeconds) {
+      return -1;
+    }
+
+    for (final step in _timeline.playbackSteps) {
+      final endSeconds = step.startSeconds + step.durationSeconds;
+      if (elapsedSeconds < step.startSeconds) {
+        break;
+      }
+      if (elapsedSeconds < endSeconds) {
+        return step.noteIndex;
+      }
+    }
+
+    return -1;
   }
 
   List<_ScheduledRunEvent> _buildScheduledRunEvents({

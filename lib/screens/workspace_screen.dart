@@ -210,7 +210,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     }
 
     if (key == 'Enter' || code == 'Enter' || code == 'NumpadEnter') {
-      _rhythmTestNotifier?.recordTap();
+      _rhythmTestNotifier?.performPrimaryAction();
       return true;
     }
 
@@ -223,7 +223,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
         final key = event.logicalKey;
         if (key == LogicalKeyboardKey.enter ||
             key == LogicalKeyboardKey.numpadEnter) {
-          _rhythmTestNotifier?.recordTap();
+          _rhythmTestNotifier?.performPrimaryAction();
           return KeyEventResult.handled;
         }
       }
@@ -300,7 +300,8 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                             WorkspaceTopBar(
                               key: const ValueKey('workspace-top-bar'),
                               mode: _mode,
-                              showsEditorActions: _mode == WorkspaceMode.compose,
+                              showsEditorActions:
+                                  _mode == WorkspaceMode.compose,
                               hasUnsavedChanges: notifier.hasUnsavedChanges,
                               onGoHome: widget.onGoHome ?? () {},
                               onSelectMode: _switchMode,
@@ -407,7 +408,9 @@ class _ComposeToolbarLayout extends StatelessWidget {
           tempoEnabled: !notifier.isPlaying,
         );
 
-        final toolbarControls = const ToolbarEditStrip(padding: EdgeInsets.zero);
+        final toolbarControls = const ToolbarEditStrip(
+          padding: EdgeInsets.zero,
+        );
         final isCompact = constraints.maxWidth < 1100;
 
         return Padding(
@@ -693,10 +696,7 @@ class _WorkspaceLoadingView extends StatelessWidget {
 }
 
 class _WorkspaceUnavailableView extends StatelessWidget {
-  const _WorkspaceUnavailableView({
-    required this.title,
-    required this.message,
-  });
+  const _WorkspaceUnavailableView({required this.title, required this.message});
 
   final String title;
   final String message;

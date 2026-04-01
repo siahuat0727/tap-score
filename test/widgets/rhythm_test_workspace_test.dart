@@ -107,9 +107,12 @@ void main() {
       expect(find.text('Failed'), findsOneWidget);
       expect(find.text('Mistakes'), findsOneWidget);
       expect(find.text('Max abs error'), findsOneWidget);
-      expect(find.text('Large Offsets'), findsOneWidget);
+      expect(find.text('Large offsets'), findsOneWidget);
       expect(find.text('Matched'), findsNothing);
-      expect(find.textContaining('Threshold 0.10 beat'), findsOneWidget);
+      expect(
+        find.textContaining('Large-offset threshold 0.10 beat'),
+        findsOneWidget,
+      );
       expect(find.textContaining('Shift +0.00 beat'), findsOneWidget);
 
       final workspaceRect = tester.getRect(find.byType(RhythmTestWorkspace));
@@ -133,6 +136,71 @@ void main() {
       );
     },
   );
+
+  testWidgets('stop button is visible during play and restores idle UI', (
+    WidgetTester tester,
+  ) async {
+    final notifier = _buildNotifier();
+    addTearDown(notifier.dispose);
+    await notifier.init();
+
+    await tester.pumpWidget(_wrap(notifier));
+    await tester.pump();
+
+    await tester.runAsync(() async {
+      await notifier.performPrimaryAction();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    });
+    await tester.pump();
+
+    expect(find.byKey(const ValueKey('rhythm-test-stop')), findsOneWidget);
+    expect(find.textContaining('Tap'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('rhythm-test-stop')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 240));
+
+    expect(notifier.phase, RhythmTestPhase.idle);
+    expect(notifier.tapEvents, isEmpty);
+    expect(notifier.result, isNull);
+    expect(find.byKey(const ValueKey('rhythm-test-stop')), findsNothing);
+    expect(find.text('Start'), findsOneWidget);
+    expect(find.byKey(const ValueKey('rhythm-test-result-card')), findsNothing);
+  });
+
+  testWidgets('result summary can be closed without clearing rendered result', (
+    WidgetTester tester,
+  ) async {
+    final notifier = _buildNotifier();
+    addTearDown(notifier.dispose);
+    await notifier.init();
+
+    await tester.pumpWidget(_wrap(notifier));
+    await tester.pump();
+
+    await tester.runAsync(() async {
+      await notifier.performPrimaryAction();
+      await Future<void>.delayed(const Duration(milliseconds: 900));
+    });
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey('rhythm-test-result-card')),
+      findsOneWidget,
+    );
+    expect(notifier.result, isNotNull);
+    expect(
+      find.byKey(const ValueKey('rhythm-test-result-close')),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.byKey(const ValueKey('rhythm-test-result-close')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 240));
+
+    expect(find.byKey(const ValueKey('rhythm-test-result-card')), findsNothing);
+    expect(notifier.result, isNotNull);
+  });
 
   testWidgets('workspace shows loading card before the final result card', (
     WidgetTester tester,

@@ -21,12 +21,14 @@ class ScoreViewWidget extends StatefulWidget {
     this.interactive = true,
     this.onRendererKeyDown,
     this.rhythmOverlay,
+    this.playbackIndex,
     super.key,
   });
 
   final bool interactive;
   final bool Function(String? key, String? code)? onRendererKeyDown;
   final RhythmOverlayRenderData? rhythmOverlay;
+  final int? playbackIndex;
 
   @override
   State<ScoreViewWidget> createState() => _ScoreViewWidgetState();
@@ -128,6 +130,8 @@ class _ScoreViewWidgetState extends State<ScoreViewWidget> {
       title += ' \u2022';
     }
 
+    final playbackIndex = widget.playbackIndex ?? notifier.playbackIndex;
+
     send({
       'type': 'render',
       'beatsPerMeasure': score.beatsPerMeasure,
@@ -138,7 +142,7 @@ class _ScoreViewWidgetState extends State<ScoreViewWidget> {
       'notes': notesList,
       'selectedIndex': notifier.selectedIndex ?? -1,
       'cursorIndex': notifier.cursorIndex,
-      'playbackIndex': notifier.playbackIndex,
+      'playbackIndex': playbackIndex,
       'selectionKind': notifier.selectionKind?.name ?? '',
       'rhythmTest': widget.rhythmOverlay?.toPayload(),
       'title': title,
@@ -164,6 +168,9 @@ class _ScoreViewWidgetState extends State<ScoreViewWidget> {
 
   @override
   Widget build(BuildContext context) {
+    final pointerInputEnabled =
+        widget.interactive || widget.rhythmOverlay != null;
+
     return Consumer<ScoreNotifier>(
       builder: (context, notifier, child) {
         // Trigger re-render whenever score state changes.
@@ -197,6 +204,7 @@ class _ScoreViewWidgetState extends State<ScoreViewWidget> {
       // Build the platform renderer once — it survives Consumer rebuilds.
       child: buildScoreRenderer(
         interactive: widget.interactive,
+        pointerInputEnabled: pointerInputEnabled,
         onMessage: _onJsMessage,
         onReady: (sendRender) {
           setState(() => _sendRender = sendRender);

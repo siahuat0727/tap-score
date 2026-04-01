@@ -39,29 +39,21 @@ class RhythmTestWorkspace extends StatelessWidget {
                           interactive: false,
                           onRendererKeyDown: onRendererKeyDown,
                           rhythmOverlay: notifier.overlayRenderData,
+                          playbackIndex: notifier.playbackNoteIndex,
                         ),
                       ),
                       Positioned.fill(
-                        child: IgnorePointer(
-                          child: Align(
-                            alignment: const Alignment(0, 0.72),
-                            child: Padding(
-                              padding: const EdgeInsets.fromLTRB(
-                                20,
-                                32,
-                                20,
-                                28,
-                              ),
-                              child: AnimatedSwitcher(
-                                duration: const Duration(milliseconds: 180),
-                                child: notifier.showCenteredResult
-                                    ? const _RhythmTestResultCard(
-                                        key: ValueKey(
-                                          'rhythm-test-result-card',
-                                        ),
-                                      )
-                                    : const SizedBox.shrink(),
-                              ),
+                        child: Align(
+                          alignment: const Alignment(0, 0.72),
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(20, 32, 20, 28),
+                            child: AnimatedSwitcher(
+                              duration: const Duration(milliseconds: 180),
+                              child: notifier.showCenteredResult
+                                  ? const _RhythmTestResultCard(
+                                      key: ValueKey('rhythm-test-result-card'),
+                                    )
+                                  : const SizedBox.shrink(),
                             ),
                           ),
                         ),
@@ -94,56 +86,85 @@ class _RhythmTestResultCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final notifier = context.watch<RhythmTestNotifier>();
-    if (notifier.isScoringResult) {
-      return _ResultCardShell(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: const [
-            SizedBox(
-              width: 28,
-              height: 28,
-              child: CircularProgressIndicator(strokeWidth: 3),
-            ),
-            SizedBox(height: 14),
-            Text(
-              'Calculating result…',
-              style: TextStyle(
-                color: _textColor,
-                fontSize: 22,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-          ],
+    final canDismiss =
+        (!notifier.isScoringResult && notifier.scoringErrorMessage != null) ||
+        notifier.result != null;
+
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        IgnorePointer(
+          child: _ResultCardShell(child: _buildBody(context, notifier)),
         ),
+        if (canDismiss)
+          Positioned(
+            top: 12,
+            right: 12,
+            child: IconButton(
+              key: const ValueKey('rhythm-test-result-close'),
+              onPressed: () =>
+                  context.read<RhythmTestNotifier>().dismissResultCard(),
+              style: IconButton.styleFrom(
+                backgroundColor: AppColors.surfaceContainerHigh.withAlpha(235),
+                foregroundColor: AppColors.textDark,
+                minimumSize: const Size(36, 36),
+                padding: EdgeInsets.zero,
+              ),
+              icon: const Icon(Icons.close_rounded, size: 18),
+              tooltip: 'Hide summary',
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildBody(BuildContext context, RhythmTestNotifier notifier) {
+    if (notifier.isScoringResult) {
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        children: const [
+          SizedBox(
+            width: 28,
+            height: 28,
+            child: CircularProgressIndicator(strokeWidth: 3),
+          ),
+          SizedBox(height: 14),
+          Text(
+            'Calculating result…',
+            style: TextStyle(
+              color: _textColor,
+              fontSize: 22,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
       );
     }
 
     if (notifier.scoringErrorMessage != null) {
-      return _ResultCardShell(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Scoring Error',
-              style: TextStyle(
-                color: _failureColor,
-                fontSize: 24,
-                fontWeight: FontWeight.w900,
-              ),
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Scoring Error',
+            style: TextStyle(
+              color: _failureColor,
+              fontSize: 24,
+              fontWeight: FontWeight.w900,
             ),
-            const SizedBox(height: 10),
-            Text(
-              notifier.scoringErrorMessage!,
-              style: const TextStyle(
-                color: _textColor,
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                height: 1.4,
-              ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            notifier.scoringErrorMessage!,
+            style: const TextStyle(
+              color: _textColor,
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              height: 1.4,
             ),
-          ],
-        ),
+          ),
+        ],
       );
     }
 
@@ -163,85 +184,85 @@ class _RhythmTestResultCard extends StatelessWidget {
       _ => _failureColor,
     };
 
-    return _ResultCardShell(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Text(
-                  notifier.resultStatusLabel,
-                  style: TextStyle(
-                    color: statusColor,
-                    fontSize: 28,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 0.2,
-                  ),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Text(
+                notifier.resultStatusLabel,
+                style: TextStyle(
+                  color: statusColor,
+                  fontSize: 28,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 0.2,
                 ),
               ),
-              Flexible(
-                child: Text(
-                  notifier.resultParameterHint,
-                  key: const ValueKey('rhythm-test-result-params'),
-                  textAlign: TextAlign.right,
-                  style: const TextStyle(
-                    color: AppColors.textTertiary,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    height: 1.35,
-                  ),
+            ),
+            Flexible(
+              child: Text(
+                notifier.resultSummaryLabel,
+                key: const ValueKey('rhythm-test-result-params'),
+                textAlign: TextAlign.right,
+                style: const TextStyle(
+                  color: AppColors.textTertiary,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  height: 1.35,
                 ),
               ),
-            ],
-          ),
-          const SizedBox(height: 18),
-          Row(
-            children: [
-              Expanded(
-                child: _PrimaryMetric(
-                  key: const ValueKey('rhythm-test-mistakes'),
-                  label: 'Mistakes',
-                  value: notifier.resultErrorCountLabel,
-                  valueColor: mistakesColor,
-                ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 18),
+        Row(
+          children: [
+            Expanded(
+              child: _PrimaryMetric(
+                key: const ValueKey('rhythm-test-mistakes'),
+                label: 'Mistakes',
+                value: notifier.resultErrorCountLabel,
+                valueColor: mistakesColor,
               ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: _PrimaryMetric(
-                  key: const ValueKey('rhythm-test-large-offsets'),
-                  label: 'Large Offsets',
-                  value: notifier.resultLargeErrorCountLabel,
-                  valueColor: largeOffsetsColor,
-                ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: _PrimaryMetric(
+                key: const ValueKey('rhythm-test-large-offsets'),
+                label: 'Large offsets',
+                value: notifier.resultLargeErrorCountLabel,
+                valueColor: largeOffsetsColor,
+                detail:
+                    'Large-offset threshold ${notifier.largeOffsetThresholdLabel}',
               ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: _SecondaryMetric(
-                  label: 'Avg abs error',
-                  value: notifier.resultAverageErrorBeats == null
-                      ? 'No matches'
-                      : '${notifier.resultAverageErrorBeats!.toStringAsFixed(2)} beat',
-                ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            Expanded(
+              child: _SecondaryMetric(
+                label: 'Avg abs error',
+                value: notifier.resultAverageErrorBeats == null
+                    ? 'No matches'
+                    : '${notifier.resultAverageErrorBeats!.toStringAsFixed(2)} beat',
               ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: _SecondaryMetric(
-                  label: 'Max abs error',
-                  value: notifier.resultMaxErrorBeats == null
-                      ? 'No matches'
-                      : '${notifier.resultMaxErrorBeats!.toStringAsFixed(2)} beat',
-                ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: _SecondaryMetric(
+                label: 'Max abs error',
+                value: notifier.resultMaxErrorBeats == null
+                    ? 'No matches'
+                    : '${notifier.resultMaxErrorBeats!.toStringAsFixed(2)} beat',
               ),
-            ],
-          ),
-        ],
-      ),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }
@@ -283,11 +304,13 @@ class _PrimaryMetric extends StatelessWidget {
     required this.label,
     required this.value,
     required this.valueColor,
+    this.detail,
   });
 
   final String label;
   final String value;
   final Color valueColor;
+  final String? detail;
 
   @override
   Widget build(BuildContext context) {
@@ -322,6 +345,19 @@ class _PrimaryMetric extends StatelessWidget {
                 fontWeight: FontWeight.w900,
               ),
             ),
+            if (detail != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                detail!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: AppColors.textTertiary,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  height: 1.35,
+                ),
+              ),
+            ],
           ],
         ),
       ),

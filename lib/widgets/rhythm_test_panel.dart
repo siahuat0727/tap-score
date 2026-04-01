@@ -56,7 +56,7 @@ class RhythmTestPanel extends StatelessWidget {
                                 Expanded(child: parameters),
                                 const SizedBox(width: 18),
                                 Expanded(
-                                  child: _PrimaryActionButton(
+                                  child: _ActionGroup(
                                     notifier: notifier,
                                     compact: false,
                                     wide: true,
@@ -78,7 +78,7 @@ class RhythmTestPanel extends StatelessWidget {
                           ],
                           Expanded(child: Center(child: parameters)),
                           const SizedBox(height: 8),
-                          _PrimaryActionButton(
+                          _ActionGroup(
                             notifier: notifier,
                             compact: true,
                             wide: false,
@@ -96,7 +96,7 @@ class RhythmTestPanel extends StatelessWidget {
                         ],
                         parameters,
                         const SizedBox(height: 16),
-                        _PrimaryActionButton(
+                        _ActionGroup(
                           notifier: notifier,
                           compact: false,
                           wide: false,
@@ -177,7 +177,7 @@ class _ParameterColumn extends StatelessWidget {
         final thresholdStrip = _ParameterStrip(
           controlKeyPrefix: 'rhythm-test-threshold',
           key: const ValueKey('rhythm-test-threshold'),
-          label: 'Large offset',
+          label: 'Large-offset threshold',
           valueLabel: '${largeErrorThresholdBeats.toStringAsFixed(2)} beat',
           value: largeErrorThresholdBeats,
           min: 0.05,
@@ -274,7 +274,7 @@ class _ParameterStrip extends StatelessWidget {
                   if (!ultraCompact) const SizedBox(height: 2),
                   Text(
                     valueLabel,
-                    key: ValueKey('${controlKeyPrefix}-value'),
+                    key: ValueKey('$controlKeyPrefix-value'),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
@@ -291,7 +291,7 @@ class _ParameterStrip extends StatelessWidget {
               enabled: enabled,
               compact: compact,
               ultraCompact: ultraCompact,
-              buttonKey: ValueKey('${controlKeyPrefix}-decrement'),
+              buttonKey: ValueKey('$controlKeyPrefix-decrement'),
               onPressed: () => onChanged((value - step).clamp(min, max)),
             );
             final incrementButton = _AdjustButton(
@@ -299,7 +299,7 @@ class _ParameterStrip extends StatelessWidget {
               enabled: enabled,
               compact: compact,
               ultraCompact: ultraCompact,
-              buttonKey: ValueKey('${controlKeyPrefix}-increment'),
+              buttonKey: ValueKey('$controlKeyPrefix-increment'),
               onPressed: () => onChanged((value + step).clamp(min, max)),
             );
             final slider = Expanded(
@@ -406,8 +406,8 @@ class _PrimaryActionButton extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            compact && notifier.primaryActionHint != null
-                ? '${notifier.primaryActionLabel} · ${notifier.primaryActionHint!}'
+            compact
+                ? '${notifier.primaryActionLabel} · ${notifier.primaryActionHint}'
                 : notifier.primaryActionLabel,
             style: TextStyle(
               fontSize: wide ? 34 : (compact ? 18 : 24),
@@ -415,10 +415,10 @@ class _PrimaryActionButton extends StatelessWidget {
               letterSpacing: 0.3,
             ),
           ),
-          if (!compact && notifier.primaryActionHint != null) ...[
+          if (!compact) ...[
             SizedBox(height: wide ? 8 : 4),
             Text(
-              notifier.primaryActionHint!,
+              notifier.primaryActionHint,
               style: TextStyle(
                 fontSize: wide ? 14 : 12,
                 fontWeight: FontWeight.w700,
@@ -439,6 +439,99 @@ class _PrimaryActionButton extends StatelessWidget {
       width: double.infinity,
       height: compact ? 56 : 92,
       child: button,
+    );
+  }
+}
+
+class _ActionGroup extends StatelessWidget {
+  const _ActionGroup({
+    required this.notifier,
+    required this.compact,
+    required this.wide,
+  });
+
+  final RhythmTestNotifier notifier;
+  final bool compact;
+  final bool wide;
+
+  @override
+  Widget build(BuildContext context) {
+    if (wide) {
+      return Stack(
+        children: [
+          Positioned.fill(
+            child: _PrimaryActionButton(
+              notifier: notifier,
+              compact: compact,
+              wide: wide,
+            ),
+          ),
+          if (notifier.canStop)
+            Positioned(
+              top: 10,
+              right: 10,
+              child: _StopActionButton(compact: compact),
+            ),
+        ],
+      );
+    }
+
+    if (!notifier.canStop) {
+      return _PrimaryActionButton(
+        notifier: notifier,
+        compact: compact,
+        wide: wide,
+      );
+    }
+
+    return SizedBox(
+      height: compact ? 56 : 92,
+      child: Row(
+        children: [
+          Expanded(
+            child: _PrimaryActionButton(
+              notifier: notifier,
+              compact: compact,
+              wide: wide,
+            ),
+          ),
+          const SizedBox(width: 10),
+          _StopActionButton(compact: compact),
+        ],
+      ),
+    );
+  }
+}
+
+class _StopActionButton extends StatelessWidget {
+  const _StopActionButton({required this.compact});
+
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton.icon(
+      key: const ValueKey('rhythm-test-stop'),
+      onPressed: () => context.read<RhythmTestNotifier>().stop(),
+      style: OutlinedButton.styleFrom(
+        minimumSize: Size(compact ? 86 : 108, compact ? 56 : 92),
+        padding: EdgeInsets.symmetric(
+          horizontal: compact ? 14 : 18,
+          vertical: compact ? 10 : 14,
+        ),
+        foregroundColor: AppColors.textDark,
+        side: const BorderSide(color: AppColors.surfaceBorder),
+        backgroundColor: AppColors.surfaceContainerHigh,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+      ),
+      icon: Icon(Icons.stop_rounded, size: compact ? 18 : 20),
+      label: Text(
+        'Stop',
+        style: TextStyle(
+          fontSize: compact ? 15 : 17,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
     );
   }
 }

@@ -37,6 +37,7 @@ class RhythmTimelineBuilder {
 
     return RhythmTimeline(
       expectedEvents: expectedEvents,
+      playbackSteps: playbackTimeline.steps,
       playbackNotes: playbackTimeline.playbackNotes,
       measureBoundaryTimesSeconds: measureBoundaries,
       totalDurationSeconds: playbackTimeline.totalDurationSeconds,

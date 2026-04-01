@@ -342,7 +342,7 @@ void main() {
     },
   );
 
-  test('reset during scoring discards the stale result', () async {
+  test('stop during scoring discards the stale result', () async {
     final scoringGate = Completer<void>();
     final notifier = RhythmTestNotifier(
       score: Score(
@@ -390,7 +390,7 @@ void main() {
 
     expect(notifier.isScoringResult, isTrue);
 
-    notifier.reset();
+    notifier.stop();
     scoringGate.complete();
     await Future<void>.delayed(const Duration(milliseconds: 20));
 
@@ -441,8 +441,8 @@ void main() {
       expect(notifier.resultAverageErrorBeats, isNull);
       expect(notifier.resultMaxErrorBeats, isNull);
       expect(notifier.resultStatusLabel, 'Failed');
-      expect(notifier.resultParameterHint, contains('BPM 120'));
-      expect(notifier.resultParameterHint, contains('Threshold 0.10 beat'));
+      expect(notifier.resultSummaryLabel, contains('BPM 120'));
+      expect(notifier.largeOffsetThresholdLabel, '0.10 beat');
       expect(notifier.overlayRenderData.errorLabelThresholdBeats, 0.05);
       expect(notifier.overlayRenderData.largeErrorThresholdBeats, 0.1);
       expect(notifier.overlayRenderData.missedExpectedNoteIndices, [0]);
