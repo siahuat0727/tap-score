@@ -37,6 +37,8 @@ class RhythmTestWorkspace extends StatelessWidget {
                       Positioned.fill(
                         child: ScoreViewWidget(
                           interactive: false,
+                          blockRendererPointerInput:
+                              notifier.showCenteredResult,
                           onRendererKeyDown: onRendererKeyDown,
                           rhythmOverlay: notifier.overlayRenderData,
                           playbackIndex: notifier.playbackNoteIndex,
@@ -93,9 +95,7 @@ class _RhythmTestResultCard extends StatelessWidget {
     return Stack(
       clipBehavior: Clip.none,
       children: [
-        IgnorePointer(
-          child: _ResultCardShell(child: _buildBody(context, notifier)),
-        ),
+        _ResultCardShell(child: _buildBody(context, notifier)),
         if (canDismiss)
           Positioned(
             top: 12,

@@ -73,8 +73,15 @@ void main() {
 
       expect(
         source,
-        contains("..pointerEvents = widget.interactive ? 'auto' : 'none';"),
+        contains(
+          "..pointerEvents = widget.pointerInputEnabled ? 'auto' : 'none';",
+        ),
       );
+      expect(
+        source,
+        contains('void didUpdateWidget(covariant _WebScoreRenderer oldWidget)'),
+      );
+      expect(source, contains('_syncPointerInputState();'));
     },
   );
 
@@ -84,6 +91,12 @@ void main() {
     expect(html, contains('function _drawRhythmOverlay('));
     expect(html, contains('function _buildRhythmMeasureSegments('));
     expect(html, contains('function _drawRhythmErrorLabels('));
+    expect(html, contains("const overlayPhase = rhythmTest.phase || 'idle';"));
+    expect(html, contains("const showsPlayhead = overlayPhase === 'live';"));
+    expect(
+      html,
+      contains("const showsResultOverlay = overlayPhase === 'result';"),
+    );
     expect(
       html,
       contains(
@@ -96,7 +109,11 @@ void main() {
         'const largeErrorThresholdBeats = rhythmTest.largeErrorThresholdBeats;',
       ),
     );
-    expect(html, contains('rhythmTest.showExpectedEvents'));
+    expect(html, contains('for (const tap of rhythmTest.liveTapEvents) {'));
+    expect(html, contains('for (const tap of rhythmTest.resultTapEvents) {'));
+    expect(html, contains('if (!showsResultOverlay) {'));
+    expect(html, contains('if (showsPlayhead) {'));
+    expect(html, isNot(contains('rhythmTest.showExpectedEvents')));
     expect(html, contains('rhythmTest.liveTapEvents'));
     expect(html, contains('rhythmTest.resultTapEvents'));
     expect(html, contains('rhythmTest.largeErrorNoteIndices'));
@@ -135,6 +152,12 @@ void main() {
     expect(html, contains('transform'));
     expect(html, contains('rotate(-60'));
     expect(html, contains("text.setAttribute('text-anchor', 'middle');"));
+    expect(html, contains("group.setAttribute(\n        'transform',"));
+    expect(
+      html,
+      isNot(contains("const pointer = document.createElementNS(ns, 'path');")),
+    );
+    expect(html, isNot(contains('pointer.setAttribute(')));
     expect(html, contains('function _xForRhythmTime('));
     expect(html, contains('leadInStartX,'));
     expect(html, contains('timeZeroX,'));

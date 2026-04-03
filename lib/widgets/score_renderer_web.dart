@@ -70,6 +70,14 @@ class _WebScoreRendererState extends State<_WebScoreRenderer> {
     web.window.addEventListener('message', _jsMessageHandler);
   }
 
+  @override
+  void didUpdateWidget(covariant _WebScoreRenderer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.pointerInputEnabled != widget.pointerInputEnabled) {
+      _syncPointerInputState();
+    }
+  }
+
   void _onWindowMessage(web.Event event) {
     final msgEvent = event as web.MessageEvent;
     try {
@@ -92,6 +100,14 @@ class _WebScoreRendererState extends State<_WebScoreRenderer> {
     if (_iframe == null) return;
     final jsonStr = jsonEncode(payload);
     _iframe!.contentWindow?.postMessage(jsonStr.toJS, '*'.toJS);
+  }
+
+  void _syncPointerInputState() {
+    final iframe = _iframe;
+    if (iframe == null) {
+      return;
+    }
+    iframe.style.pointerEvents = widget.pointerInputEnabled ? 'auto' : 'none';
   }
 
   @override

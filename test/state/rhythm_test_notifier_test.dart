@@ -108,6 +108,7 @@ void main() {
 
       expect(notifier.tapEvents, hasLength(1));
       expect(notifier.tapEvents.single.timeSeconds, lessThan(0));
+      expect(notifier.overlayRenderData.phase, RhythmOverlayRenderPhase.live);
       expect(
         notifier.overlayRenderData.countInDurationSeconds,
         closeTo(0.4, 0.0001),
@@ -332,6 +333,10 @@ void main() {
       expect(notifier.result, isNull);
       expect(notifier.showCenteredResult, isTrue);
       expect(notifier.restartLocked, isTrue);
+      expect(
+        notifier.overlayRenderData.phase,
+        RhythmOverlayRenderPhase.pendingResult,
+      );
 
       scoringGate.complete();
       await Future<void>.delayed(const Duration(milliseconds: 20));
@@ -398,6 +403,7 @@ void main() {
     expect(notifier.isScoringResult, isFalse);
     expect(notifier.result, isNull);
     expect(notifier.showCenteredResult, isFalse);
+    expect(notifier.overlayRenderData.phase, RhythmOverlayRenderPhase.idle);
   });
 
   test(
@@ -443,9 +449,86 @@ void main() {
       expect(notifier.resultStatusLabel, 'Failed');
       expect(notifier.resultSummaryLabel, contains('BPM 120'));
       expect(notifier.largeOffsetThresholdLabel, '0.10 beat');
+      expect(notifier.overlayRenderData.phase, RhythmOverlayRenderPhase.result);
       expect(notifier.overlayRenderData.errorLabelThresholdBeats, 0.05);
       expect(notifier.overlayRenderData.largeErrorThresholdBeats, 0.1);
       expect(notifier.overlayRenderData.missedExpectedNoteIndices, [0]);
+    },
+  );
+
+  test(
+    'overlay phase stays pending until scoring data exists, then switches to result',
+    () async {
+      final scoringGate = Completer<void>();
+      final notifier = RhythmTestNotifier(
+        score: Score(
+          bpm: 120,
+          notes: const [Note(midi: 60, duration: NoteDuration.quarter)],
+        ),
+        audioService: _FakeAudioService(),
+        timelineBuilder: _FixedTimelineBuilder(
+          const RhythmTimeline(
+            expectedEvents: [
+              ExpectedRhythmEvent(id: 1, noteIndex: 0, timeSeconds: 0),
+            ],
+            playbackNotes: [
+              RhythmMelodyEvent(
+                noteIndex: 0,
+                midi: 60,
+                startSeconds: 0,
+                durationSeconds: 0.2,
+              ),
+            ],
+            measureBoundaryTimesSeconds: [0, 0.2],
+            totalDurationSeconds: 0.2,
+            pulseDurationSeconds: 0.1,
+            pulsesPerMeasure: 4,
+          ),
+        ),
+        matcher: _FixedMatcher(
+          const RhythmTestResult(
+            matchedPairs: [
+              MatchedRhythmPair(
+                expected: ExpectedRhythmEvent(
+                  id: 1,
+                  noteIndex: 0,
+                  timeSeconds: 0,
+                ),
+                tap: TapInputEvent(id: 1, timeSeconds: 0.01),
+                errorSeconds: 0.01,
+              ),
+            ],
+            unmatchedExpectedEvents: [],
+            unmatchedTapEvents: [],
+            matchingWindowSeconds: 0.1,
+            appliedShiftSeconds: 0,
+          ),
+        ),
+        waitBeforeScoring: () => scoringGate.future,
+      );
+
+      addTearDown(notifier.dispose);
+
+      await notifier.start();
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      notifier.recordTap();
+      await Future<void>.delayed(const Duration(milliseconds: 830));
+
+      expect(notifier.phase, RhythmTestPhase.finished);
+      expect(notifier.result, isNull);
+      expect(
+        notifier.overlayRenderData.phase,
+        RhythmOverlayRenderPhase.pendingResult,
+      );
+      expect(notifier.overlayRenderData.liveTapEvents, hasLength(1));
+      expect(notifier.overlayRenderData.resultTapEvents, isEmpty);
+
+      scoringGate.complete();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      expect(notifier.result, isNotNull);
+      expect(notifier.overlayRenderData.phase, RhythmOverlayRenderPhase.result);
+      expect(notifier.overlayRenderData.resultTapEvents, hasLength(1));
     },
   );
 

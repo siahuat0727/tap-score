@@ -673,16 +673,9 @@
       }
 
       const ns = svg.namespaceURI;
-      const expectedById = new Map();
-      const resultTapById = new Map();
-      const matchedPairByExpectedId = new Map();
-      const matchedPairByTapId = new Map();
-      const matchedExpectedIds = new Set();
-      const matchedTapIds = new Set();
-      const labelCandidates = [];
-      const inspectionItems = new Map();
-      const errorLabelThresholdBeats = rhythmTest.errorLabelThresholdBeats;
-      const largeErrorThresholdBeats = rhythmTest.largeErrorThresholdBeats;
+      const overlayPhase = rhythmTest.phase || 'idle';
+      const showsPlayhead = overlayPhase === 'live';
+      const showsResultOverlay = overlayPhase === 'result';
       const measureSegments = _buildRhythmMeasureSegments(
         measureRenderData,
         rhythmTest.measureBoundaryTimesSeconds,
@@ -692,23 +685,12 @@
         return null;
       }
 
-      for (const event of rhythmTest.expectedEvents) {
-        expectedById.set(event.id, event);
-      }
-      for (const tap of rhythmTest.resultTapEvents) {
-        resultTapById.set(tap.id, tap);
-      }
-      for (const pair of rhythmTest.matchedPairs) {
-        matchedPairByExpectedId.set(pair.expectedId, pair);
-        matchedPairByTapId.set(pair.tapId, pair);
-      }
-
       const lastMeasure = measureSegments[measureSegments.length - 1];
       const leadInStartX = measureRenderData[0].startX;
       const timeZeroX = measureRenderData[0].contentStartX;
       const overlayTop = allStaves[0] ? allStaves[0].getYForLine(4) + 44 : 132;
       const overlayBottom = overlayTop + 66;
-      const centerY = (overlayTop + overlayBottom) / 2;
+      const baselineY = (overlayTop + overlayBottom) / 2;
 
       const lane = document.createElementNS(ns, 'rect');
       lane.setAttribute('x', leadInStartX);
@@ -733,8 +715,8 @@
       const baseline = document.createElementNS(ns, 'line');
       baseline.setAttribute('x1', leadInStartX);
       baseline.setAttribute('x2', lastMeasure.endX);
-      baseline.setAttribute('y1', centerY);
-      baseline.setAttribute('y2', centerY);
+      baseline.setAttribute('y1', baselineY);
+      baseline.setAttribute('y2', baselineY);
       baseline.setAttribute('stroke', '#c7b89d');
       baseline.setAttribute('stroke-width', '2');
       svg.appendChild(baseline);
@@ -771,10 +753,82 @@
       }
       _drawOverlayLine(svg, ns, lastMeasure.endX, overlayTop + 10, overlayBottom - 10, '#bda98b', 2.2);
 
-      if (!rhythmTest.showExpectedEvents) {
+      if (!showsResultOverlay) {
         _clearRhythmInspectState();
-        const playheadX = _xForRhythmTime(
-          rhythmTest.playheadTimeSeconds,
+        for (const tap of rhythmTest.liveTapEvents) {
+          const tapX = _xForRhythmTime(
+            tap.timeSeconds,
+            measureSegments,
+            rhythmTest.measureBoundaryTimesSeconds,
+            rhythmTest.totalDurationSeconds,
+            rhythmTest.countInDurationSeconds,
+            leadInStartX,
+            timeZeroX,
+          );
+          _drawOverlayPoint(svg, ns, tapX, overlayBottom - 18, '#6d4c41');
+        }
+
+        if (showsPlayhead) {
+          const playheadX = _xForRhythmTime(
+            rhythmTest.playheadTimeSeconds,
+            measureSegments,
+            rhythmTest.measureBoundaryTimesSeconds,
+            rhythmTest.totalDurationSeconds,
+            rhythmTest.countInDurationSeconds,
+            leadInStartX,
+            timeZeroX,
+          );
+          const playhead = document.createElementNS(ns, 'line');
+          playhead.setAttribute('x1', playheadX);
+          playhead.setAttribute('x2', playheadX);
+          playhead.setAttribute('y1', overlayTop - 8);
+          playhead.setAttribute('y2', overlayBottom + 8);
+          playhead.setAttribute('stroke', '#42a5f5');
+          playhead.setAttribute('stroke-width', '2.5');
+          playhead.setAttribute('stroke-linecap', 'round');
+          svg.appendChild(playhead);
+        }
+
+        return {
+          measureSegments,
+          leadInStartX,
+          timeZeroX,
+          contentEndX: lastMeasure.endX,
+        };
+      }
+
+      const expectedById = new Map();
+      const resultTapById = new Map();
+      const matchedPairByExpectedId = new Map();
+      const matchedPairByTapId = new Map();
+      const matchedExpectedIds = new Set();
+      const matchedTapIds = new Set();
+      const labelCandidates = [];
+      const inspectionItems = new Map();
+      const errorLabelThresholdBeats = rhythmTest.errorLabelThresholdBeats;
+      const largeErrorThresholdBeats = rhythmTest.largeErrorThresholdBeats;
+
+      for (const event of rhythmTest.expectedEvents) {
+        expectedById.set(event.id, event);
+      }
+      for (const tap of rhythmTest.resultTapEvents) {
+        resultTapById.set(tap.id, tap);
+      }
+      for (const pair of rhythmTest.matchedPairs) {
+        matchedPairByExpectedId.set(pair.expectedId, pair);
+        matchedPairByTapId.set(pair.tapId, pair);
+      }
+
+      for (const pair of rhythmTest.matchedPairs) {
+        matchedExpectedIds.add(pair.expectedId);
+        matchedTapIds.add(pair.tapId);
+
+        const expectedEvent = expectedById.get(pair.expectedId);
+        const tapEvent = resultTapById.get(pair.tapId);
+        if (!expectedEvent || !tapEvent) continue;
+
+        const expectedX = _xForRhythmTime(
+          expectedEvent.timeSeconds,
           measureSegments,
           rhythmTest.measureBoundaryTimesSeconds,
           rhythmTest.totalDurationSeconds,
@@ -782,149 +836,118 @@
           leadInStartX,
           timeZeroX,
         );
-        const playhead = document.createElementNS(ns, 'line');
-        playhead.setAttribute('x1', playheadX);
-        playhead.setAttribute('x2', playheadX);
-        playhead.setAttribute('y1', overlayTop - 8);
-        playhead.setAttribute('y2', overlayBottom + 8);
-        playhead.setAttribute('stroke', '#42a5f5');
-        playhead.setAttribute('stroke-width', '2.5');
-        playhead.setAttribute('stroke-linecap', 'round');
-        svg.appendChild(playhead);
-      } else {
-        for (const pair of rhythmTest.matchedPairs) {
-          matchedExpectedIds.add(pair.expectedId);
-          matchedTapIds.add(pair.tapId);
+        const tapX = _xForRhythmTime(
+          tapEvent.timeSeconds,
+          measureSegments,
+          rhythmTest.measureBoundaryTimesSeconds,
+          rhythmTest.totalDurationSeconds,
+          rhythmTest.countInDurationSeconds,
+          leadInStartX,
+          timeZeroX,
+        );
+        const errorBeats = pair.errorSeconds / rhythmTest.pulseDurationSeconds;
+        const linkColor = Math.abs(errorBeats) > largeErrorThresholdBeats
+          ? '#ef6c00'
+          : '#2e7d32';
 
-          const expectedEvent = expectedById.get(pair.expectedId);
-          const tapEvent = resultTapById.get(pair.tapId);
-          if (!expectedEvent || !tapEvent) continue;
+        const link = document.createElementNS(ns, 'line');
+        link.setAttribute('x1', expectedX);
+        link.setAttribute('y1', overlayTop + 18);
+        link.setAttribute('x2', tapX);
+        link.setAttribute('y2', overlayBottom - 18);
+        link.setAttribute('stroke', linkColor);
+        link.setAttribute('stroke-width', '3');
+        link.setAttribute('stroke-linecap', 'round');
+        svg.appendChild(link);
 
-          const expectedX = _xForRhythmTime(
-            expectedEvent.timeSeconds,
-            measureSegments,
+        const linkKey = `pair:${pair.expectedId}:${pair.tapId}`;
+        inspectionItems.set(
+          linkKey,
+          _buildMatchedRhythmInspectionItem(
+            pair,
+            expectedEvent,
+            tapEvent,
             rhythmTest.measureBoundaryTimesSeconds,
-            rhythmTest.totalDurationSeconds,
-            rhythmTest.countInDurationSeconds,
-            leadInStartX,
-            timeZeroX,
-          );
-          const tapX = _xForRhythmTime(
-            tapEvent.timeSeconds,
-            measureSegments,
-            rhythmTest.measureBoundaryTimesSeconds,
-            rhythmTest.totalDurationSeconds,
-            rhythmTest.countInDurationSeconds,
-            leadInStartX,
-            timeZeroX,
-          );
-          const errorBeats = pair.errorSeconds / rhythmTest.pulseDurationSeconds;
-          const linkColor = Math.abs(errorBeats) > largeErrorThresholdBeats
-            ? '#ef6c00'
-            : '#2e7d32';
+            rhythmTest.pulseDurationSeconds,
+            (expectedX + tapX) / 2,
+          ),
+        );
+        _appendRhythmInspectHitLine(
+          svg,
+          ns,
+          expectedX,
+          overlayTop + 18,
+          tapX,
+          overlayBottom - 18,
+          linkKey,
+        );
 
-          const link = document.createElementNS(ns, 'line');
-          link.setAttribute('x1', expectedX);
-          link.setAttribute('y1', overlayTop + 18);
-          link.setAttribute('x2', tapX);
-          link.setAttribute('y2', overlayBottom - 18);
-          link.setAttribute('stroke', linkColor);
-          link.setAttribute('stroke-width', '3');
-          link.setAttribute('stroke-linecap', 'round');
-          svg.appendChild(link);
-
-          const linkKey = `pair:${pair.expectedId}:${pair.tapId}`;
-          inspectionItems.set(
-            linkKey,
-            _buildMatchedRhythmInspectionItem(
-              pair,
-              expectedEvent,
-              tapEvent,
-              rhythmTest.measureBoundaryTimesSeconds,
-              rhythmTest.pulseDurationSeconds,
-              (expectedX + tapX) / 2,
-              centerY,
-            ),
-          );
-          _appendRhythmInspectHitLine(
-            svg,
-            ns,
-            expectedX,
-            overlayTop + 18,
-            tapX,
-            overlayBottom - 18,
-            linkKey,
-          );
-
-          if (Math.abs(errorBeats) > errorLabelThresholdBeats) {
-            labelCandidates.push({
-              x: (expectedX + tapX) / 2,
-              text: _formatRhythmErrorBeats(errorBeats),
-              color: linkColor,
-            });
-          }
+        if (Math.abs(errorBeats) > errorLabelThresholdBeats) {
+          labelCandidates.push({
+            x: (expectedX + tapX) / 2,
+            text: _formatRhythmErrorBeats(errorBeats),
+            color: linkColor,
+          });
         }
+      }
 
-        for (const event of rhythmTest.expectedEvents) {
-          const expectedX = _xForRhythmTime(
-            event.timeSeconds,
-            measureSegments,
-            rhythmTest.measureBoundaryTimesSeconds,
-            rhythmTest.totalDurationSeconds,
-            rhythmTest.countInDurationSeconds,
-            leadInStartX,
-            timeZeroX,
-          );
-          _drawOverlayPoint(
-            svg,
-            ns,
-            expectedX,
-            overlayTop + 18,
-            matchedExpectedIds.has(event.id) ? '#1565c0' : '#c62828',
-          );
+      for (const event of rhythmTest.expectedEvents) {
+        const expectedX = _xForRhythmTime(
+          event.timeSeconds,
+          measureSegments,
+          rhythmTest.measureBoundaryTimesSeconds,
+          rhythmTest.totalDurationSeconds,
+          rhythmTest.countInDurationSeconds,
+          leadInStartX,
+          timeZeroX,
+        );
+        _drawOverlayPoint(
+          svg,
+          ns,
+          expectedX,
+          overlayTop + 18,
+          matchedExpectedIds.has(event.id) ? '#1565c0' : '#c62828',
+        );
 
-          const matchedPair = matchedPairByExpectedId.get(event.id);
-          const key = `expected:${event.id}`;
-          inspectionItems.set(
-            key,
-            matchedPair == null
-              ? _buildSingleRhythmInspectionItem({
-                  title: `Measure ${_rhythmMeasurePosition(
+        const matchedPair = matchedPairByExpectedId.get(event.id);
+        const key = `expected:${event.id}`;
+        inspectionItems.set(
+          key,
+          matchedPair == null
+            ? _buildSingleRhythmInspectionItem({
+                title: `Measure ${_rhythmMeasurePosition(
+                  event.timeSeconds,
+                  rhythmTest.measureBoundaryTimesSeconds,
+                  rhythmTest.pulseDurationSeconds,
+                ).measureNumber}`,
+                lines: [
+                  `Expected: ${_formatBeatValue(_rhythmMeasurePosition(
                     event.timeSeconds,
                     rhythmTest.measureBoundaryTimesSeconds,
                     rhythmTest.pulseDurationSeconds,
-                  ).measureNumber}`,
-                  lines: [
-                    `Expected: ${_formatBeatValue(_rhythmMeasurePosition(
-                      event.timeSeconds,
-                      rhythmTest.measureBoundaryTimesSeconds,
-                      rhythmTest.pulseDurationSeconds,
-                    ).beat)}`,
-                  ],
-                  x: expectedX,
-                  y: overlayTop + 18,
-                })
-              : _buildMatchedRhythmInspectionItem(
-                  matchedPair,
-                  event,
-                  resultTapById.get(matchedPair.tapId),
-                  rhythmTest.measureBoundaryTimesSeconds,
-                  rhythmTest.pulseDurationSeconds,
-                  expectedX,
-                  overlayTop + 18,
-                ),
-          );
-          _appendRhythmInspectHitPoint(
-            svg,
-            ns,
-            expectedX,
-            overlayTop + 18,
-            key,
-          );
-        }
+                  ).beat)}`,
+                ],
+                x: expectedX,
+              })
+            : _buildMatchedRhythmInspectionItem(
+                matchedPair,
+                event,
+                resultTapById.get(matchedPair.tapId),
+                rhythmTest.measureBoundaryTimesSeconds,
+                rhythmTest.pulseDurationSeconds,
+                expectedX,
+              ),
+        );
+        _appendRhythmInspectHitPoint(
+          svg,
+          ns,
+          expectedX,
+          overlayTop + 18,
+          key,
+        );
+      }
 
-      const tapEvents = rhythmTest.resultTapEvents;
-      for (const tap of tapEvents) {
+      for (const tap of rhythmTest.resultTapEvents) {
         const tapX = _xForRhythmTime(
           tap.timeSeconds,
           measureSegments,
@@ -934,9 +957,7 @@
           leadInStartX,
           timeZeroX,
         );
-        const color = rhythmTest.showExpectedEvents
-          ? (matchedTapIds.has(tap.id) ? '#00897b' : '#ef6c00')
-          : '#6d4c41';
+        const color = matchedTapIds.has(tap.id) ? '#00897b' : '#ef6c00';
         _drawOverlayPoint(svg, ns, tapX, overlayBottom - 18, color);
 
         const matchedPair = matchedPairByTapId.get(tap.id);
@@ -958,7 +979,6 @@
                   ).beat)}`,
                 ],
                 x: tapX,
-                y: overlayBottom - 18,
               })
             : _buildMatchedRhythmInspectionItem(
                 matchedPair,
@@ -967,7 +987,6 @@
                 rhythmTest.measureBoundaryTimesSeconds,
                 rhythmTest.pulseDurationSeconds,
                 tapX,
-                overlayBottom - 18,
               ),
         );
         _appendRhythmInspectHitPoint(
@@ -979,22 +998,20 @@
         );
       }
 
-        _drawRhythmErrorLabels(
-          svg,
-          ns,
-          labelCandidates,
-          overlayTop + 6,
-        );
-        _drawRhythmInspectionTooltip(
-          svg,
-          ns,
-          inspectionItems,
-          leadInStartX,
-          lastMeasure.endX,
-          overlayTop,
-          overlayBottom,
-        );
-      }
+      _drawRhythmErrorLabels(
+        svg,
+        ns,
+        labelCandidates,
+        overlayTop + 6,
+      );
+      _drawRhythmInspectionTooltip(
+        svg,
+        ns,
+        inspectionItems,
+        leadInStartX,
+        lastMeasure.endX,
+        overlayTop,
+      );
 
       return {
         measureSegments,
@@ -1116,7 +1133,6 @@
       measureBoundaryTimesSeconds,
       pulseDurationSeconds,
       x,
-      y,
     ) {
       if (!expectedEvent || !tapEvent) {
         return null;
@@ -1144,12 +1160,11 @@
           `Δ: ${_formatSignedBeatValue(pair.errorSeconds / pulseDurationSeconds)} beat`,
         ],
         x,
-        y,
       };
     }
 
-    function _buildSingleRhythmInspectionItem({ title, lines, x, y }) {
-      return { title, lines, x, y };
+    function _buildSingleRhythmInspectionItem({ title, lines, x }) {
+      return { title, lines, x };
     }
 
     function _drawRhythmErrorLabels(svg, ns, labelCandidates, baselineY) {
@@ -1190,7 +1205,6 @@
       minX,
       maxX,
       overlayTop,
-      overlayBottom,
     ) {
       const activeKey = lockedRhythmInspectKey ?? hoveredRhythmInspectKey;
       if (activeKey == null) {
@@ -1211,16 +1225,19 @@
       const group = document.createElementNS(ns, 'g');
       const text = document.createElementNS(ns, 'text');
       const lineHeight = 16;
-      const tooltipY = overlayTop - 16;
-      text.setAttribute('x', item.x);
-      text.setAttribute('y', tooltipY);
+      const cardPaddingX = 10;
+      const cardPaddingY = 8;
+      const cardInset = 12;
+      const cardGap = 10;
+      text.setAttribute('x', '0');
+      text.setAttribute('y', '0');
       text.setAttribute('fill', '#2b251c');
       text.setAttribute('font-size', '12');
       text.setAttribute('font-weight', '700');
       text.setAttribute('text-anchor', 'middle');
 
       const titleSpan = document.createElementNS(ns, 'tspan');
-      titleSpan.setAttribute('x', item.x);
+      titleSpan.setAttribute('x', '0');
       titleSpan.setAttribute('dy', '0');
       titleSpan.setAttribute('font-weight', '800');
       titleSpan.textContent = item.title;
@@ -1228,7 +1245,7 @@
 
       for (const line of item.lines) {
         const span = document.createElementNS(ns, 'tspan');
-        span.setAttribute('x', item.x);
+        span.setAttribute('x', '0');
         span.setAttribute('dy', String(lineHeight));
         span.setAttribute('font-weight', '700');
         span.textContent = line;
@@ -1239,45 +1256,34 @@
       svg.appendChild(group);
 
       const textBox = text.getBBox();
-      let shiftX = 0;
-      if (textBox.x < minX + 12) {
-        shiftX = minX + 12 - textBox.x;
-      } else if (textBox.x + textBox.width > maxX - 12) {
-        shiftX = maxX - 12 - (textBox.x + textBox.width);
+      const cardWidth = textBox.width + cardPaddingX * 2;
+      const minCenterX = minX + cardInset + cardWidth / 2;
+      const maxCenterX = maxX - cardInset - cardWidth / 2;
+      let centerX = item.x;
+      if (minCenterX <= maxCenterX) {
+        centerX = Math.min(Math.max(centerX, minCenterX), maxCenterX);
+      } else {
+        centerX = (minX + maxX) / 2;
       }
+      const cardTop = Math.max(
+        12,
+        overlayTop - (textBox.height + cardPaddingY * 2) - cardGap,
+      );
+      group.setAttribute(
+        'transform',
+        `translate(${centerX} ${cardTop + cardPaddingY - textBox.y})`,
+      );
 
-      if (shiftX !== 0) {
-        text.setAttribute('x', item.x + shiftX);
-        const spans = text.querySelectorAll('tspan');
-        spans.forEach((span) => span.setAttribute('x', item.x + shiftX));
-      }
-
-      const finalBox = text.getBBox();
       const rect = document.createElementNS(ns, 'rect');
-      rect.setAttribute('x', finalBox.x - 10);
-      rect.setAttribute('y', finalBox.y - 8);
-      rect.setAttribute('width', finalBox.width + 20);
-      rect.setAttribute('height', finalBox.height + 16);
+      rect.setAttribute('x', textBox.x - cardPaddingX);
+      rect.setAttribute('y', textBox.y - cardPaddingY);
+      rect.setAttribute('width', cardWidth);
+      rect.setAttribute('height', textBox.height + cardPaddingY * 2);
       rect.setAttribute('rx', '12');
       rect.setAttribute('fill', 'rgba(255, 253, 247, 0.96)');
       rect.setAttribute('stroke', '#d6ccba');
       rect.setAttribute('stroke-width', '1');
       group.insertBefore(rect, text);
-
-      const pointer = document.createElementNS(ns, 'path');
-      const pointerCenterX = Math.min(
-        Math.max(item.x, finalBox.x + 14),
-        finalBox.x + finalBox.width - 14,
-      );
-      const pointerTop = finalBox.y + finalBox.height + 8;
-      pointer.setAttribute(
-        'd',
-        `M ${pointerCenterX - 8} ${pointerTop} L ${pointerCenterX + 8} ${pointerTop} L ${item.x} ${overlayTop + 8} Z`,
-      );
-      pointer.setAttribute('fill', 'rgba(255, 253, 247, 0.96)');
-      pointer.setAttribute('stroke', '#d6ccba');
-      pointer.setAttribute('stroke-width', '1');
-      group.appendChild(pointer);
     }
 
     function _clearRhythmInspectState() {
@@ -1434,7 +1440,7 @@
 
     function _drawRhythmResultNoteHighlights(svg, data, allDisplayNotes) {
       const rhythmTest = data.rhythmTest;
-      if (!rhythmTest || !rhythmTest.showExpectedEvents) return;
+      if (!rhythmTest || rhythmTest.phase !== 'result') return;
 
       const noteEls = svg.querySelectorAll('.vf-stavenote');
       const ns = svg.namespaceURI;

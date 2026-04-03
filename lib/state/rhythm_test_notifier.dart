@@ -100,7 +100,7 @@ class RhythmTestNotifier extends ChangeNotifier {
     ]..sort((a, b) => a.timeSeconds.compareTo(b.timeSeconds));
 
     return RhythmOverlayRenderData(
-      showExpectedEvents: _phase == RhythmTestPhase.finished && _result != null,
+      phase: _overlayRenderPhase,
       shouldAutoFollowPlayback:
           _phase == RhythmTestPhase.countIn ||
           _phase == RhythmTestPhase.running,
@@ -138,7 +138,8 @@ class RhythmTestNotifier extends ChangeNotifier {
 
   double get playheadTimeSeconds => _playheadTimeSeconds;
 
-  bool get showsExpectedAnswers => _phase == RhythmTestPhase.finished;
+  bool get showsExpectedAnswers =>
+      _overlayRenderPhase == RhythmOverlayRenderPhase.result;
 
   bool get restartLocked => _restartLocked;
 
@@ -155,6 +156,20 @@ class RhythmTestNotifier extends ChangeNotifier {
   bool get showCenteredResult =>
       _resultCardVisible &&
       (_isScoringResult || _scoringErrorMessage != null || _result != null);
+
+  RhythmOverlayRenderPhase get _overlayRenderPhase {
+    if (_phase == RhythmTestPhase.countIn ||
+        _phase == RhythmTestPhase.running) {
+      return RhythmOverlayRenderPhase.live;
+    }
+    if (_phase == RhythmTestPhase.finished && _result != null) {
+      return RhythmOverlayRenderPhase.result;
+    }
+    if (_phase == RhythmTestPhase.finished) {
+      return RhythmOverlayRenderPhase.pendingResult;
+    }
+    return RhythmOverlayRenderPhase.idle;
+  }
 
   bool get canStop =>
       _phase == RhythmTestPhase.countIn || _phase == RhythmTestPhase.running;

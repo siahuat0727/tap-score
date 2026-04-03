@@ -74,6 +74,8 @@ class RhythmTimeline {
 
 typedef RhythmMelodyEvent = ScheduledPlaybackNote;
 
+enum RhythmOverlayRenderPhase { idle, live, pendingResult, result }
+
 class RhythmTestResult {
   final List<MatchedRhythmPair> matchedPairs;
   final List<ExpectedRhythmEvent> unmatchedExpectedEvents;
@@ -139,7 +141,7 @@ class RhythmTestResult {
 }
 
 class RhythmOverlayRenderData {
-  final bool showExpectedEvents;
+  final RhythmOverlayRenderPhase phase;
   final bool shouldAutoFollowPlayback;
   final double elapsedRunSeconds;
   final double playheadTimeSeconds;
@@ -159,7 +161,7 @@ class RhythmOverlayRenderData {
   final List<int> missedExpectedNoteIndices;
 
   const RhythmOverlayRenderData({
-    required this.showExpectedEvents,
+    required this.phase,
     required this.shouldAutoFollowPlayback,
     required this.elapsedRunSeconds,
     required this.playheadTimeSeconds,
@@ -179,9 +181,15 @@ class RhythmOverlayRenderData {
     required this.missedExpectedNoteIndices,
   });
 
+  bool get showsPlayhead => phase == RhythmOverlayRenderPhase.live;
+
+  bool get showsExpectedEvents => phase == RhythmOverlayRenderPhase.result;
+
+  bool get enablesInspection => phase == RhythmOverlayRenderPhase.result;
+
   Map<String, dynamic> toPayload() {
     return {
-      'showExpectedEvents': showExpectedEvents,
+      'phase': phase.name,
       'shouldAutoFollowPlayback': shouldAutoFollowPlayback,
       'elapsedRunSeconds': elapsedRunSeconds,
       'playheadTimeSeconds': playheadTimeSeconds,

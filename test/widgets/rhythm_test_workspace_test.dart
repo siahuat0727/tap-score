@@ -13,6 +13,7 @@ import 'package:tap_score/services/audio_service.dart';
 import 'package:tap_score/state/rhythm_test_notifier.dart';
 import 'package:tap_score/state/score_notifier.dart';
 import 'package:tap_score/widgets/rhythm_test_workspace.dart';
+import 'package:tap_score/widgets/score_view_widget.dart';
 import 'package:webview_flutter_platform_interface/webview_flutter_platform_interface.dart';
 
 import '../helpers/fake_webview_platform.dart';
@@ -93,6 +94,12 @@ void main() {
 
       expect(find.textContaining('Tap'), findsOneWidget);
       expect(find.textContaining('Enter'), findsOneWidget);
+      expect(
+        tester
+            .widget<ScoreViewWidget>(find.byType(ScoreViewWidget))
+            .blockRendererPointerInput,
+        isFalse,
+      );
 
       await tester.runAsync(() async {
         await Future<void>.delayed(const Duration(milliseconds: 900));
@@ -120,6 +127,12 @@ void main() {
         find.byKey(const ValueKey('rhythm-test-result-card')),
       );
       expect(resultRect.center.dy, greaterThan(workspaceRect.height * 0.3));
+      expect(
+        tester
+            .widget<ScoreViewWidget>(find.byType(ScoreViewWidget))
+            .blockRendererPointerInput,
+        isTrue,
+      );
 
       await tester.runAsync(() async {
         await Future<void>.delayed(
@@ -166,6 +179,12 @@ void main() {
     expect(find.byKey(const ValueKey('rhythm-test-stop')), findsNothing);
     expect(find.text('Start'), findsOneWidget);
     expect(find.byKey(const ValueKey('rhythm-test-result-card')), findsNothing);
+    expect(
+      tester
+          .widget<ScoreViewWidget>(find.byType(ScoreViewWidget))
+          .blockRendererPointerInput,
+      isFalse,
+    );
   });
 
   testWidgets('result summary can be closed without clearing rendered result', (
@@ -193,6 +212,12 @@ void main() {
       find.byKey(const ValueKey('rhythm-test-result-close')),
       findsOneWidget,
     );
+    expect(
+      tester
+          .widget<ScoreViewWidget>(find.byType(ScoreViewWidget))
+          .blockRendererPointerInput,
+      isTrue,
+    );
 
     await tester.tap(find.byKey(const ValueKey('rhythm-test-result-close')));
     await tester.pump();
@@ -200,6 +225,12 @@ void main() {
 
     expect(find.byKey(const ValueKey('rhythm-test-result-card')), findsNothing);
     expect(notifier.result, isNotNull);
+    expect(
+      tester
+          .widget<ScoreViewWidget>(find.byType(ScoreViewWidget))
+          .blockRendererPointerInput,
+      isFalse,
+    );
   });
 
   testWidgets('workspace shows loading card before the final result card', (
@@ -239,6 +270,12 @@ void main() {
     );
     expect(find.text('Calculating result…'), findsOneWidget);
     expect(find.text('Failed'), findsNothing);
+    expect(
+      tester
+          .widget<ScoreViewWidget>(find.byType(ScoreViewWidget))
+          .blockRendererPointerInput,
+      isTrue,
+    );
 
     scoringGate.complete();
     await tester.runAsync(() async {

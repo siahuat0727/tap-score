@@ -19,6 +19,7 @@ import 'score_renderer_stub.dart'
 class ScoreViewWidget extends StatefulWidget {
   const ScoreViewWidget({
     this.interactive = true,
+    this.blockRendererPointerInput = false,
     this.onRendererKeyDown,
     this.rhythmOverlay,
     this.playbackIndex,
@@ -26,6 +27,7 @@ class ScoreViewWidget extends StatefulWidget {
   });
 
   final bool interactive;
+  final bool blockRendererPointerInput;
   final bool Function(String? key, String? code)? onRendererKeyDown;
   final RhythmOverlayRenderData? rhythmOverlay;
   final int? playbackIndex;
@@ -169,7 +171,9 @@ class _ScoreViewWidgetState extends State<ScoreViewWidget> {
   @override
   Widget build(BuildContext context) {
     final pointerInputEnabled =
-        widget.interactive || widget.rhythmOverlay != null;
+        !widget.blockRendererPointerInput &&
+        (widget.interactive ||
+            (widget.rhythmOverlay?.enablesInspection ?? false));
 
     return Consumer<ScoreNotifier>(
       builder: (context, notifier, child) {
