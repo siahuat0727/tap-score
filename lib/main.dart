@@ -5,6 +5,7 @@ import 'services/preset_score_repository.dart';
 import 'services/score_library_repository.dart';
 import 'services/score_transfer_service.dart';
 import 'theme/app_theme.dart';
+import 'workspace/workspace_repository.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -16,12 +17,14 @@ class TapScoreApp extends StatefulWidget {
     this.presetScoreRepository,
     this.scoreLibraryRepository,
     this.scoreTransferService,
+    this.workspaceRepository,
     super.key,
   });
 
   final PresetScoreRepository? presetScoreRepository;
   final ScoreLibraryRepository? scoreLibraryRepository;
   final ScoreTransferService? scoreTransferService;
+  final WorkspaceRepository? workspaceRepository;
 
   @override
   State<TapScoreApp> createState() => _TapScoreAppState();
@@ -32,6 +35,7 @@ class _TapScoreAppState extends State<TapScoreApp> {
     presetScoreRepository: widget.presetScoreRepository,
     scoreLibraryRepository: widget.scoreLibraryRepository,
     scoreTransferService: widget.scoreTransferService,
+    workspaceRepository: widget.workspaceRepository,
   );
   final TapScoreRouteInformationParser _routeInformationParser =
       TapScoreRouteInformationParser();

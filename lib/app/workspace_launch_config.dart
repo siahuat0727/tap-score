@@ -25,6 +25,14 @@ class WorkspaceLaunchConfig {
          initialMode: initialMode,
        );
 
+  WorkspaceLaunchConfig.saved(
+    String savedScoreId, {
+    required WorkspaceMode initialMode,
+  }) : this(
+         seedConfig: ScoreSeedConfig.saved(savedScoreId),
+         initialMode: initialMode,
+       );
+
   WorkspaceLaunchConfig.imported(PortableScoreDocument document)
     : this(
         seedConfig: ScoreSeedConfig.imported(document),

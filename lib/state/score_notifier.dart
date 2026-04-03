@@ -13,6 +13,9 @@ import '../models/score_library.dart';
 import '../services/audio_service.dart';
 import '../services/preset_score_repository.dart';
 import '../services/score_library_repository.dart';
+import '../workspace/workspace_document.dart';
+import '../workspace/workspace_repository.dart';
+import '../workspace/workspace_session.dart';
 
 /// What kind of element is currently selected.
 enum SelectionKind { timeSig, keySig, note }
@@ -27,24 +30,33 @@ class ScoreNotifier extends ChangeNotifier {
 
   ScoreNotifier({
     AudioService? audioService,
+    WorkspaceRepository? workspaceRepository,
     ScoreLibraryRepository? scoreLibraryRepository,
     PresetScoreRepository? presetScoreRepository,
   }) : _audioService = audioService ?? AudioService(),
-       _scoreLibraryRepository =
-           scoreLibraryRepository ?? SharedPreferencesScoreLibraryRepository(),
-       _presetScoreRepository =
-           presetScoreRepository ?? AssetPresetScoreRepository() {
+       _workspaceRepository =
+           workspaceRepository ??
+           DefaultWorkspaceRepository(
+             scoreLibraryRepository: scoreLibraryRepository,
+             presetScoreRepository: presetScoreRepository,
+           ) {
+    _workspaceSession = WorkspaceSession(
+      editorScore: score.copy(),
+      document: WorkspaceDocument.draft(score: score),
+      savedScores: const [],
+      presetScores: const [],
+    );
     _audioService.onStateChanged = _syncAudioState;
     _syncAudioState(notify: false);
   }
 
   final Score score = Score();
   final AudioService _audioService;
-  final ScoreLibraryRepository _scoreLibraryRepository;
-  final PresetScoreRepository _presetScoreRepository;
+  final WorkspaceRepository _workspaceRepository;
 
   Future<void>? _initFuture;
   Timer? _draftSaveTimer;
+  WorkspaceSession? _workspaceSession;
 
   /// Index where the next note will be inserted.
   int _cursorIndex = 0;
@@ -98,25 +110,20 @@ class ScoreNotifier extends ChangeNotifier {
   /// Auto-incrementing triplet group ID.
   int _nextTripletGroupId = 1;
 
-  List<SavedScoreEntry> _savedScores = const [];
-  List<SavedScoreEntry> get savedScores => List.unmodifiable(_savedScores);
+  List<SavedScoreEntry> get savedScores =>
+      List.unmodifiable(_workspaceSession?.savedScores ?? const []);
 
-  List<PresetScoreEntry> _presetScores = const [];
-  List<PresetScoreEntry> get presetScores => List.unmodifiable(_presetScores);
+  List<PresetScoreEntry> get presetScores =>
+      List.unmodifiable(_workspaceSession?.presetScores ?? const []);
 
-  String? _activeScoreId;
-  String? get activeScoreId => _activeScoreId;
+  String? get activeScoreId => _workspaceSession?.document.savedScoreId;
 
-  String? _activePresetId;
-  String? get activePresetId => _activePresetId;
-
-  String? _draftLabel;
-  Score _draftBaseline = Score();
+  String? get activePresetId => _workspaceSession?.document.presetId;
 
   SavedScoreEntry? get activeSavedScore {
-    final id = _activeScoreId;
+    final id = activeScoreId;
     if (id == null) return null;
-    for (final entry in _savedScores) {
+    for (final entry in savedScores) {
       if (entry.id == id) {
         return entry;
       }
@@ -125,9 +132,9 @@ class ScoreNotifier extends ChangeNotifier {
   }
 
   PresetScoreEntry? get activePresetScore {
-    final id = _activePresetId;
+    final id = activePresetId;
     if (id == null) return null;
-    for (final entry in _presetScores) {
+    for (final entry in presetScores) {
       if (entry.id == id) {
         return entry;
       }
@@ -135,11 +142,7 @@ class ScoreNotifier extends ChangeNotifier {
     return null;
   }
 
-  String get currentScoreLabel =>
-      activeSavedScore?.name ??
-      activePresetScore?.name ??
-      _draftLabel ??
-      'Draft';
+  String get currentScoreLabel => _workspaceSession?.document.name ?? 'Draft';
 
   bool _hasUnsavedChanges = false;
   bool get hasUnsavedChanges => _hasUnsavedChanges;
@@ -239,114 +242,74 @@ class ScoreNotifier extends ChangeNotifier {
 
   /// Initialize local storage and the editor entry state.
   Future<void> init({ScoreSeedConfig? initialScoreConfig}) {
-    return _initFuture ??= _initInternal(initialScoreConfig: initialScoreConfig);
+    return _initFuture ??= _initInternal(
+      initialScoreConfig: initialScoreConfig,
+    );
   }
 
   Future<void> _initInternal({ScoreSeedConfig? initialScoreConfig}) async {
     try {
-      _presetScores = await _presetScoreRepository.loadPresets();
-    } on PresetScoreException catch (error) {
-      _setLibraryMessage(error.message, isError: true);
-    } catch (error) {
-      _setLibraryMessage('Failed to load preset scores.', isError: true);
-      debugPrint('Preset score load failed: $error');
-    }
-
-    try {
-      final snapshot = await _scoreLibraryRepository.loadSnapshot();
-      _savedScores = _sortSavedScores(snapshot?.savedScores ?? const []);
-      _applyInitialState(
-        snapshot: snapshot,
+      final result = await _workspaceRepository.loadWorkspace(
         initialScoreConfig: initialScoreConfig,
       );
+      _applyWorkspaceLoadResult(result, replaceScore: true);
+      if (initialScoreConfig != null && !initialScoreConfig.isRestore) {
+        unawaited(_persistInitializedWorkspace(result.workspace));
+      }
+    } on WorkspaceRepositoryException catch (error) {
+      _setLibraryMessage(error.message, isError: true);
+    } on PresetScoreException catch (error) {
+      _setLibraryMessage(error.message, isError: true);
     } on ScoreLibraryStorageException catch (error) {
       _setLibraryMessage(error.message, isError: true);
     } catch (error) {
-      _setLibraryMessage(
-        'Failed to load the local score library.',
-        isError: true,
-      );
-      debugPrint('Score library load failed: $error');
+      _setLibraryMessage('Failed to load the workspace.', isError: true);
+      debugPrint('Workspace load failed: $error');
     }
 
     notifyListeners();
   }
 
-  void _applyInitialState({
-    required ScoreLibrarySnapshot? snapshot,
-    required ScoreSeedConfig? initialScoreConfig,
+  WorkspaceSession get _requiredWorkspace {
+    final workspace = _workspaceSession;
+    if (workspace == null) {
+      throw StateError('Workspace has not been initialized.');
+    }
+    return workspace;
+  }
+
+  bool _applyWorkspaceLoadResult(
+    WorkspaceLoadResult result, {
+    required bool replaceScore,
   }) {
-    if (initialScoreConfig case ScoreSeedConfig(:final document?)
-        when initialScoreConfig.isImported) {
-      _applyImportedDraft(document);
-      return;
+    _replaceWorkspace(result.workspace, replaceScore: replaceScore);
+    final warningMessage = result.warningMessage;
+    if (warningMessage == null) {
+      return false;
     }
-
-    if (initialScoreConfig case ScoreSeedConfig(:final presetId?)
-        when presetId.isNotEmpty) {
-      final entry = _presetScores.cast<PresetScoreEntry?>().firstWhere(
-        (candidate) => candidate?.id == presetId,
-        orElse: () => null,
-      );
-      if (entry == null) {
-        _setLibraryMessage('Preset "$presetId" does not exist.', isError: true);
-        _applyBlankDraft();
-        return;
-      }
-      _applyPresetDraft(entry);
-      return;
-    }
-
-    if (initialScoreConfig?.isBlank == true) {
-      _applyBlankDraft();
-      return;
-    }
-
-    if (snapshot != null) {
-      _draftBaseline = snapshot.draft.copy();
-      _draftLabel = null;
-      _applyScore(snapshot.draft, activeScoreId: snapshot.activeScoreId);
-      _hasUnsavedChanges = _computeHasUnsavedChanges(score);
-      return;
-    }
-
-    _draftBaseline = score.copy();
-    _draftLabel = null;
-    _activeScoreId = null;
-    _activePresetId = null;
-    _hasUnsavedChanges = false;
+    _setLibraryMessage(warningMessage, isError: true);
+    return true;
   }
 
-  void _applyBlankDraft() {
-    final blank = Score();
-    _draftBaseline = blank.copy();
-    _draftLabel = null;
-    _applyScore(blank, activeScoreId: null);
-    _hasUnsavedChanges = false;
-    unawaited(_persistSnapshotSafely());
+  void _replaceWorkspace(
+    WorkspaceSession workspace, {
+    required bool replaceScore,
+  }) {
+    _workspaceSession = workspace;
+    if (replaceScore) {
+      _applyScore(workspace.editorScore);
+    }
+    _hasUnsavedChanges = _computeHasUnsavedChanges(score);
   }
 
-  void _applyImportedDraft(PortableScoreDocument document) {
-    _draftBaseline = document.score.copy();
-    _draftLabel = document.name;
-    _applyScore(document.score, activeScoreId: null);
-    _hasUnsavedChanges = false;
-    unawaited(_persistSnapshotSafely());
-  }
-
-  void _applyPresetDraft(PresetScoreEntry entry) {
-    _draftBaseline = entry.score.copy();
-    _draftLabel = entry.name;
-    _applyScore(entry.score, activeScoreId: null, activePresetId: entry.id);
-    _hasUnsavedChanges = false;
-    unawaited(_persistSnapshotSafely());
-  }
-
-  Future<void> _persistSnapshotSafely() async {
+  Future<void> _persistInitializedWorkspace(WorkspaceSession workspace) async {
     try {
-      await _persistSnapshot();
-      notifyListeners();
-    } on ScoreLibraryStorageException {
+      await _workspaceRepository.persistDraft(
+        workspace: workspace,
+        editedScore: workspace.editorScore,
+      );
+    } on ScoreLibraryStorageException catch (error) {
+      _setLibraryMessage(error.message, isError: true);
       notifyListeners();
     }
   }
@@ -425,25 +388,18 @@ class ScoreNotifier extends ChangeNotifier {
 
   Future<void> restoreDraft() async {
     try {
-      final snapshot = await _scoreLibraryRepository.loadSnapshot();
-      if (snapshot == null) {
-        _setLibraryMessage('No draft is stored on this device.', isError: true);
-        notifyListeners();
-        return;
-      }
-
       stop();
-      _savedScores = _sortSavedScores(snapshot.savedScores);
-      _draftBaseline = snapshot.draft.copy();
-      _draftLabel = null;
-      _applyScore(snapshot.draft, activeScoreId: snapshot.activeScoreId);
-      _hasUnsavedChanges = _computeHasUnsavedChanges(score);
-      _setLibraryMessage('Draft restored.', isError: false);
-      notifyListeners();
+      final result = await _workspaceRepository.restoreDraft();
+      final hasWarning = _applyWorkspaceLoadResult(result, replaceScore: true);
+      if (!hasWarning) {
+        _setLibraryMessage('Draft restored.', isError: false);
+      }
+    } on WorkspaceRepositoryException catch (error) {
+      _setLibraryMessage(error.message, isError: true);
     } on ScoreLibraryStorageException catch (error) {
       _setLibraryMessage(error.message, isError: true);
-      notifyListeners();
     }
+    notifyListeners();
   }
 
   Future<void> saveCurrentScore(String name, {bool createNew = false}) async {
@@ -454,96 +410,77 @@ class ScoreNotifier extends ChangeNotifier {
       return;
     }
 
-    final now = DateTime.now();
-    final id = createNew || _activeScoreId == null
-        ? 'score-${now.microsecondsSinceEpoch}'
-        : _activeScoreId!;
-    final updatedEntry = SavedScoreEntry(
-      id: id,
-      name: trimmedName,
-      updatedAt: now,
-      score: score.copy(),
-    );
-
-    final nextSavedScores = [
-      for (final entry in _savedScores)
-        if (entry.id != id) entry,
-      updatedEntry,
-    ];
-
-    _savedScores = _sortSavedScores(nextSavedScores);
-    _activeScoreId = id;
-    _activePresetId = null;
-    _hasUnsavedChanges = false;
-
     try {
-      await _persistSnapshot();
+      final workspace = await _workspaceRepository.saveCurrentScore(
+        workspace: _requiredWorkspace,
+        editedScore: score,
+        name: trimmedName,
+        createNew: createNew,
+      );
+      _replaceWorkspace(workspace, replaceScore: false);
       _setLibraryMessage('Saved "$trimmedName".', isError: false);
-    } on ScoreLibraryStorageException {
-      // Message already set.
+    } on WorkspaceRepositoryException catch (error) {
+      _setLibraryMessage(error.message, isError: true);
+    } on ScoreLibraryStorageException catch (error) {
+      _setLibraryMessage(error.message, isError: true);
     }
 
     notifyListeners();
   }
 
   Future<void> loadSavedScore(String id) async {
-    final entry = _savedScores.firstWhere(
-      (candidate) => candidate.id == id,
-      orElse: () =>
-          throw ArgumentError.value(id, 'id', 'Saved score does not exist'),
-    );
-
-    stop();
-    _applyScore(entry.score, activeScoreId: entry.id);
-    _draftLabel = null;
-    _draftBaseline = entry.score.copy();
-    _hasUnsavedChanges = false;
-
     try {
-      await _persistSnapshot();
-      _setLibraryMessage('Loaded "${entry.name}".', isError: false);
-    } on ScoreLibraryStorageException {
-      // Message already set.
+      stop();
+      final workspace = await _workspaceRepository.loadSavedScore(
+        workspace: _requiredWorkspace,
+        id: id,
+      );
+      _replaceWorkspace(workspace, replaceScore: true);
+      _setLibraryMessage(
+        'Loaded "${workspace.document.name}".',
+        isError: false,
+      );
+    } on WorkspaceRepositoryException catch (error) {
+      throw ArgumentError.value(id, 'id', error.message);
+    } on ScoreLibraryStorageException catch (error) {
+      _setLibraryMessage(error.message, isError: true);
     }
 
     notifyListeners();
   }
 
   Future<void> loadPresetScore(String id) async {
-    final entry = _presetScores.firstWhere(
-      (candidate) => candidate.id == id,
-      orElse: () =>
-          throw ArgumentError.value(id, 'id', 'Preset score does not exist'),
-    );
-
-    stop();
-    _draftBaseline = entry.score.copy();
-    _draftLabel = entry.name;
-    _applyScore(entry.score, activeScoreId: null, activePresetId: entry.id);
-    _hasUnsavedChanges = false;
-
     try {
-      await _persistSnapshot();
-      _setLibraryMessage('Loaded "${entry.name}".', isError: false);
-    } on ScoreLibraryStorageException {
-      // Message already set.
+      stop();
+      final workspace = await _workspaceRepository.loadPresetScore(
+        workspace: _requiredWorkspace,
+        id: id,
+      );
+      _replaceWorkspace(workspace, replaceScore: true);
+      _setLibraryMessage(
+        'Loaded "${workspace.document.name}".',
+        isError: false,
+      );
+    } on WorkspaceRepositoryException catch (error) {
+      throw ArgumentError.value(id, 'id', error.message);
+    } on ScoreLibraryStorageException catch (error) {
+      _setLibraryMessage(error.message, isError: true);
     }
 
     notifyListeners();
   }
 
   Future<void> importScoreDocument(PortableScoreDocument document) async {
-    stop();
-    _draftBaseline = document.score.copy();
-    _draftLabel = document.name;
-    _applyScore(document.score, activeScoreId: null);
-    _hasUnsavedChanges = false;
-
     try {
-      await _persistSnapshot();
+      stop();
+      final workspace = await _workspaceRepository.importDocument(
+        workspace: _requiredWorkspace,
+        document: document,
+      );
+      _replaceWorkspace(workspace, replaceScore: true);
       _setLibraryMessage('Imported "${document.name}".', isError: false);
-    } on ScoreLibraryStorageException {
-      // Message already set.
+    } on ScoreLibraryStorageException catch (error) {
+      _setLibraryMessage(error.message, isError: true);
     }
 
     notifyListeners();
@@ -558,34 +495,21 @@ class ScoreNotifier extends ChangeNotifier {
   }
 
   Future<void> deleteSavedScore(String id) async {
-    SavedScoreEntry? removedEntry;
-    final nextSavedScores = <SavedScoreEntry>[];
-    for (final entry in _savedScores) {
-      if (entry.id == id) {
-        removedEntry = entry;
-        continue;
-      }
-      nextSavedScores.add(entry);
-    }
-
-    if (removedEntry == null) {
-      throw ArgumentError.value(id, 'id', 'Saved score does not exist');
-    }
-
-    _savedScores = _sortSavedScores(nextSavedScores);
-    if (_activeScoreId == id) {
-      _activeScoreId = null;
-      _activePresetId = null;
-      _draftLabel = null;
-      _draftBaseline = score.copy();
-      _hasUnsavedChanges = false;
-    }
-
     try {
-      await _persistSnapshot();
+      final removedEntry = savedScores.firstWhere(
+        (entry) => entry.id == id,
+        orElse: () =>
+            throw ArgumentError.value(id, 'id', 'Saved score does not exist'),
+      );
+      final workspace = await _workspaceRepository.deleteSavedScore(
+        workspace: _requiredWorkspace,
+        id: id,
+        currentScore: score,
+      );
+      _replaceWorkspace(workspace, replaceScore: false);
       _setLibraryMessage('Deleted "${removedEntry.name}".', isError: false);
-    } on ScoreLibraryStorageException {
-      // Message already set.
+    } on ScoreLibraryStorageException catch (error) {
+      _setLibraryMessage(error.message, isError: true);
     }
 
     notifyListeners();
@@ -1419,43 +1343,17 @@ class ScoreNotifier extends ChangeNotifier {
     _draftSaveTimer?.cancel();
     _draftSaveTimer = Timer(_draftSaveDelay, () async {
       try {
-        await _persistSnapshot();
+        await _workspaceRepository.persistDraft(
+          workspace: _requiredWorkspace,
+          editedScore: score,
+        );
       } on ScoreLibraryStorageException {
         notifyListeners();
       }
     });
   }
 
-  Future<void> _persistSnapshot() async {
-    try {
-      await _scoreLibraryRepository.saveSnapshot(
-        ScoreLibrarySnapshot(
-          draft: score.copy(),
-          savedScores: [
-            for (final entry in _savedScores)
-              entry.copyWith(score: entry.score.copy()),
-          ],
-          activeScoreId: _activeScoreId,
-        ),
-      );
-    } on ScoreLibraryStorageException catch (error) {
-      _setLibraryMessage(error.message, isError: true);
-      rethrow;
-    } catch (error) {
-      final exception = ScoreLibraryStorageException(
-        'Failed to write the local score library.',
-        cause: error,
-      );
-      _setLibraryMessage(exception.message, isError: true);
-      throw exception;
-    }
-  }
-
-  void _applyScore(
-    Score source, {
-    required String? activeScoreId,
-    String? activePresetId,
-  }) {
+  void _applyScore(Score source) {
     score.notes
       ..clear()
       ..addAll(source.notes);
@@ -1464,8 +1362,6 @@ class ScoreNotifier extends ChangeNotifier {
     score.bpm = source.bpm;
     score.keySignature = source.keySignature;
 
-    _activeScoreId = activeScoreId;
-    _activePresetId = activePresetId;
     _selectionKind = null;
     _selectedNoteIndex = null;
     _cursorIndex = score.notes.length;
@@ -1489,17 +1385,11 @@ class ScoreNotifier extends ChangeNotifier {
   }
 
   bool _computeHasUnsavedChanges(Score candidate) {
-    final activeSaved = activeSavedScore;
-    if (activeSaved != null) {
-      return candidate != activeSaved.score;
+    final baseline = _workspaceSession?.document.score;
+    if (baseline == null) {
+      return false;
     }
-    return candidate != _draftBaseline;
-  }
-
-  List<SavedScoreEntry> _sortSavedScores(List<SavedScoreEntry> entries) {
-    final sorted = List<SavedScoreEntry>.from(entries);
-    sorted.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-    return List.unmodifiable(sorted);
+    return candidate != baseline;
   }
 
   void _setLibraryMessage(String message, {required bool isError}) {

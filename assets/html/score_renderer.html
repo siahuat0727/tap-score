@@ -45,8 +45,8 @@
     // Current render state
     let currentData = null;
     let rhythmViewportWasAutoFollowing = false;
-    let lockedRhythmInspectKey = null;
-    let hoveredRhythmInspectKey = null;
+    let rhythmInspectionState = { key: null, pinned: false };
+    let rhythmInspectionContext = null;
 
     // -------------------------------------------------------------------------
     // Duration / pitch helpers
@@ -338,6 +338,7 @@
     // -------------------------------------------------------------------------
     function renderScore(data) {
       currentData = data;
+      _detachRhythmInspectionContext();
       const previousContent = container.innerHTML;
       container.innerHTML = '';
 
@@ -669,6 +670,7 @@
     ) {
       if (!rhythmTest || measureRenderData.length === 0) {
         _clearRhythmInspectState();
+        _setRhythmInspectionContext(null);
         return null;
       }
 
@@ -682,6 +684,7 @@
       );
       if (measureSegments.length === 0) {
         _clearRhythmInspectState();
+        _setRhythmInspectionContext(null);
         return null;
       }
 
@@ -755,6 +758,7 @@
 
       if (!showsResultOverlay) {
         _clearRhythmInspectState();
+        _setRhythmInspectionContext(null);
         for (const tap of rhythmTest.liveTapEvents) {
           const tapX = _xForRhythmTime(
             tap.timeSeconds,
@@ -1004,14 +1008,14 @@
         labelCandidates,
         overlayTop + 6,
       );
-      _drawRhythmInspectionTooltip(
+      _setRhythmInspectionContext({
         svg,
         ns,
         inspectionItems,
-        leadInStartX,
-        lastMeasure.endX,
+        minX: leadInStartX,
+        maxX: lastMeasure.endX,
         overlayTop,
-      );
+      });
 
       return {
         measureSegments,
@@ -1063,17 +1067,18 @@
       point.setAttribute('cy', y);
       point.setAttribute('r', '3.5');
       point.setAttribute('fill', color);
-      point.setAttribute('stroke', '#ffffff');
-      point.setAttribute('stroke-width', '1.5');
       svg.appendChild(point);
     }
 
     function _appendRhythmInspectHitPoint(svg, ns, x, y, inspectKey) {
-      const hit = document.createElementNS(ns, 'circle');
-      hit.setAttribute('cx', x);
-      hit.setAttribute('cy', y);
-      hit.setAttribute('r', '14');
-      hit.setAttribute('fill', 'transparent');
+      const hitRadius = 14;
+      const hit = document.createElementNS(ns, 'rect');
+      hit.setAttribute('x', x - hitRadius);
+      hit.setAttribute('y', y - hitRadius);
+      hit.setAttribute('width', hitRadius * 2);
+      hit.setAttribute('height', hitRadius * 2);
+      hit.setAttribute('fill', 'rgba(0, 0, 0, 0)');
+      hit.setAttribute('stroke', 'none');
       hit.setAttribute('data-rhythm-inspect-key', inspectKey);
       _attachRhythmInspectHandlers(hit, inspectKey);
       svg.appendChild(hit);
@@ -1096,33 +1101,26 @@
     function _attachRhythmInspectHandlers(target, inspectKey) {
       target.style.cursor = 'pointer';
       target.addEventListener('mouseenter', function() {
-        if (lockedRhythmInspectKey != null) {
+        if (rhythmInspectionState.pinned) {
           return;
         }
-        hoveredRhythmInspectKey = inspectKey;
-        if (currentData) {
-          renderScore(currentData);
-        }
+        _setRhythmInspectState({ key: inspectKey, pinned: false });
       });
       target.addEventListener('mouseleave', function() {
-        if (lockedRhythmInspectKey != null) {
+        if (rhythmInspectionState.pinned) {
           return;
         }
-        if (hoveredRhythmInspectKey === inspectKey) {
-          hoveredRhythmInspectKey = null;
-          if (currentData) {
-            renderScore(currentData);
-          }
+        if (rhythmInspectionState.key === inspectKey) {
+          _clearRhythmInspectState();
         }
       });
       target.addEventListener('click', function(event) {
         event.stopPropagation();
-        lockedRhythmInspectKey =
-          lockedRhythmInspectKey === inspectKey ? null : inspectKey;
-        hoveredRhythmInspectKey = inspectKey;
-        if (currentData) {
-          renderScore(currentData);
+        if (rhythmInspectionState.pinned && rhythmInspectionState.key === inspectKey) {
+          _clearRhythmInspectState();
+          return;
         }
+        _setRhythmInspectState({ key: inspectKey, pinned: true });
       });
     }
 
@@ -1198,31 +1196,28 @@
       svg.appendChild(text);
     }
 
-    function _drawRhythmInspectionTooltip(
-      svg,
-      ns,
-      inspectionItems,
-      minX,
-      maxX,
-      overlayTop,
-    ) {
-      const activeKey = lockedRhythmInspectKey ?? hoveredRhythmInspectKey;
+    function _renderRhythmInspectionTooltip() {
+      const context = rhythmInspectionContext;
+      if (!context) {
+        return;
+      }
+
+      _removeRhythmInspectionTooltip();
+
+      const activeKey = rhythmInspectionState.key;
       if (activeKey == null) {
         return;
       }
 
-      const item = inspectionItems.get(activeKey);
+      const item = context.inspectionItems.get(activeKey);
       if (!item) {
-        if (lockedRhythmInspectKey === activeKey) {
-          lockedRhythmInspectKey = null;
-        }
-        if (hoveredRhythmInspectKey === activeKey) {
-          hoveredRhythmInspectKey = null;
-        }
+        rhythmInspectionState = { key: null, pinned: false };
         return;
       }
 
+      const { svg, ns, minX, maxX, overlayTop } = context;
       const group = document.createElementNS(ns, 'g');
+      group.setAttribute('pointer-events', 'none');
       const text = document.createElementNS(ns, 'text');
       const lineHeight = 16;
       const cardPaddingX = 10;
@@ -1284,11 +1279,48 @@
       rect.setAttribute('stroke', '#d6ccba');
       rect.setAttribute('stroke-width', '1');
       group.insertBefore(rect, text);
+      context.tooltipGroup = group;
+    }
+
+    function _setRhythmInspectState(nextState) {
+      rhythmInspectionState = nextState;
+      _renderRhythmInspectionTooltip();
+    }
+
+    function _setRhythmInspectionContext(nextContext) {
+      _detachRhythmInspectionContext();
+      if (nextContext == null) {
+        return;
+      }
+
+      rhythmInspectionContext = {
+        svg: nextContext.svg,
+        ns: nextContext.ns,
+        inspectionItems: nextContext.inspectionItems,
+        minX: nextContext.minX,
+        maxX: nextContext.maxX,
+        overlayTop: nextContext.overlayTop,
+        tooltipGroup: null,
+      };
+      _renderRhythmInspectionTooltip();
+    }
+
+    function _removeRhythmInspectionTooltip() {
+      const context = rhythmInspectionContext;
+      if (!context || !context.tooltipGroup) {
+        return;
+      }
+      context.tooltipGroup.remove();
+      context.tooltipGroup = null;
+    }
+
+    function _detachRhythmInspectionContext() {
+      _removeRhythmInspectionTooltip();
+      rhythmInspectionContext = null;
     }
 
     function _clearRhythmInspectState() {
-      lockedRhythmInspectKey = null;
-      hoveredRhythmInspectKey = null;
+      _setRhythmInspectState({ key: null, pinned: false });
     }
 
     function _rhythmMeasurePosition(
@@ -1598,12 +1630,8 @@
           }
         }
 
-        if (lockedRhythmInspectKey != null) {
-          lockedRhythmInspectKey = null;
-          hoveredRhythmInspectKey = null;
-          if (currentData) {
-            renderScore(currentData);
-          }
+        if (rhythmInspectionState.key != null) {
+          _clearRhythmInspectState();
         }
 
         // Background tap

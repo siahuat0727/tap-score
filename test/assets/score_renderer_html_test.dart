@@ -156,6 +156,32 @@ void main() {
     expect(html, contains("group.setAttribute(\n        'transform',"));
     expect(
       html,
+      contains("let rhythmInspectionState = { key: null, pinned: false };"),
+    );
+    expect(html, contains('function _setRhythmInspectionContext(nextContext)'));
+    expect(
+      html,
+      contains("if (rhythmInspectionState.pinned && rhythmInspectionState.key === inspectKey) {"),
+    );
+    expect(
+      html,
+      contains("_setRhythmInspectState({ key: inspectKey, pinned: true });"),
+    );
+    expect(
+      html,
+      contains("_setRhythmInspectState({ key: inspectKey, pinned: false });"),
+    );
+    expect(html, contains("context.tooltipGroup = group;"));
+    expect(html, contains("const hitRadius = 14;"));
+    expect(html, contains("const hit = document.createElementNS(ns, 'rect');"));
+    expect(html, contains("hit.setAttribute('x', x - hitRadius);"));
+    expect(html, contains("hit.setAttribute('y', y - hitRadius);"));
+    expect(html, contains("hit.setAttribute('width', hitRadius * 2);"));
+    expect(html, contains("hit.setAttribute('height', hitRadius * 2);"));
+    expect(html, contains("hit.setAttribute('fill', 'rgba(0, 0, 0, 0)');"));
+    expect(html, contains("hit.setAttribute('stroke', 'none');"));
+    expect(
+      html,
       isNot(contains("const pointer = document.createElementNS(ns, 'path');")),
     );
     expect(html, isNot(contains('pointer.setAttribute(')));
@@ -168,6 +194,19 @@ void main() {
     expect(html, isNot(contains('bandRightEdges')));
     expect(html, isNot(contains('_approximateRotatedLabelWidth')));
     expect(html, isNot(contains('Rhythm test result')));
+    expect(html, isNot(contains('lockedRhythmInspectKey')));
+    expect(html, isNot(contains('hoveredRhythmInspectKey')));
+    expect(html, isNot(contains('renderScore(currentData);')));
+    expect(html, isNot(contains("point.setAttribute('stroke', '#ffffff');")));
+    expect(html, isNot(contains("point.setAttribute('stroke-width', '1.5');")));
+    expect(
+      html,
+      isNot(
+        contains("const hit = document.createElementNS(ns, 'circle');"),
+      ),
+    );
+    expect(html, isNot(contains("hit.setAttribute('r', '14');")));
+    expect(html, isNot(contains("hit.setAttribute('fill', 'transparent');")));
     expect(
       html,
       isNot(

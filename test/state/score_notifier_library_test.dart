@@ -241,6 +241,77 @@ void main() {
   );
 
   test(
+    'blank launch still applies in memory when the initial draft write fails',
+    () async {
+      final repository = _FailingSaveScoreLibraryRepository(
+        ScoreLibrarySnapshot(
+          draft: Score(
+            notes: const [Note(midi: 64, duration: NoteDuration.quarter)],
+            bpm: 90,
+          ),
+          savedScores: const [],
+        ),
+      );
+      final notifier = ScoreNotifier(
+        audioService: _FakeAudioService(),
+        scoreLibraryRepository: repository,
+        presetScoreRepository: _MemoryPresetScoreRepository(),
+      );
+      addTearDown(notifier.dispose);
+
+      await notifier.init(initialScoreConfig: const ScoreSeedConfig.blank());
+      await Future<void>.delayed(Duration.zero);
+
+      expect(notifier.score.notes, isEmpty);
+      expect(notifier.currentScoreLabel, 'Draft');
+      expect(
+        notifier.libraryMessage,
+        'Failed to write the local score library.',
+      );
+      expect(notifier.libraryMessageIsError, isTrue);
+    },
+  );
+
+  test(
+    'blank launch falls back to local state when preset loading fails',
+    () async {
+      final notifier = ScoreNotifier(
+        audioService: _FakeAudioService(),
+        scoreLibraryRepository: _MemoryScoreLibraryRepository(
+          ScoreLibrarySnapshot(
+            draft: Score(
+              notes: const [Note(midi: 65, duration: NoteDuration.half)],
+              bpm: 88,
+            ),
+            savedScores: [
+              SavedScoreEntry(
+                id: 'saved-1',
+                name: 'Warmup',
+                updatedAt: DateTime.utc(2026, 3, 22, 9, 0, 0),
+                score: Score(
+                  notes: const [Note(midi: 65, duration: NoteDuration.half)],
+                  bpm: 88,
+                ),
+              ),
+            ],
+            activeScoreId: 'saved-1',
+          ),
+        ),
+        presetScoreRepository: _ThrowingPresetScoreRepository(),
+      );
+      addTearDown(notifier.dispose);
+
+      await notifier.init();
+
+      expect(notifier.score.notes.single.midi, 65);
+      expect(notifier.activeScoreId, 'saved-1');
+      expect(notifier.currentScoreLabel, 'Warmup');
+      expect(notifier.libraryMessage, 'Failed to load preset score manifest.');
+      expect(notifier.libraryMessageIsError, isTrue);
+    },
+  );
+
+  test(
     'preset launch starts a draft initialized from the chosen preset',
     () async {
       final repository = _MemoryScoreLibraryRepository(
@@ -318,6 +389,29 @@ class _MemoryPresetScoreRepository implements PresetScoreRepository {
 
   @override
   Future<List<PresetScoreEntry>> loadPresets() async => presets;
+}
+
+class _ThrowingPresetScoreRepository implements PresetScoreRepository {
+  @override
+  Future<List<PresetScoreEntry>> loadPresets() async {
+    throw const PresetScoreException('Failed to load preset score manifest.');
+  }
+}
+
+class _FailingSaveScoreLibraryRepository implements ScoreLibraryRepository {
+  _FailingSaveScoreLibraryRepository(this.snapshot);
+
+  ScoreLibrarySnapshot? snapshot;
+
+  @override
+  Future<ScoreLibrarySnapshot?> loadSnapshot() async => snapshot;
+
+  @override
+  Future<void> saveSnapshot(ScoreLibrarySnapshot snapshot) async {
+    throw const ScoreLibraryStorageException(
+      'Failed to write the local score library.',
+    );
+  }
 }
 
 class _FakeAudioService extends AudioService {

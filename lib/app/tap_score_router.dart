@@ -2,13 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/portable_score_document.dart';
-import '../models/score_library.dart';
 import '../screens/launch_screen.dart';
 import '../screens/workspace_screen.dart';
 import '../services/preset_score_repository.dart';
 import '../services/score_library_repository.dart';
 import '../services/score_transfer_service.dart';
 import '../state/score_notifier.dart';
+import '../workspace/workspace_repository.dart';
 import 'workspace_launch_config.dart';
 
 sealed class TapScoreRouteState {
@@ -122,11 +122,18 @@ class TapScoreRouterDelegate extends RouterDelegate<Object>
     this.presetScoreRepository,
     this.scoreLibraryRepository,
     this.scoreTransferService,
-  });
+    WorkspaceRepository? workspaceRepository,
+  }) : _workspaceRepository =
+           workspaceRepository ??
+           DefaultWorkspaceRepository(
+             scoreLibraryRepository: scoreLibraryRepository,
+             presetScoreRepository: presetScoreRepository,
+           );
 
   final PresetScoreRepository? presetScoreRepository;
   final ScoreLibraryRepository? scoreLibraryRepository;
   final ScoreTransferService? scoreTransferService;
+  final WorkspaceRepository _workspaceRepository;
 
   @override
   final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -138,9 +145,6 @@ class TapScoreRouterDelegate extends RouterDelegate<Object>
   Object? get currentConfiguration => _routeState;
 
   bool get _isHomeRoute => _routeState is TapScoreHomeRouteState;
-
-  ScoreLibraryRepository get _scoreLibraryRepository =>
-      scoreLibraryRepository ?? SharedPreferencesScoreLibraryRepository();
 
   void showHome() {
     if (_isHomeRoute) {
@@ -163,39 +167,16 @@ class TapScoreRouterDelegate extends RouterDelegate<Object>
     );
   }
 
-  Future<void> showPracticeSaved(String savedScoreId) async {
-    final snapshot =
-        await _scoreLibraryRepository.loadSnapshot() ?? ScoreLibrarySnapshot.empty();
-    final entry = snapshot.savedScores.firstWhere(
-      (candidate) => candidate.id == savedScoreId,
-      orElse: () => throw ArgumentError.value(
-        savedScoreId,
-        'savedScoreId',
-        'Saved score does not exist',
-      ),
-    );
-    await _scoreLibraryRepository.saveSnapshot(
-      snapshot.copyWith(
-        draft: entry.score.copy(),
-        activeScoreId: () => entry.id,
-      ),
-    );
+  void showPracticeSaved(String savedScoreId) {
     _showWorkspace(
-      const WorkspaceLaunchConfig.restore(
+      WorkspaceLaunchConfig.saved(
+        savedScoreId,
         initialMode: WorkspaceMode.rhythmTest,
       ),
     );
   }
 
-  Future<void> showImportedDocument(PortableScoreDocument document) async {
-    final snapshot =
-        await _scoreLibraryRepository.loadSnapshot() ?? ScoreLibrarySnapshot.empty();
-    await _scoreLibraryRepository.saveSnapshot(
-      snapshot.copyWith(
-        draft: document.score.copy(),
-        activeScoreId: () => null,
-      ),
-    );
+  void showImportedDocument(PortableScoreDocument document) {
     _showWorkspace(WorkspaceLaunchConfig.imported(document));
   }
 
@@ -252,10 +233,7 @@ class TapScoreRouterDelegate extends RouterDelegate<Object>
       TapScoreWorkspaceRouteState(:final launchConfig) => MaterialPage<void>(
         key: ValueKey('tap-score-workspace-page-$_workspaceSession'),
         child: ChangeNotifierProvider(
-          create: (_) => ScoreNotifier(
-            scoreLibraryRepository: scoreLibraryRepository,
-            presetScoreRepository: presetScoreRepository,
-          ),
+          create: (_) => ScoreNotifier(workspaceRepository: _workspaceRepository),
           child: WorkspaceScreen(
             launchConfig: launchConfig,
             scoreTransferService: scoreTransferService,

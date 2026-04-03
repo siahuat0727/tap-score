@@ -105,11 +105,15 @@ class ScoreLibrarySnapshot {
     required this.draft,
     required this.savedScores,
     this.activeScoreId,
+    this.activePresetId,
+    this.draftLabel,
   });
 
   final Score draft;
   final List<SavedScoreEntry> savedScores;
   final String? activeScoreId;
+  final String? activePresetId;
+  final String? draftLabel;
 
   static ScoreLibrarySnapshot empty() {
     return ScoreLibrarySnapshot(draft: Score(), savedScores: const []);
@@ -119,6 +123,8 @@ class ScoreLibrarySnapshot {
     Score? draft,
     List<SavedScoreEntry>? savedScores,
     String? Function()? activeScoreId,
+    String? Function()? activePresetId,
+    String? Function()? draftLabel,
   }) {
     return ScoreLibrarySnapshot(
       draft: draft ?? this.draft,
@@ -126,6 +132,10 @@ class ScoreLibrarySnapshot {
       activeScoreId: activeScoreId != null
           ? activeScoreId()
           : this.activeScoreId,
+      activePresetId: activePresetId != null
+          ? activePresetId()
+          : this.activePresetId,
+      draftLabel: draftLabel != null ? draftLabel() : this.draftLabel,
     );
   }
 
@@ -134,6 +144,8 @@ class ScoreLibrarySnapshot {
       'draft': draft.toJson(),
       'savedScores': savedScores.map((entry) => entry.toJson()).toList(),
       'activeScoreId': activeScoreId,
+      'activePresetId': activePresetId,
+      'draftLabel': draftLabel,
     };
   }
 
@@ -165,6 +177,24 @@ class ScoreLibrarySnapshot {
       );
     }
 
+    final activePresetId = json['activePresetId'];
+    if (activePresetId != null && activePresetId is! String) {
+      throw ArgumentError.value(
+        json['activePresetId'],
+        'activePresetId',
+        'Expected a string or null',
+      );
+    }
+
+    final draftLabel = json['draftLabel'];
+    if (draftLabel != null && draftLabel is! String) {
+      throw ArgumentError.value(
+        json['draftLabel'],
+        'draftLabel',
+        'Expected a string or null',
+      );
+    }
+
     return ScoreLibrarySnapshot(
       draft: Score.fromJson(draftJson),
       savedScores: savedScoresJson
@@ -180,6 +210,8 @@ class ScoreLibrarySnapshot {
           })
           .toList(growable: false),
       activeScoreId: activeScoreId,
+      activePresetId: activePresetId,
+      draftLabel: draftLabel,
     );
   }
 }
