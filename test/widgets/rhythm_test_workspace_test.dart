@@ -93,7 +93,8 @@ void main() {
       await tester.pump();
 
       expect(find.textContaining('Tap'), findsOneWidget);
-      expect(find.textContaining('Enter'), findsOneWidget);
+      expect(find.textContaining('Space'), findsOneWidget);
+      expect(find.textContaining('Enter'), findsNothing);
       expect(
         tester
             .widget<ScoreViewWidget>(find.byType(ScoreViewWidget))
@@ -305,7 +306,7 @@ Widget _wrap(RhythmTestNotifier notifier) {
   );
 }
 
-bool _ignoreRendererKeyDown(String? key, String? code) => false;
+bool _ignoreRendererKeyDown(String? key, String? code, bool repeat) => false;
 
 RhythmTestNotifier _buildNotifier({
   RhythmMatcher? matcher,

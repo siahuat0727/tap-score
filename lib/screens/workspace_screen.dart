@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../app/workspace_launch_config.dart';
 import '../input/editor_shortcuts.dart';
+import '../services/audio_service.dart';
 import '../services/score_transfer_service.dart';
 import '../state/rhythm_test_notifier.dart';
 import '../state/score_notifier.dart';
@@ -22,6 +23,7 @@ class WorkspaceScreen extends StatefulWidget {
   const WorkspaceScreen({
     this.launchConfig = const WorkspaceLaunchConfig.blank(),
     this.scoreTransferService,
+    this.rhythmTestAudioService,
     this.onGoHome,
     this.onRouteSync,
     super.key,
@@ -29,6 +31,7 @@ class WorkspaceScreen extends StatefulWidget {
 
   final WorkspaceLaunchConfig launchConfig;
   final ScoreTransferService? scoreTransferService;
+  final AudioService? rhythmTestAudioService;
   final VoidCallback? onGoHome;
   final WorkspaceRouteSync? onRouteSync;
 
@@ -107,7 +110,10 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     }
 
     final previousNotifier = _rhythmTestNotifier;
-    final rhythmTestNotifier = RhythmTestNotifier(score: scoreNotifier.score);
+    final rhythmTestNotifier = RhythmTestNotifier(
+      score: scoreNotifier.score,
+      audioService: widget.rhythmTestAudioService,
+    );
     setState(() {
       _mode = WorkspaceMode.rhythmTest;
       _rhythmTestNotifier = rhythmTestNotifier;
@@ -195,7 +201,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     return '$baseName.json';
   }
 
-  bool _handleRendererKeyDown(String? key, String? code) {
+  bool _handleRendererKeyDown(String? key, String? code, bool repeat) {
     if (_mode == WorkspaceMode.compose) {
       if (key == ' ' || code == 'Space') {
         final notifier = context.read<ScoreNotifier>();
@@ -209,7 +215,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       return false;
     }
 
-    if (key == 'Enter' || code == 'Enter' || code == 'NumpadEnter') {
+    if (!repeat && (key == ' ' || code == 'Space')) {
       _rhythmTestNotifier?.performPrimaryAction();
       return true;
     }
@@ -221,8 +227,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     if (_mode == WorkspaceMode.rhythmTest) {
       if (event is KeyDownEvent) {
         final key = event.logicalKey;
-        if (key == LogicalKeyboardKey.enter ||
-            key == LogicalKeyboardKey.numpadEnter) {
+        if (key == LogicalKeyboardKey.space) {
           _rhythmTestNotifier?.performPrimaryAction();
           return KeyEventResult.handled;
         }

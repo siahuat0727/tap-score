@@ -234,7 +234,7 @@ class RhythmTestNotifier extends ChangeNotifier {
 
   String get primaryActionLabel => isBusy ? 'Tap' : 'Start';
 
-  String get primaryActionHint => 'Enter';
+  String get primaryActionHint => 'Space';
 
   bool get primaryActionEnabled => isBusy || canStart;
 

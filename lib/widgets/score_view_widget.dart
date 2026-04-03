@@ -28,7 +28,8 @@ class ScoreViewWidget extends StatefulWidget {
 
   final bool interactive;
   final bool blockRendererPointerInput;
-  final bool Function(String? key, String? code)? onRendererKeyDown;
+  final bool Function(String? key, String? code, bool repeat)?
+  onRendererKeyDown;
   final RhythmOverlayRenderData? rhythmOverlay;
   final int? playbackIndex;
 
@@ -73,7 +74,12 @@ class _ScoreViewWidgetState extends State<ScoreViewWidget> {
       case 'keydown':
         final key = data['key'] as String?;
         final code = data['code'] as String?;
-        final handledByParent = widget.onRendererKeyDown?.call(key, code);
+        final repeat = data['repeat'] == true;
+        final handledByParent = widget.onRendererKeyDown?.call(
+          key,
+          code,
+          repeat,
+        );
         if (handledByParent == true) {
           return;
         }

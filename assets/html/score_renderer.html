@@ -1686,7 +1686,7 @@
       }
 
       e.preventDefault();
-      _sendMessage({ type: 'keydown', key: e.key, code: e.code });
+      _sendMessage({ type: 'keydown', key: e.key, code: e.code, repeat: e.repeat });
     });
   </script>
 </body>

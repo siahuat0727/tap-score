@@ -266,6 +266,7 @@ void main() {
     expect(notifier.restartLocked, isTrue);
     expect(notifier.canStart, isFalse);
     expect(notifier.primaryActionLabel, 'Start');
+    expect(notifier.primaryActionHint, 'Space');
 
     final tapsBefore = notifier.tapEvents.length;
     notifier.recordTap();

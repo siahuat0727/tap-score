@@ -14,7 +14,8 @@ class RhythmTestWorkspace extends StatelessWidget {
   });
 
   final ValueChanged<double> onTempoChanged;
-  final bool Function(String? key, String? code)? onRendererKeyDown;
+  final bool Function(String? key, String? code, bool repeat)?
+  onRendererKeyDown;
 
   @override
   Widget build(BuildContext context) {

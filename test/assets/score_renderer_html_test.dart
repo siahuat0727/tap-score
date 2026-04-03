@@ -20,6 +20,7 @@ void main() {
     expect(html, isNot(contains('const forwardedCodes = [')));
     expect(html, contains('key: e.key'));
     expect(html, contains("code: e.code"));
+    expect(html, contains("repeat: e.repeat"));
   });
 
   test('score renderer reserves a larger score header for title and tempo', () {
