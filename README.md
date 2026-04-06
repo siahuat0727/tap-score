@@ -21,6 +21,9 @@ Requires Flutter 3.10+.
 # Web
 flutter run -d chrome
 
+# Cloudflare preview wasm build
+./tool/cloudflare_pages_build_wasm_preview.sh
+
 # Android
 flutter run -d android
 
@@ -45,12 +48,24 @@ Build output directory: build/web
 Root directory: /
 ```
 
-The build script downloads and pins Flutter 3.38.1, enables web support, runs `flutter pub get`, and builds the app for Pages.
+The production build script downloads and pins Flutter 3.38.1, enables web support, runs `flutter pub get`, and builds the JS/CanvasKit app for Pages.
+
+### Wasm preview setup
+
+Use this build command for a preview-only experiment:
+
+```text
+Build command: ./tool/cloudflare_pages_build_wasm_preview.sh
+Build output directory: build/web
+```
+
+Keep the production site on `./tool/cloudflare_pages_build.sh` until the wasm preview proves faster and stable enough to replace it.
 
 ### Why this setup
 
 - Cloudflare Pages does not provide Flutter by default.
 - The build script keeps the deployment reproducible by pinning the Flutter SDK version used by this project.
+- UI fonts are bundled locally so Flutter Web does not need Google font fallback requests to render the main interface.
 - `web/_redirects` enables SPA fallback so direct requests still resolve to `index.html`.
 
 ### First deployment checklist
