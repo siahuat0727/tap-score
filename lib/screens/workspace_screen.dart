@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../app/score_seed_config.dart';
 import '../app/workspace_launch_config.dart';
 import '../input/editor_shortcuts.dart';
 import '../services/audio_service.dart';
@@ -18,6 +21,38 @@ import '../widgets/workspace_top_bar.dart';
 
 typedef WorkspaceRouteSync =
     void Function(WorkspaceMode mode, String? shareablePresetId);
+
+enum _WorkspaceStartupPhase {
+  startingApp,
+  preparingWorkspace,
+  preparingRhythmTest,
+  ready,
+  failed,
+}
+
+class _WorkspaceStartupStatus {
+  const _WorkspaceStartupStatus._(this.phase, {this.errorMessage});
+
+  const _WorkspaceStartupStatus.startingApp()
+    : this._(_WorkspaceStartupPhase.startingApp);
+
+  const _WorkspaceStartupStatus.preparingWorkspace()
+    : this._(_WorkspaceStartupPhase.preparingWorkspace);
+
+  const _WorkspaceStartupStatus.preparingRhythmTest()
+    : this._(_WorkspaceStartupPhase.preparingRhythmTest);
+
+  const _WorkspaceStartupStatus.ready() : this._(_WorkspaceStartupPhase.ready);
+
+  const _WorkspaceStartupStatus.failed(String message)
+    : this._(_WorkspaceStartupPhase.failed, errorMessage: message);
+
+  final _WorkspaceStartupPhase phase;
+  final String? errorMessage;
+
+  bool get isReady => phase == _WorkspaceStartupPhase.ready;
+  bool get isFailed => phase == _WorkspaceStartupPhase.failed;
+}
 
 class WorkspaceScreen extends StatefulWidget {
   const WorkspaceScreen({
@@ -44,9 +79,20 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   late final ScoreTransferService _scoreTransferService =
       widget.scoreTransferService ?? PlatformScoreTransferService();
   late WorkspaceMode _mode = widget.launchConfig.initialMode;
-  late final Future<void> _initializationFuture = _initializeWorkspace();
   RhythmTestNotifier? _rhythmTestNotifier;
-  bool _workspaceInitialized = false;
+  _WorkspaceStartupStatus _startupStatus =
+      const _WorkspaceStartupStatus.startingApp();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      unawaited(_startStartupFlow());
+    });
+  }
 
   @override
   void dispose() {
@@ -55,7 +101,11 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     super.dispose();
   }
 
-  Future<void> _initializeWorkspace() async {
+  Future<void> _startStartupFlow() async {
+    setState(() {
+      _startupStatus = const _WorkspaceStartupStatus.preparingWorkspace();
+    });
+
     await context.read<ScoreNotifier>().init(
       initialScoreConfig: widget.launchConfig.seedConfig,
     );
@@ -63,19 +113,35 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       return;
     }
 
-    _workspaceInitialized = true;
-    if (_mode == WorkspaceMode.rhythmTest) {
-      await _enterRhythmTest();
+    final notifier = context.read<ScoreNotifier>();
+    if (!notifier.initialWorkspaceLoadSucceeded) {
+      setState(() {
+        _startupStatus = _WorkspaceStartupStatus.failed(
+          notifier.libraryMessage ?? 'Failed to load the workspace.',
+        );
+      });
       return;
     }
 
+    if (_mode == WorkspaceMode.rhythmTest) {
+      setState(() {
+        _startupStatus = const _WorkspaceStartupStatus.preparingRhythmTest();
+      });
+      await _enterRhythmTest(duringStartup: true);
+      if (!mounted) {
+        return;
+      }
+    }
+
     _syncRoute();
-    setState(() {});
     _focusNode.requestFocus();
+    setState(() {
+      _startupStatus = const _WorkspaceStartupStatus.ready();
+    });
   }
 
   Future<void> _switchMode(WorkspaceMode nextMode) async {
-    if (nextMode == _mode) {
+    if (!_startupStatus.isReady || nextMode == _mode) {
       return;
     }
 
@@ -91,10 +157,10 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       return;
     }
 
-    await _enterRhythmTest();
+    await _enterRhythmTest(duringStartup: false);
   }
 
-  Future<void> _enterRhythmTest() async {
+  Future<void> _enterRhythmTest({required bool duringStartup}) async {
     final scoreNotifier = context.read<ScoreNotifier>();
     scoreNotifier.stop();
     if (scoreNotifier.score.notes.isEmpty) {
@@ -104,8 +170,10 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
         _rhythmTestNotifier = null;
       });
       previousNotifier?.dispose();
-      _syncRoute();
-      _focusNode.requestFocus();
+      if (!duringStartup) {
+        _syncRoute();
+        _focusNode.requestFocus();
+      }
       return;
     }
 
@@ -126,8 +194,10 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       return;
     }
 
-    _syncRoute();
-    _focusNode.requestFocus();
+    if (!duringStartup) {
+      _syncRoute();
+      _focusNode.requestFocus();
+    }
   }
 
   String? _shareablePresetId(ScoreNotifier notifier) {
@@ -202,6 +272,10 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   }
 
   bool _handleRendererKeyDown(String? key, String? code, bool repeat) {
+    if (!_startupStatus.isReady) {
+      return false;
+    }
+
     if (_mode == WorkspaceMode.compose) {
       if (key == ' ' || code == 'Space') {
         final notifier = context.read<ScoreNotifier>();
@@ -224,6 +298,10 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   }
 
   KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
+    if (!_startupStatus.isReady) {
+      return KeyEventResult.ignored;
+    }
+
     if (_mode == WorkspaceMode.rhythmTest) {
       if (event is KeyDownEvent) {
         final key = event.logicalKey;
@@ -284,58 +362,65 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<void>(
-      future: _initializationFuture,
-      builder: (context, _) {
-        return Focus(
-          focusNode: _focusNode,
-          autofocus: true,
-          onKeyEvent: _handleKeyEvent,
-          child: Listener(
-            behavior: HitTestBehavior.translucent,
-            onPointerDown: (_) => _focusNode.requestFocus(),
-            child: Scaffold(
-              body: SafeArea(
-                child: Stack(
-                  children: [
-                    Consumer<ScoreNotifier>(
-                      builder: (context, notifier, _) {
-                        return Column(
-                          children: [
-                            WorkspaceTopBar(
-                              key: const ValueKey('workspace-top-bar'),
-                              mode: _mode,
-                              showsEditorActions:
-                                  _mode == WorkspaceMode.compose,
-                              hasUnsavedChanges: notifier.hasUnsavedChanges,
-                              onGoHome: widget.onGoHome ?? () {},
-                              onSelectMode: _switchMode,
-                              onSave: _showSaveDialog,
-                              onExport: _exportCurrentScore,
-                            ),
-                            Expanded(child: _buildWorkspaceBody(notifier)),
-                          ],
-                        );
-                      },
-                    ),
-                    const _LibraryToastLayer(),
-                  ],
+    return Focus(
+      focusNode: _focusNode,
+      autofocus: true,
+      onKeyEvent: _handleKeyEvent,
+      child: Listener(
+        behavior: HitTestBehavior.translucent,
+        onPointerDown: (_) => _focusNode.requestFocus(),
+        child: Scaffold(
+          body: SafeArea(
+            child: Stack(
+              children: [
+                Consumer<ScoreNotifier>(
+                  builder: (context, notifier, _) {
+                    return Column(
+                      children: [
+                        WorkspaceTopBar(
+                          key: const ValueKey('workspace-top-bar'),
+                          mode: _mode,
+                          showsEditorActions:
+                              _startupStatus.isReady &&
+                              _mode == WorkspaceMode.compose,
+                          isInteractive: _startupStatus.isReady,
+                          hasUnsavedChanges: notifier.hasUnsavedChanges,
+                          onGoHome: widget.onGoHome ?? () {},
+                          onSelectMode: _switchMode,
+                          onSave: _showSaveDialog,
+                          onExport: _exportCurrentScore,
+                        ),
+                        Expanded(child: _buildWorkspaceBody(notifier)),
+                      ],
+                    );
+                  },
                 ),
-              ),
+                const _LibraryToastLayer(),
+              ],
             ),
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 
   Widget _buildWorkspaceBody(ScoreNotifier notifier) {
-    if (_mode == WorkspaceMode.compose) {
-      return _buildComposeBody(notifier);
+    if (_startupStatus.isFailed) {
+      return _WorkspaceUnavailableView(
+        title: 'Workspace unavailable',
+        message: _startupStatus.errorMessage ?? 'Failed to load the workspace.',
+      );
     }
 
-    if (!_workspaceInitialized && _rhythmTestNotifier == null) {
-      return const _WorkspaceLoadingView();
+    if (!_startupStatus.isReady) {
+      return _WorkspaceStartupView(
+        status: _startupStatus,
+        launchConfig: widget.launchConfig,
+      );
+    }
+
+    if (_mode == WorkspaceMode.compose) {
+      return _buildComposeBody(notifier);
     }
 
     return _buildRhythmTestBody(notifier);
@@ -685,17 +770,195 @@ class _FloatingToast extends StatelessWidget {
   }
 }
 
-class _WorkspaceLoadingView extends StatelessWidget {
-  const _WorkspaceLoadingView();
+enum _StartupStepState { pending, active, complete }
+
+class _WorkspaceStartupView extends StatelessWidget {
+  const _WorkspaceStartupView({
+    required this.status,
+    required this.launchConfig,
+  });
+
+  final _WorkspaceStartupStatus status;
+  final WorkspaceLaunchConfig launchConfig;
+
+  String get _title => switch (status.phase) {
+    _WorkspaceStartupPhase.startingApp => 'Starting app',
+    _WorkspaceStartupPhase.preparingWorkspace => 'Preparing workspace',
+    _WorkspaceStartupPhase.preparingRhythmTest => 'Preparing rhythm test',
+    _WorkspaceStartupPhase.ready || _WorkspaceStartupPhase.failed =>
+      throw StateError('Startup card only renders while work is in progress.'),
+  };
+
+  String get _detail => switch (status.phase) {
+    _WorkspaceStartupPhase.startingApp =>
+      'Tap Score is starting the app shell.',
+    _WorkspaceStartupPhase.preparingWorkspace => _workspaceStepLabel,
+    _WorkspaceStartupPhase.preparingRhythmTest =>
+      'Loading rhythm test audio and controls.',
+    _WorkspaceStartupPhase.ready || _WorkspaceStartupPhase.failed =>
+      throw StateError('Startup card only renders while work is in progress.'),
+  };
+
+  String get _workspaceStepLabel => switch (launchConfig.seedConfig.kind) {
+    ScoreSeedKind.restore => 'Restoring last workspace',
+    ScoreSeedKind.blank => 'Creating empty workspace',
+    ScoreSeedKind.preset => 'Loading preset',
+    ScoreSeedKind.saved => 'Loading saved score',
+    ScoreSeedKind.imported => 'Importing score',
+  };
+
+  _StartupStepState get _appStepState => switch (status.phase) {
+    _WorkspaceStartupPhase.startingApp => _StartupStepState.active,
+    _WorkspaceStartupPhase.preparingWorkspace ||
+    _WorkspaceStartupPhase.preparingRhythmTest => _StartupStepState.complete,
+    _WorkspaceStartupPhase.ready || _WorkspaceStartupPhase.failed =>
+      throw StateError('Startup card only renders while work is in progress.'),
+  };
+
+  _StartupStepState get _workspaceStepState => switch (status.phase) {
+    _WorkspaceStartupPhase.startingApp => _StartupStepState.pending,
+    _WorkspaceStartupPhase.preparingWorkspace => _StartupStepState.active,
+    _WorkspaceStartupPhase.preparingRhythmTest => _StartupStepState.complete,
+    _WorkspaceStartupPhase.ready || _WorkspaceStartupPhase.failed =>
+      throw StateError('Startup card only renders while work is in progress.'),
+  };
+
+  _StartupStepState get _rhythmStepState => switch (status.phase) {
+    _WorkspaceStartupPhase.startingApp ||
+    _WorkspaceStartupPhase.preparingWorkspace => _StartupStepState.pending,
+    _WorkspaceStartupPhase.preparingRhythmTest => _StartupStepState.active,
+    _WorkspaceStartupPhase.ready || _WorkspaceStartupPhase.failed =>
+      throw StateError('Startup card only renders while work is in progress.'),
+  };
 
   @override
   Widget build(BuildContext context) {
-    return const Center(
-      child: SizedBox(
-        width: 30,
-        height: 30,
-        child: CircularProgressIndicator(strokeWidth: 2.8),
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 520),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: AppColors.surfaceContainerHigh,
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: AppColors.surfaceBorder),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withAlpha(10),
+                blurRadius: 20,
+                offset: const Offset(0, 10),
+              ),
+            ],
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 22, 24, 22),
+            child: Column(
+              key: const ValueKey('workspace-startup-card'),
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _title,
+                  key: const ValueKey('workspace-startup-title'),
+                  style: const TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w900,
+                    color: AppColors.textBody,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  _detail,
+                  key: const ValueKey('workspace-startup-detail'),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textMuted,
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                _StartupStep(
+                  key: const ValueKey('workspace-startup-step-app'),
+                  label: status.phase == _WorkspaceStartupPhase.startingApp
+                      ? 'Starting app'
+                      : 'App shell ready',
+                  state: _appStepState,
+                ),
+                const SizedBox(height: 12),
+                _StartupStep(
+                  key: const ValueKey('workspace-startup-step-workspace'),
+                  label: _workspaceStepLabel,
+                  state: _workspaceStepState,
+                ),
+                if (launchConfig.initialMode == WorkspaceMode.rhythmTest) ...[
+                  const SizedBox(height: 12),
+                  _StartupStep(
+                    key: const ValueKey('workspace-startup-step-rhythm-test'),
+                    label: 'Preparing rhythm test',
+                    state: _rhythmStepState,
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
       ),
+    );
+  }
+}
+
+class _StartupStep extends StatelessWidget {
+  const _StartupStep({required this.label, required this.state, super.key});
+
+  final String label;
+  final _StartupStepState state;
+
+  @override
+  Widget build(BuildContext context) {
+    final accentColor = switch (state) {
+      _StartupStepState.pending => AppColors.textMuted,
+      _StartupStepState.active => AppColors.accentBlue,
+      _StartupStepState.complete => AppColors.statusSuccess,
+    };
+
+    return Row(
+      children: [
+        SizedBox.square(
+          dimension: 18,
+          child: switch (state) {
+            _StartupStepState.pending => DecoratedBox(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(color: AppColors.surfaceBorder, width: 2),
+              ),
+            ),
+            _StartupStepState.active => CircularProgressIndicator(
+              strokeWidth: 2.2,
+              color: accentColor,
+            ),
+            _StartupStepState.complete => DecoratedBox(
+              decoration: BoxDecoration(
+                color: accentColor,
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: const Icon(Icons.check, size: 12, color: Colors.white),
+            ),
+          },
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: state == _StartupStepState.pending
+                  ? AppColors.textMuted
+                  : AppColors.textBody,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
+import 'package:tap_score/app/score_seed_config.dart';
 import 'package:tap_score/app/workspace_launch_config.dart';
 import 'package:tap_score/main.dart';
 import 'package:tap_score/models/enums.dart';
@@ -24,6 +26,9 @@ import 'package:tap_score/widgets/duration_selector.dart';
 import 'package:tap_score/widgets/piano_keyboard.dart';
 import 'package:tap_score/widgets/rhythm_test_workspace.dart';
 import 'package:tap_score/widgets/score_view_widget.dart';
+import 'package:tap_score/workspace/workspace_document.dart';
+import 'package:tap_score/workspace/workspace_repository.dart';
+import 'package:tap_score/workspace/workspace_session.dart';
 import 'package:webview_flutter_platform_interface/webview_flutter_platform_interface.dart';
 
 import 'helpers/fake_webview_platform.dart';
@@ -114,9 +119,25 @@ Future<BuildContext> _openBlankWorkspace(
   await tester.pumpWidget(_buildTestApp(presets: presets, snapshot: snapshot));
   await tester.pump();
   await tester.tap(find.byKey(const ValueKey('launch-new-blank-card')));
+  await _pumpWorkspaceReady(tester);
+  return tester.element(find.byType(WorkspaceScreen));
+}
+
+Future<void> _pumpWorkspaceReady(WidgetTester tester) async {
   await tester.pump();
   await tester.pump(const Duration(milliseconds: 300));
-  return tester.element(find.byType(WorkspaceScreen));
+}
+
+ScoreNotifier _buildInitializedWorkspaceNotifier({
+  Score? score,
+  AudioService? audioService,
+}) {
+  return ScoreNotifier(
+    audioService: audioService,
+    workspaceRepository: _ImmediateWorkspaceRepository(
+      _workspaceLoadResult(score: score ?? Score()),
+    ),
+  );
 }
 
 void main() {
@@ -187,8 +208,7 @@ void main() {
       );
 
       await tester.tap(find.byKey(const ValueKey('practice-preset-preset-1')));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 300));
+      await _pumpWorkspaceReady(tester);
 
       expect(find.byType(WorkspaceScreen), findsOneWidget);
       expect(find.byKey(const ValueKey('workspace-top-bar')), findsOneWidget);
@@ -199,14 +219,104 @@ void main() {
     },
   );
 
+  testWidgets(
+    'editor deep link keeps the shell visible while the workspace prepares',
+    (WidgetTester tester) async {
+      final loadGate = Completer<WorkspaceLoadResult>();
+      final notifier = ScoreNotifier(
+        workspaceRepository: _DelayedWorkspaceRepository(loadGate.future),
+      );
+      addTearDown(notifier.dispose);
+
+      await tester.pumpWidget(
+        _buildWorkspace(
+          notifier,
+          launchConfig: const WorkspaceLaunchConfig.restore(
+            initialMode: WorkspaceMode.compose,
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.byKey(const ValueKey('workspace-top-bar')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('workspace-startup-card')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('workspace-startup-step-app')),
+        findsOneWidget,
+      );
+      expect(find.text('Restoring last workspace'), findsWidgets);
+      expect(find.byKey(const ValueKey('compose-toolbar')), findsNothing);
+      expect(find.byKey(const ValueKey('score-view-surface')), findsNothing);
+
+      loadGate.complete(_workspaceLoadResult(score: Score()));
+      await _pumpWorkspaceReady(tester);
+
+      expect(
+        find.byKey(const ValueKey('workspace-startup-card')),
+        findsNothing,
+      );
+      expect(find.byKey(const ValueKey('compose-toolbar')), findsOneWidget);
+      expect(find.byKey(const ValueKey('score-view-surface')), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'practice startup shows rhythm-test preparation after workspace load',
+    (WidgetTester tester) async {
+      final notifier = ScoreNotifier(
+        workspaceRepository: _ImmediateWorkspaceRepository(
+          _workspaceLoadResult(
+            score: Score(
+              notes: const [Note(midi: 67, duration: NoteDuration.quarter)],
+            ),
+            presetId: 'triplet-study',
+          ),
+        ),
+      );
+      final audioGate = Completer<bool>();
+      addTearDown(notifier.dispose);
+
+      await tester.pumpWidget(
+        _buildWorkspace(
+          notifier,
+          launchConfig: WorkspaceLaunchConfig.preset(
+            'triplet-study',
+            initialMode: WorkspaceMode.rhythmTest,
+          ),
+          rhythmTestAudioService: _DelayedInitAudioService(audioGate.future),
+        ),
+      );
+      await tester.pump();
+
+      expect(
+        find.byKey(const ValueKey('workspace-startup-card')),
+        findsOneWidget,
+      );
+      expect(find.text('Preparing rhythm test'), findsWidgets);
+      expect(find.byKey(const ValueKey('rhythm-test-primary')), findsNothing);
+
+      audioGate.complete(true);
+      await _pumpWorkspaceReady(tester);
+
+      expect(
+        find.byKey(const ValueKey('workspace-startup-card')),
+        findsNothing,
+      );
+      expect(find.byKey(const ValueKey('rhythm-test-primary')), findsOneWidget);
+    },
+  );
+
   testWidgets('workspace keeps file actions in the top bar only', (
     WidgetTester tester,
   ) async {
-    final notifier = ScoreNotifier();
+    final notifier = _buildInitializedWorkspaceNotifier();
     addTearDown(notifier.dispose);
 
     await tester.pumpWidget(_buildWorkspace(notifier));
-    await tester.pump();
+    await _pumpWorkspaceReady(tester);
 
     final saveRect = tester.getRect(
       find.byKey(const ValueKey('save-score-button')),
@@ -226,11 +336,11 @@ void main() {
   testWidgets(
     'compose mode keeps mode switching in the top bar, not the toolbar',
     (WidgetTester tester) async {
-      final notifier = ScoreNotifier();
+      final notifier = _buildInitializedWorkspaceNotifier();
       addTearDown(notifier.dispose);
 
       await tester.pumpWidget(_buildWorkspace(notifier));
-      await tester.pump();
+      await _pumpWorkspaceReady(tester);
 
       expect(
         find.byKey(const ValueKey('workspace-mode-compose')),
@@ -322,11 +432,11 @@ void main() {
   testWidgets('library toast floats without shifting toolbar layout', (
     WidgetTester tester,
   ) async {
-    final notifier = ScoreNotifier();
+    final notifier = _buildInitializedWorkspaceNotifier();
     addTearDown(notifier.dispose);
 
     await tester.pumpWidget(_buildWorkspace(notifier));
-    await tester.pump();
+    await _pumpWorkspaceReady(tester);
 
     final before = tester.getRect(
       find.byKey(const ValueKey('compose-toolbar')),
@@ -352,11 +462,11 @@ void main() {
   testWidgets('save button emphasizes unsaved changes', (
     WidgetTester tester,
   ) async {
-    final notifier = ScoreNotifier();
+    final notifier = _buildInitializedWorkspaceNotifier();
     addTearDown(notifier.dispose);
 
     await tester.pumpWidget(_buildWorkspace(notifier));
-    await tester.pump();
+    await _pumpWorkspaceReady(tester);
 
     expect(
       _borderColor(
@@ -381,7 +491,7 @@ void main() {
   testWidgets('compose screen stays stable on a compact-width viewport', (
     WidgetTester tester,
   ) async {
-    final notifier = ScoreNotifier();
+    final notifier = _buildInitializedWorkspaceNotifier();
     addTearDown(notifier.dispose);
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(390, 960);
@@ -389,8 +499,7 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
 
     await tester.pumpWidget(_buildWorkspace(notifier));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 150));
+    await _pumpWorkspaceReady(tester);
 
     final topBarRect = tester.getRect(
       find.byKey(const ValueKey('workspace-top-bar')),
@@ -412,7 +521,7 @@ void main() {
   testWidgets('top-bar actions stay aligned on a wide viewport', (
     WidgetTester tester,
   ) async {
-    final notifier = ScoreNotifier();
+    final notifier = _buildInitializedWorkspaceNotifier();
     addTearDown(notifier.dispose);
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(1280, 960);
@@ -420,7 +529,7 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
 
     await tester.pumpWidget(_buildWorkspace(notifier));
-    await tester.pump();
+    await _pumpWorkspaceReady(tester);
 
     final saveRect = tester.getRect(
       find.byKey(const ValueKey('save-score-button')),
@@ -440,14 +549,19 @@ void main() {
   testWidgets('workspace mode switch works both directions', (
     WidgetTester tester,
   ) async {
-    final notifier = ScoreNotifier();
-    addTearDown(notifier.dispose);
-    notifier.score.addNote(
-      const Note(midi: 60, duration: NoteDuration.quarter),
+    final notifier = ScoreNotifier(
+      workspaceRepository: _ImmediateWorkspaceRepository(
+        _workspaceLoadResult(
+          score: Score(
+            notes: const [Note(midi: 60, duration: NoteDuration.quarter)],
+          ),
+        ),
+      ),
     );
+    addTearDown(notifier.dispose);
 
     await tester.pumpWidget(_buildWorkspace(notifier));
-    await tester.pump();
+    await _pumpWorkspaceReady(tester);
 
     await tester.tap(find.byKey(const ValueKey('workspace-mode-rhythm-test')));
     await tester.pump();
@@ -487,18 +601,23 @@ void main() {
   testWidgets('rhythm test stays within a compact viewport', (
     WidgetTester tester,
   ) async {
-    final notifier = ScoreNotifier();
-    addTearDown(notifier.dispose);
-    notifier.score.addNote(
-      const Note(midi: 60, duration: NoteDuration.quarter),
+    final notifier = ScoreNotifier(
+      workspaceRepository: _ImmediateWorkspaceRepository(
+        _workspaceLoadResult(
+          score: Score(
+            notes: const [Note(midi: 60, duration: NoteDuration.quarter)],
+          ),
+        ),
+      ),
     );
+    addTearDown(notifier.dispose);
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(390, 700);
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
     await tester.pumpWidget(_buildWorkspace(notifier));
-    await tester.pump();
+    await _pumpWorkspaceReady(tester);
 
     await tester.tap(find.byKey(const ValueKey('workspace-mode-rhythm-test')));
     await tester.pump();
@@ -521,14 +640,19 @@ void main() {
   testWidgets('rhythm test parameter buttons support fine adjustment', (
     WidgetTester tester,
   ) async {
-    final notifier = ScoreNotifier();
-    addTearDown(notifier.dispose);
-    notifier.score.addNote(
-      const Note(midi: 60, duration: NoteDuration.quarter),
+    final notifier = ScoreNotifier(
+      workspaceRepository: _ImmediateWorkspaceRepository(
+        _workspaceLoadResult(
+          score: Score(
+            notes: const [Note(midi: 60, duration: NoteDuration.quarter)],
+          ),
+        ),
+      ),
     );
+    addTearDown(notifier.dispose);
 
     await tester.pumpWidget(_buildWorkspace(notifier));
-    await tester.pump();
+    await _pumpWorkspaceReady(tester);
 
     await tester.tap(find.byKey(const ValueKey('workspace-mode-rhythm-test')));
     await tester.pump();
@@ -683,8 +807,7 @@ void main() {
     await tester.pump();
 
     await tester.tap(find.byKey(const ValueKey('launch-import-card')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
+    await _pumpWorkspaceReady(tester);
 
     final context = tester.element(find.byType(WorkspaceScreen));
     final notifier = Provider.of<ScoreNotifier>(context, listen: false);
@@ -1042,14 +1165,20 @@ void main() {
   testWidgets('compose mode space behavior is unchanged', (
     WidgetTester tester,
   ) async {
-    final notifier = ScoreNotifier(audioService: AudioService(testMode: true));
-    addTearDown(notifier.dispose);
-    notifier.score.addNote(
-      const Note(midi: 60, duration: NoteDuration.quarter),
+    final notifier = ScoreNotifier(
+      audioService: AudioService(testMode: true),
+      workspaceRepository: _ImmediateWorkspaceRepository(
+        _workspaceLoadResult(
+          score: Score(
+            notes: const [Note(midi: 60, duration: NoteDuration.quarter)],
+          ),
+        ),
+      ),
     );
+    addTearDown(notifier.dispose);
 
     await tester.pumpWidget(_buildWorkspace(notifier));
-    await tester.pump();
+    await _pumpWorkspaceReady(tester);
 
     await tester.sendKeyEvent(LogicalKeyboardKey.space);
     await tester.pump();
@@ -1064,11 +1193,17 @@ void main() {
   testWidgets('rhythm test space triggers primary action without repeat spam', (
     WidgetTester tester,
   ) async {
-    final notifier = ScoreNotifier(audioService: AudioService(testMode: true));
-    addTearDown(notifier.dispose);
-    notifier.score.addNote(
-      const Note(midi: 60, duration: NoteDuration.quarter),
+    final notifier = ScoreNotifier(
+      audioService: AudioService(testMode: true),
+      workspaceRepository: _ImmediateWorkspaceRepository(
+        _workspaceLoadResult(
+          score: Score(
+            notes: const [Note(midi: 60, duration: NoteDuration.quarter)],
+          ),
+        ),
+      ),
     );
+    addTearDown(notifier.dispose);
 
     await tester.pumpWidget(
       _buildWorkspace(
@@ -1076,7 +1211,7 @@ void main() {
         rhythmTestAudioService: AudioService(testMode: true),
       ),
     );
-    await tester.pump();
+    await _pumpWorkspaceReady(tester);
 
     await tester.tap(find.byKey(const ValueKey('workspace-mode-rhythm-test')));
     await tester.pump();
@@ -1182,14 +1317,19 @@ void main() {
   testWidgets(
     'keyboard shortcuts still resolve a, s, and apostrophe after exiting rhythm test',
     (WidgetTester tester) async {
-      final notifier = ScoreNotifier();
-      addTearDown(notifier.dispose);
-      notifier.score.addNote(
-        const Note(midi: 60, duration: NoteDuration.quarter),
+      final notifier = ScoreNotifier(
+        workspaceRepository: _ImmediateWorkspaceRepository(
+          _workspaceLoadResult(
+            score: Score(
+              notes: const [Note(midi: 60, duration: NoteDuration.quarter)],
+            ),
+          ),
+        ),
       );
+      addTearDown(notifier.dispose);
 
       await tester.pumpWidget(_buildWorkspace(notifier));
-      await tester.pump();
+      await _pumpWorkspaceReady(tester);
 
       await tester.tap(
         find.byKey(const ValueKey('workspace-mode-rhythm-test')),
@@ -1243,6 +1383,125 @@ class _WidgetPresetScoreRepository implements PresetScoreRepository {
 
   @override
   Future<List<PresetScoreEntry>> loadPresets() async => _presets;
+}
+
+WorkspaceLoadResult _workspaceLoadResult({
+  required Score score,
+  String? presetId,
+}) {
+  final copiedScore = score.copy();
+  if (presetId != null) {
+    final preset = PresetScoreEntry(
+      id: presetId,
+      name: 'Triplet Study',
+      assetPath: 'assets/presets/$presetId.json',
+      score: copiedScore,
+    );
+    return WorkspaceLoadResult(
+      workspace: WorkspaceSession(
+        editorScore: copiedScore.copy(),
+        document: WorkspaceDocument.preset(preset),
+        savedScores: const [],
+        presetScores: [preset],
+      ),
+    );
+  }
+
+  return WorkspaceLoadResult(
+    workspace: WorkspaceSession(
+      editorScore: copiedScore.copy(),
+      document: WorkspaceDocument.draft(score: copiedScore),
+      savedScores: const [],
+      presetScores: const [],
+    ),
+  );
+}
+
+class _DelayedWorkspaceRepository implements WorkspaceRepository {
+  const _DelayedWorkspaceRepository(this._loadResultFuture);
+
+  final Future<WorkspaceLoadResult> _loadResultFuture;
+
+  @override
+  Future<WorkspaceLoadResult> loadWorkspace({
+    ScoreSeedConfig? initialScoreConfig,
+  }) {
+    return _loadResultFuture;
+  }
+
+  @override
+  Future<WorkspaceLoadResult> restoreDraft() {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<WorkspaceSession> saveCurrentScore({
+    required WorkspaceSession workspace,
+    required Score editedScore,
+    required String name,
+    bool createNew = false,
+  }) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<WorkspaceSession> loadSavedScore({
+    required WorkspaceSession workspace,
+    required String id,
+  }) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<WorkspaceSession> loadPresetScore({
+    required WorkspaceSession workspace,
+    required String id,
+  }) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<WorkspaceSession> importDocument({
+    required WorkspaceSession workspace,
+    required PortableScoreDocument document,
+  }) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<WorkspaceSession> deleteSavedScore({
+    required WorkspaceSession workspace,
+    required String id,
+    required Score currentScore,
+  }) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<void> persistDraft({
+    required WorkspaceSession workspace,
+    required Score editedScore,
+  }) async {}
+}
+
+class _ImmediateWorkspaceRepository extends _DelayedWorkspaceRepository {
+  _ImmediateWorkspaceRepository(WorkspaceLoadResult result)
+    : super(Future<WorkspaceLoadResult>.value(result));
+}
+
+class _DelayedInitAudioService extends AudioService {
+  _DelayedInitAudioService(this._initFuture);
+
+  final Future<bool> _initFuture;
+
+  @override
+  Future<bool> init() => _initFuture;
+
+  @override
+  void stopPlayback() {}
+
+  @override
+  void dispose() {}
 }
 
 class _FakeScoreTransferService implements ScoreTransferService {

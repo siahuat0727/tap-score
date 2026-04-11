@@ -57,6 +57,8 @@ class ScoreNotifier extends ChangeNotifier {
   Future<void>? _initFuture;
   Timer? _draftSaveTimer;
   WorkspaceSession? _workspaceSession;
+  bool _initialWorkspaceLoadComplete = false;
+  bool _initialWorkspaceLoadSucceeded = false;
 
   /// Index where the next note will be inserted.
   int _cursorIndex = 0;
@@ -239,6 +241,8 @@ class ScoreNotifier extends ChangeNotifier {
   String? _audioStatusMessage;
   String? get audioStatusMessage => _audioStatusMessage;
   bool get audioStatusIsError => _audioStatus == AudioStatus.error;
+  bool get initialWorkspaceLoadComplete => _initialWorkspaceLoadComplete;
+  bool get initialWorkspaceLoadSucceeded => _initialWorkspaceLoadSucceeded;
 
   /// Initialize local storage and the editor entry state.
   Future<void> init({ScoreSeedConfig? initialScoreConfig}) {
@@ -253,20 +257,26 @@ class ScoreNotifier extends ChangeNotifier {
         initialScoreConfig: initialScoreConfig,
       );
       _applyWorkspaceLoadResult(result, replaceScore: true);
+      _initialWorkspaceLoadSucceeded = true;
       if (initialScoreConfig != null && !initialScoreConfig.isRestore) {
         unawaited(_persistInitializedWorkspace(result.workspace));
       }
     } on WorkspaceRepositoryException catch (error) {
+      _initialWorkspaceLoadSucceeded = false;
       _setLibraryMessage(error.message, isError: true);
     } on PresetScoreException catch (error) {
+      _initialWorkspaceLoadSucceeded = false;
       _setLibraryMessage(error.message, isError: true);
     } on ScoreLibraryStorageException catch (error) {
+      _initialWorkspaceLoadSucceeded = false;
       _setLibraryMessage(error.message, isError: true);
     } catch (error) {
+      _initialWorkspaceLoadSucceeded = false;
       _setLibraryMessage('Failed to load the workspace.', isError: true);
       debugPrint('Workspace load failed: $error');
     }
 
+    _initialWorkspaceLoadComplete = true;
     notifyListeners();
   }
 

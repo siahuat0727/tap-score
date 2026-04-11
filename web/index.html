@@ -32,24 +32,227 @@
   <title>Tap Score</title>
   <link rel="manifest" href="manifest.json">
   <style>
-    .loading-indicator {
-      position: absolute; inset: 0;
-      display: flex; align-items: center; justify-content: center;
-      font-family: system-ui, sans-serif; color: #666;
+    :root {
+      color: #1f2933;
+      background: #f6f1e7;
+      font-family: Roboto, "Noto Sans SC", system-ui, sans-serif;
     }
-    .loading-indicator .spinner {
-      width: 24px; height: 24px; margin-right: 12px;
-      border: 3px solid #ddd; border-top-color: #666; border-radius: 50%;
-      animation: spin .8s linear infinite;
+
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      background:
+        radial-gradient(circle at top, rgba(255, 252, 247, 0.96), rgba(242, 238, 229, 0.92)),
+        linear-gradient(180deg, #fffdf7 0%, #f1ebdf 100%);
     }
-    @keyframes spin { to { transform: rotate(360deg); } }
+
+    body {
+      overflow: hidden;
+    }
+
+    #tap-score-bootstrap {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      background:
+        radial-gradient(circle at top, rgba(255, 252, 247, 0.98), rgba(242, 238, 229, 0.94)),
+        linear-gradient(180deg, #fffdf7 0%, #f1ebdf 100%);
+      transition: opacity 220ms ease, visibility 220ms ease;
+    }
+
+    #tap-score-bootstrap.is-hidden {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+    }
+
+    .bootstrap-card {
+      width: min(100%, 440px);
+      padding: 28px;
+      border: 1px solid rgba(111, 101, 85, 0.14);
+      border-radius: 28px;
+      background: rgba(255, 252, 247, 0.9);
+      box-shadow: 0 20px 48px rgba(78, 61, 43, 0.12);
+      backdrop-filter: blur(8px);
+    }
+
+    .bootstrap-eyebrow {
+      margin: 0 0 12px;
+      color: #8a5c1b;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .bootstrap-title {
+      margin: 0;
+      color: #1f2933;
+      font-size: 32px;
+      font-weight: 800;
+      line-height: 1.05;
+    }
+
+    .bootstrap-detail {
+      margin: 14px 0 0;
+      color: #52606d;
+      font-size: 15px;
+      font-weight: 500;
+      line-height: 1.55;
+    }
+
+    .bootstrap-steps {
+      margin: 24px 0 0;
+      padding: 0;
+      list-style: none;
+      display: grid;
+      gap: 12px;
+    }
+
+    .bootstrap-step {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      color: #52606d;
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .bootstrap-step::before {
+      content: "";
+      flex: 0 0 12px;
+      width: 12px;
+      height: 12px;
+      border-radius: 999px;
+      border: 2px solid rgba(140, 122, 102, 0.45);
+      background: transparent;
+      box-sizing: border-box;
+    }
+
+    .bootstrap-step.is-active {
+      color: #1f2933;
+    }
+
+    .bootstrap-step.is-active::before {
+      border-color: #0f6cbd;
+      border-top-color: transparent;
+      animation: bootstrap-spin 0.9s linear infinite;
+    }
+
+    .bootstrap-step.is-complete::before {
+      border-color: #0f8b6d;
+      background: #0f8b6d;
+    }
+
+    .bootstrap-step.is-error::before {
+      border-color: #b42318;
+      background: #b42318;
+      animation: none;
+    }
+
+    @keyframes bootstrap-spin {
+      to { transform: rotate(360deg); }
+    }
   </style>
 </head>
 <body>
-  <div class="loading-indicator">
-    <div class="spinner"></div>Loading…
+  <div id="tap-score-bootstrap">
+    <div class="bootstrap-card">
+      <p class="bootstrap-eyebrow">Tap Score</p>
+      <h1 id="tap-score-bootstrap-title" class="bootstrap-title">Starting Tap Score</h1>
+      <p id="tap-score-bootstrap-detail" class="bootstrap-detail">
+        Loading the app shell in your browser.
+      </p>
+      <ol class="bootstrap-steps">
+        <li id="tap-score-bootstrap-step-browser" class="bootstrap-step is-active">
+          Browser and Flutter bootstrap
+        </li>
+        <li id="tap-score-bootstrap-step-app" class="bootstrap-step">
+          App shell ready
+        </li>
+        <li id="tap-score-bootstrap-step-workspace" class="bootstrap-step">
+          Workspace prepares inside the app
+        </li>
+      </ol>
+    </div>
   </div>
   <script>
+    window.tapScoreBootstrap = (function() {
+      var root = document.getElementById('tap-score-bootstrap');
+      var title = document.getElementById('tap-score-bootstrap-title');
+      var detail = document.getElementById('tap-score-bootstrap-detail');
+      var browserStep = document.getElementById('tap-score-bootstrap-step-browser');
+      var appStep = document.getElementById('tap-score-bootstrap-step-app');
+      var workspaceStep = document.getElementById('tap-score-bootstrap-step-workspace');
+
+      function _setStepState(element, state) {
+        element.classList.remove('is-active', 'is-complete', 'is-error');
+        if (state) {
+          element.classList.add(state);
+        }
+      }
+
+      function _applyStage(nextTitle, nextDetail, browserState, appState) {
+        title.textContent = nextTitle;
+        detail.textContent = nextDetail;
+        _setStepState(browserStep, browserState);
+        _setStepState(appStep, appState);
+      }
+
+      function setStage(stage) {
+        if (stage === 'engine') {
+          _applyStage(
+            'Starting Tap Score',
+            'Flutter downloaded. Starting the engine.',
+            'is-complete',
+            'is-active'
+          );
+          return;
+        }
+
+        if (stage === 'launch') {
+          _applyStage(
+            'Starting Tap Score',
+            'Launching the app shell.',
+            'is-complete',
+            'is-active'
+          );
+        }
+      }
+
+      function markFlutterReady() {
+        _applyStage(
+          'Tap Score is ready',
+          'The app shell is on screen. Workspace setup continues inside the app when needed.',
+          'is-complete',
+          'is-complete'
+        );
+        workspaceStep.classList.add('is-active');
+        root.classList.add('is-hidden');
+      }
+
+      function fail(nextDetail) {
+        title.textContent = 'Tap Score could not start';
+        detail.textContent = nextDetail;
+        _setStepState(browserStep, 'is-error');
+        _setStepState(appStep, 'is-error');
+        _setStepState(workspaceStep, 'is-error');
+      }
+
+      window.addEventListener('tap-score:flutter-first-frame', function() {
+        markFlutterReady();
+      }, { once: true });
+
+      return {
+        fail: fail,
+        markFlutterReady: markFlutterReady,
+        setStage: setStage,
+      };
+    })();
+
     var _soundfontScriptPath = 'soundfonts/acoustic_grand_piano-mp3.js';
     var _soundfontLoadPromise = null;
     var _audioCtx = null;

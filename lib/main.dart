@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'app/app_shell_ready_bridge.dart';
 import 'app/tap_score_router.dart';
 import 'services/preset_score_repository.dart';
 import 'services/score_library_repository.dart';
@@ -39,6 +40,14 @@ class _TapScoreAppState extends State<TapScoreApp> {
   );
   final TapScoreRouteInformationParser _routeInformationParser =
       TapScoreRouteInformationParser();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      notifyAppShellReady();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
