@@ -1,6 +1,27 @@
 {{flutter_js}}
 {{flutter_build_config}}
 
+const tapScoreDeployId = '__TAP_SCORE_DEPLOY_ID__';
+
+function tapScoreAppendDeployId(assetPath) {
+  const separator = assetPath.includes('?') ? '&' : '?';
+  return `${assetPath}${separator}v=${encodeURIComponent(tapScoreDeployId)}`;
+}
+
+for (const build of _flutter.buildConfig?.builds ?? []) {
+  if (typeof build.mainJsPath === 'string') {
+    build.mainJsPath = tapScoreAppendDeployId(build.mainJsPath);
+  }
+  if (typeof build.mainWasmPath === 'string') {
+    build.mainWasmPath = tapScoreAppendDeployId(build.mainWasmPath);
+  }
+  if (typeof build.jsSupportRuntimePath === 'string') {
+    build.jsSupportRuntimePath = tapScoreAppendDeployId(
+      build.jsSupportRuntimePath,
+    );
+  }
+}
+
 _flutter.loader.load({
   onEntrypointLoaded: async function(engineInitializer) {
     try {
