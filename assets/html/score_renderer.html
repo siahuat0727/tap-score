@@ -414,9 +414,6 @@
       }
       return flattened;
     };
-    window.__tapScoreTestHooks.rhythmPulseAccentPatternForTest = function(data) {
-      return _rhythmPulseAccentPattern(data.beatsPerMeasure, data.beatUnit);
-    };
     window.__tapScoreTestHooks.buildRhythmPulseDescriptorsForTest = function(data) {
       return _buildRhythmPulseDescriptors(
         data.measureSegments,
@@ -426,8 +423,6 @@
         data.totalDurationSeconds,
         data.leadInStartX,
         data.timeZeroX,
-        data.beatsPerMeasure,
-        data.beatUnit,
       );
     };
     window.__tapScoreTestHooks.activeRhythmPulseIndexForTest = function(data) {
@@ -837,8 +832,6 @@
         const rhythmOverlayLayout = _drawRhythmOverlay(
           svg,
           rhythmTest,
-          beatsPerMeasure,
-          beatUnit,
           allStaves,
           measureRenderData,
         );
@@ -871,8 +864,6 @@
     function _drawRhythmOverlay(
       svg,
       rhythmTest,
-      beatsPerMeasure,
-      beatUnit,
       allStaves,
       measureRenderData,
     ) {
@@ -910,8 +901,6 @@
         rhythmTest.totalDurationSeconds,
         leadInStartX,
         timeZeroX,
-        beatsPerMeasure,
-        beatUnit,
       );
       const activePulseIndex = _activeRhythmPulseIndex(
         rhythmTest.playheadTimeSeconds,
@@ -1281,28 +1270,6 @@
       return segments;
     }
 
-    function _rhythmPulseAccentPattern(beatsPerMeasure, beatUnit) {
-      switch (`${beatsPerMeasure}/${beatUnit}`) {
-        case '2/4':
-          return ['strong', 'weak'];
-        case '3/4':
-          return ['strong', 'weak', 'weak'];
-        case '4/4':
-          return ['strong', 'weak', 'medium', 'weak'];
-        case '6/8':
-          return ['strong', 'weak', 'weak', 'medium', 'weak', 'weak'];
-        case '9/8':
-          return ['strong', 'weak', 'weak', 'medium', 'weak', 'weak', 'medium', 'weak', 'weak'];
-        case '12/8':
-          return ['strong', 'weak', 'weak', 'medium', 'weak', 'weak', 'medium', 'weak', 'weak', 'medium', 'weak', 'weak'];
-        default:
-          return Array.from(
-            { length: Math.max(beatsPerMeasure, 1) },
-            (_, pulseIndex) => pulseIndex === 0 ? 'strong' : 'weak',
-          );
-      }
-    }
-
     function _buildRhythmPulseDescriptors(
       measureSegments,
       measureBoundaryTimesSeconds,
@@ -1311,14 +1278,11 @@
       totalDurationSeconds,
       leadInStartX,
       timeZeroX,
-      beatsPerMeasure,
-      beatUnit,
     ) {
       if (!measureSegments || measureSegments.length === 0 || pulseDurationSeconds <= 0.0001) {
         return [];
       }
 
-      const accentPattern = _rhythmPulseAccentPattern(beatsPerMeasure, beatUnit);
       const descriptors = [];
       let absolutePulseIndex = 0;
       const countInPulseCount = Math.max(
@@ -1332,7 +1296,6 @@
           absolutePulseIndex,
           measureIndex: -1,
           pulseIndexWithinMeasure: pulseIndex,
-          accentClass: accentPattern[pulseIndex] || (pulseIndex === 0 ? 'strong' : 'weak'),
           timeSeconds,
           x: _xForRhythmTime(
             timeSeconds,
@@ -1369,7 +1332,6 @@
             absolutePulseIndex,
             measureIndex,
             pulseIndexWithinMeasure: pulseIndex,
-            accentClass: accentPattern[pulseIndex] || (pulseIndex === 0 ? 'strong' : 'weak'),
             timeSeconds,
             x: _xForRhythmTime(
               timeSeconds,
@@ -1411,20 +1373,16 @@
         return;
       }
 
-      const styleByAccent = {
-        strong: { radius: 5.2, fill: '#6d5a43' },
-        medium: { radius: 4.5, fill: '#8a775e' },
-        weak: { radius: 3.8, fill: '#b4a38d' },
-      };
       const isResultPhase = layout.overlayPhase === 'result';
+      const baseRadius = 4.4;
+      const baseFill = '#8b7760';
 
       for (let i = 0; i < pulseDescriptors.length; i++) {
         const descriptor = pulseDescriptors[i];
-        const style = styleByAccent[descriptor.accentClass] || styleByAccent.weak;
         const isActive = activePulseIndex === i;
         const isPast = activePulseIndex != null && i < activePulseIndex;
         const marker = document.createElementNS(ns, 'circle');
-        const markerRadius = isActive ? style.radius + 1.8 : style.radius;
+        const markerRadius = isActive ? baseRadius + 1.8 : baseRadius;
 
         if (isActive) {
           const halo = document.createElementNS(ns, 'circle');
@@ -1453,7 +1411,7 @@
             ? '#c5b8a6'
             : isActive
             ? '#f0dfbf'
-            : style.fill,
+            : baseFill,
         );
         marker.setAttribute(
           'fill-opacity',

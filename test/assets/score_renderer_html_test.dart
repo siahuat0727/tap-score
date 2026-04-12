@@ -94,19 +94,6 @@ List<Map<String, dynamic>> _splitRendererNotesForTest(
   );
 }
 
-List<String> _rhythmPulseAccentPatternForTest({
-  required int beatsPerMeasure,
-  required int beatUnit,
-}) {
-  final decoded =
-      _runRendererHookForTest('rhythmPulseAccentPatternForTest', {
-            'beatsPerMeasure': beatsPerMeasure,
-            'beatUnit': beatUnit,
-          })
-          as List<Object?>;
-  return decoded.cast<String>();
-}
-
 List<Map<String, dynamic>> _buildRhythmPulseDescriptorsForTest(
   Map<String, dynamic> payload,
 ) {
@@ -247,7 +234,6 @@ void main() {
 
     expect(html, contains('function _drawRhythmOverlay('));
     expect(html, contains('function _buildRhythmMeasureSegments('));
-    expect(html, contains('function _rhythmPulseAccentPattern('));
     expect(html, contains('function _buildRhythmPulseDescriptors('));
     expect(html, contains('function _activeRhythmPulseIndex('));
     expect(html, contains('function _drawRhythmPulseRail('));
@@ -385,43 +371,6 @@ void main() {
     expect(html, isNot(contains('noteCenterByIndex')));
   });
 
-  test('rhythm pulse accent pattern uses 4/4 grouping', () {
-    expect(_rhythmPulseAccentPatternForTest(beatsPerMeasure: 4, beatUnit: 4), [
-      'strong',
-      'weak',
-      'medium',
-      'weak',
-    ]);
-  });
-
-  test('rhythm pulse accent pattern uses 3/4 grouping', () {
-    expect(_rhythmPulseAccentPatternForTest(beatsPerMeasure: 3, beatUnit: 4), [
-      'strong',
-      'weak',
-      'weak',
-    ]);
-  });
-
-  test(
-    'rhythm pulse accent pattern uses 6/8 subdivision with grouped heads',
-    () {
-      expect(
-        _rhythmPulseAccentPatternForTest(beatsPerMeasure: 6, beatUnit: 8),
-        ['strong', 'weak', 'weak', 'medium', 'weak', 'weak'],
-      );
-    },
-  );
-
-  test('rhythm pulse accent pattern falls back for unsupported odd meters', () {
-    expect(_rhythmPulseAccentPatternForTest(beatsPerMeasure: 5, beatUnit: 8), [
-      'strong',
-      'weak',
-      'weak',
-      'weak',
-      'weak',
-    ]);
-  });
-
   test(
     'rhythm pulse descriptors include count-in and body pulses on one rail',
     () {
@@ -436,15 +385,9 @@ void main() {
         'totalDurationSeconds': 8,
         'leadInStartX': 40,
         'timeZeroX': 100,
-        'beatsPerMeasure': 4,
-        'beatUnit': 4,
       });
 
       expect(descriptors, hasLength(12));
-      expect(
-        descriptors.take(4).map((pulse) => pulse['accentClass']).toList(),
-        ['strong', 'weak', 'medium', 'weak'],
-      );
       expect(descriptors.take(4).map((pulse) => pulse['isCountIn']).toList(), [
         true,
         true,
@@ -459,9 +402,16 @@ void main() {
         descriptors
             .skip(4)
             .take(4)
-            .map((pulse) => pulse['accentClass'])
+            .map((pulse) => pulse['pulseIndexWithinMeasure'])
             .toList(),
-        ['strong', 'weak', 'medium', 'weak'],
+        [0, 1, 2, 3],
+      );
+      expect(
+        descriptors
+            .take(4)
+            .map((pulse) => pulse['pulseIndexWithinMeasure'])
+            .toList(),
+        [0, 1, 2, 3],
       );
       expect(descriptors[0]['x'], closeTo(40, 0.001));
       expect(descriptors[3]['x'], closeTo(85, 0.001));
@@ -484,8 +434,6 @@ void main() {
         'totalDurationSeconds': 8,
         'leadInStartX': 40,
         'timeZeroX': 100,
-        'beatsPerMeasure': 4,
-        'beatUnit': 4,
       });
 
       expect(
