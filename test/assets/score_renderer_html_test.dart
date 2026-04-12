@@ -1,6 +1,86 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+
+List<Map<String, dynamic>> _splitRendererNotesForTest(
+  Map<String, dynamic> payload,
+) {
+  final html = File('assets/html/score_renderer.html').readAsStringSync();
+  final script = '''
+const html = process.env.RENDERER_HTML;
+const payload = JSON.parse(process.env.RENDERER_PAYLOAD);
+const scriptMatches = [...html.matchAll(/<script(?:[^>]*)>([\\s\\S]*?)<\\/script>/g)];
+if (scriptMatches.length === 0) {
+  throw new Error('No inline renderer script found');
+}
+const inlineScript = scriptMatches[scriptMatches.length - 1][1];
+
+global.window = {
+  addEventListener() {},
+  parent: null,
+};
+global.document = {
+  getElementById() { return {}; },
+  createElement() {
+    return {
+      style: {},
+      appendChild() {},
+      remove() {},
+      querySelectorAll() { return []; },
+    };
+  },
+  addEventListener() {},
+  body: {
+    appendChild() {},
+    removeChild() {},
+  },
+};
+global.Vex = {
+  Flow: {
+    Renderer: function Renderer() {},
+    Stave: function Stave() {},
+    StaveNote: function StaveNote() {},
+    Voice: function Voice() {},
+    Formatter: function Formatter() {},
+    Accidental: function Accidental() {},
+    KeySignature: function KeySignature() {},
+    TimeSignature: function TimeSignature() {},
+    Barline: {},
+    StaveConnector: function StaveConnector() {},
+    Beam: function Beam() {},
+    Fraction: function Fraction() {},
+    StaveTie: function StaveTie() {},
+    Tuplet: function Tuplet() {},
+    Dot: function Dot() {},
+    Curve: function Curve() {},
+  },
+};
+
+eval(inlineScript);
+process.stdout.write(JSON.stringify(window.__tapScoreTestHooks.splitAndGroupForTest(payload)));
+''';
+
+  final result = Process.runSync(
+    'node',
+    ['-e', script],
+    environment: {
+      ...Platform.environment,
+      'RENDERER_HTML': html,
+      'RENDERER_PAYLOAD': jsonEncode(payload),
+    },
+  );
+
+  expect(result.exitCode, 0, reason: result.stderr.toString());
+
+  final decoded = jsonDecode(result.stdout as String) as List<Object?>;
+  return decoded
+      .cast<Map<Object?, Object?>>()
+      .map(
+        (note) => note.map((key, value) => MapEntry(key as String, value)),
+      )
+      .toList();
+}
 
 void main() {
   test('score renderer forwards editing shortcuts from the iframe', () {
@@ -248,4 +328,48 @@ void main() {
     expect(html, contains("point.setAttribute('r', '3.5');"));
     expect(html, isNot(contains('noteCenterByIndex')));
   });
+
+  test(
+    'simple-meter split heuristic preserves the following eighth-note beam pair',
+    () {
+      final displayNotes = _splitRendererNotesForTest({
+        'beatsPerMeasure': 4,
+        'beatUnit': 4,
+        'notes': [
+          {'midi': 0, 'beats': 0.5, 'isRest': true, 'tripletGroupId': null},
+          {'midi': 64, 'beats': 2.0, 'isRest': false, 'tripletGroupId': null},
+          {'midi': 65, 'beats': 0.5, 'isRest': false, 'tripletGroupId': null},
+          {'midi': 67, 'beats': 1.0, 'isRest': false, 'tripletGroupId': null},
+        ],
+      });
+
+      expect(displayNotes, hasLength(5));
+      expect(
+        displayNotes.map((note) => note['beats']).toList(),
+        [0.5, 1.5, 0.5, 0.5, 1.0],
+      );
+      expect(
+        displayNotes.map((note) => note['globalIndex']).toList(),
+        [0, 1, 1, 2, 3],
+      );
+
+      expect(displayNotes[1]['duration'], 'q');
+      expect(displayNotes[1]['isDotted'], isTrue);
+      expect(displayNotes[1]['tieStart'], isTrue);
+      expect(displayNotes[1]['tieEnd'], isFalse);
+
+      expect(displayNotes[2]['duration'], '8');
+      expect(displayNotes[2]['isDotted'], isFalse);
+      expect(displayNotes[2]['tieStart'], isFalse);
+      expect(displayNotes[2]['tieEnd'], isTrue);
+
+      expect(displayNotes[3]['beats'], 0.5);
+      expect(displayNotes[3]['tieStart'], isFalse);
+      expect(displayNotes[3]['tieEnd'], isFalse);
+
+      expect(displayNotes[4]['duration'], 'q');
+      expect(displayNotes[1]['beats'], isNot(0.5));
+      expect(displayNotes[2]['beats'], isNot(1.5));
+    },
+  );
 }

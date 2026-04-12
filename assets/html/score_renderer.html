@@ -92,6 +92,186 @@
       return beatsToDurationInfo(beats).dur;
     }
 
+    const _splitEpsilon = 0.001;
+
+    function isStandardSimpleMeter(beatsPerMeasure, beatUnit) {
+      return beatUnit === 4 && (beatsPerMeasure === 2 || beatsPerMeasure === 3 || beatsPerMeasure === 4);
+    }
+
+    function isOnSubdivisionBoundary(position, subdivision) {
+      const posInSubdivision = position % subdivision;
+      return posInSubdivision < _splitEpsilon || posInSubdivision > subdivision - _splitEpsilon;
+    }
+
+    function isBeamableDurationBeats(beats) {
+      const dur = beatsToDuration(beats);
+      return dur === '8' || dur === '16' || dur === '32';
+    }
+
+    function sameChunkSequence(a, b) {
+      if (a.length !== b.length) return false;
+      for (let i = 0; i < a.length; i++) {
+        if (Math.abs(a[i] - b[i]) > _splitEpsilon) return false;
+      }
+      return true;
+    }
+
+    function buildGreedyChunks(totalBeats, startPosition, measureDuration, effectiveBeatDur, allBeats) {
+      const chunks = [];
+      let remaining = totalBeats;
+      let position = startPosition;
+
+      while (remaining > _splitEpsilon) {
+        const measIdx = Math.floor(position / measureDuration + 0.0001);
+        const measureStart = measIdx * measureDuration;
+        const posInMeasure = position - measureStart;
+        const spaceInMeasure = measureDuration - posInMeasure;
+
+        let maxSpace;
+        if (!isOnSubdivisionBoundary(posInMeasure, effectiveBeatDur)) {
+          const currentBeatIdx = Math.floor(posInMeasure / effectiveBeatDur + 0.0001);
+          const nextBeatBoundary = (currentBeatIdx + 1) * effectiveBeatDur;
+          const spaceToBeat = nextBeatBoundary - posInMeasure;
+          maxSpace = Math.min(spaceToBeat, spaceInMeasure, remaining);
+        } else {
+          maxSpace = Math.min(spaceInMeasure, remaining);
+        }
+
+        let chunk = null;
+        for (const d of allBeats) {
+          if (d <= maxSpace + _splitEpsilon) {
+            chunk = d;
+            break;
+          }
+        }
+
+        if (chunk == null) break;
+
+        chunks.push(chunk);
+        position += chunk;
+        remaining -= chunk;
+      }
+
+      return chunks;
+    }
+
+    function buildSplitCandidates(totalBeats, startPosInMeasure, effectiveBeatDur, allBeats) {
+      const candidates = [];
+
+      function search(position, remaining, fragments) {
+        if (remaining <= _splitEpsilon) {
+          if (fragments.length > 1) {
+            candidates.push(fragments.slice());
+          }
+          return;
+        }
+
+        for (const chunk of allBeats) {
+          if (chunk > remaining + _splitEpsilon) continue;
+
+          const nextPosition = position + chunk;
+          const stillHasRemainder = remaining - chunk > _splitEpsilon;
+          if (stillHasRemainder && !isOnSubdivisionBoundary(nextPosition, effectiveBeatDur)) {
+            continue;
+          }
+
+          fragments.push(chunk);
+          search(nextPosition, remaining - chunk, fragments);
+          fragments.pop();
+        }
+      }
+
+      search(startPosInMeasure, totalBeats, []);
+      return candidates;
+    }
+
+    function countFollowingBeamableNotesInBeat(notes, startIndex, startPosInMeasure, beatEnd) {
+      let count = 0;
+      let position = startPosInMeasure;
+
+      for (let i = startIndex; i < notes.length; i++) {
+        const note = notes[i];
+        const noteEnd = position + note.beats;
+        if (note.tripletGroupId != null || noteEnd > beatEnd + _splitEpsilon) break;
+        if (note.isRest || !isBeamableDurationBeats(note.beats)) break;
+
+        count += 1;
+        position = noteEnd;
+      }
+
+      return count;
+    }
+
+    function scoreSplitCandidate(candidate, notes, noteIndex, noteStartPosInMeasure, noteBeats, effectiveBeatDur, greedyChunks) {
+      const noteEnd = noteStartPosInMeasure + noteBeats;
+      const finalChunk = candidate[candidate.length - 1];
+      const finalChunkStart = noteEnd - finalChunk;
+      const tailBeatIdx = Math.floor((noteEnd - _splitEpsilon) / effectiveBeatDur + 0.0001);
+      const tailBeatStart = tailBeatIdx * effectiveBeatDur;
+      const tailBeatEnd = tailBeatStart + effectiveBeatDur;
+      const tailIsBeamable = isBeamableDurationBeats(finalChunk) && finalChunkStart >= tailBeatStart - _splitEpsilon;
+      const followingBeamableCount = countFollowingBeamableNotesInBeat(notes, noteIndex + 1, noteEnd, tailBeatEnd);
+
+      let beamPenalty = 0;
+      // Prefer a tied tail eighth that can beam with the next eighth instead of
+      // leaving that next eighth orphaned before a longer note.
+      if (followingBeamableCount === 1) {
+        beamPenalty += tailIsBeamable ? -1 : 1;
+      } else if (followingBeamableCount > 1 && tailIsBeamable) {
+        beamPenalty -= 1;
+      }
+
+      return {
+        fragmentCount: candidate.length,
+        beamPenalty,
+        greedyTieBreak: sameChunkSequence(candidate, greedyChunks) ? 0 : 1,
+      };
+    }
+
+    function chooseSimpleMeterSplit(notes, noteIndex, noteStartPosInMeasure, noteBeats, effectiveBeatDur, allBeats, greedyChunks) {
+      const candidates = buildSplitCandidates(noteBeats, noteStartPosInMeasure, effectiveBeatDur, allBeats);
+      if (candidates.length === 0) return greedyChunks;
+
+      let bestCandidate = greedyChunks;
+      let bestScore = scoreSplitCandidate(
+        greedyChunks,
+        notes,
+        noteIndex,
+        noteStartPosInMeasure,
+        noteBeats,
+        effectiveBeatDur,
+        greedyChunks,
+      );
+
+      for (const candidate of candidates) {
+        const score = scoreSplitCandidate(
+          candidate,
+          notes,
+          noteIndex,
+          noteStartPosInMeasure,
+          noteBeats,
+          effectiveBeatDur,
+          greedyChunks,
+        );
+
+        const isBetter =
+          score.fragmentCount < bestScore.fragmentCount ||
+          (score.fragmentCount === bestScore.fragmentCount && score.beamPenalty < bestScore.beamPenalty) ||
+          (
+            score.fragmentCount === bestScore.fragmentCount &&
+            score.beamPenalty === bestScore.beamPenalty &&
+            score.greedyTieBreak < bestScore.greedyTieBreak
+          );
+
+        if (isBetter) {
+          bestCandidate = candidate;
+          bestScore = score;
+        }
+      }
+
+      return bestCandidate;
+    }
+
     // -------------------------------------------------------------------------
     // Split notes at beat/measure boundaries and group into measures.
     // Only notes starting off-beat are split at beat boundaries;
@@ -162,66 +342,54 @@
         }
 
         // --- Normal / dotted note handling ---
-        let remaining = note.beats;
-        const noteStartPos = position;
+        const measIdx = Math.floor(position / measureDuration + 0.0001);
+        const measureStart = measIdx * measureDuration;
+        const posInMeasure = position - measureStart;
+        const spaceInMeasure = measureDuration - posInMeasure;
+        const greedyChunks = buildGreedyChunks(note.beats, position, measureDuration, effectiveBeatDur, allBeats);
+        const shouldUseSimpleMeterSearch =
+          isStandardSimpleMeter(beatsPerMeasure, beatUnit) &&
+          !note.isRest &&
+          note.tripletGroupId == null &&
+          greedyChunks.length > 1 &&
+          !isOnSubdivisionBoundary(posInMeasure, effectiveBeatDur) &&
+          note.beats <= spaceInMeasure + _splitEpsilon;
 
-        while (remaining > 0.001) {
-          const measIdx = Math.floor(position / measureDuration + 0.0001);
-          const measureStart = measIdx * measureDuration;
-          const posInMeasure = position - measureStart;
-          const spaceInMeasure = measureDuration - posInMeasure;
+        const chunks = shouldUseSimpleMeterSearch
+          ? chooseSimpleMeterSplit(
+              notes,
+              i,
+              posInMeasure,
+              note.beats,
+              effectiveBeatDur,
+              allBeats,
+              greedyChunks,
+            )
+          : greedyChunks;
 
-          const posInBeat = posInMeasure % effectiveBeatDur;
-          const isOnBeat = posInBeat < 0.001 || posInBeat > effectiveBeatDur - 0.001;
-
-          let maxSpace;
-          if (!isOnBeat) {
-            const currentBeatIdx = Math.floor(posInMeasure / effectiveBeatDur + 0.0001);
-            const nextBeatBoundary = (currentBeatIdx + 1) * effectiveBeatDur;
-            const spaceToBeat = nextBeatBoundary - posInMeasure;
-            maxSpace = Math.min(spaceToBeat, spaceInMeasure, remaining);
-          } else {
-            maxSpace = Math.min(spaceInMeasure, remaining);
-          }
-
-          // Find largest duration (including dotted) that fits.
-          let chunk = null;
-          let chunkDotted = false;
-          for (const d of allBeats) {
-            if (d <= maxSpace + 0.001) {
-              chunk = d;
-              const info = beatsToDurationInfo(d);
-              chunkDotted = info.dotted;
-              break;
-            }
-          }
-
-          // Remaining space too small for any standard duration — skip it.
-          if (chunk == null) {
-            remaining = 0;
-            break;
-          }
-
-          const isTieStart = !note.isRest && (remaining - chunk > 0.001);
-          const isTieEnd = !note.isRest && (position - noteStartPos > 0.001);
+        for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
+          const chunk = chunks[chunkIndex];
+          const durInfo = beatsToDurationInfo(chunk);
+          const isTieStart = !note.isRest && chunkIndex < chunks.length - 1;
+          const isTieEnd = !note.isRest && chunkIndex > 0;
 
           currentMeasure.push({
             globalIndex: i,
             midi: note.midi,
             isRest: note.isRest,
             beats: chunk,
-            duration: beatsToDuration(chunk),
-            isDotted: chunkDotted,
+            duration: durInfo.dur,
+            isDotted: durInfo.dotted,
             tieStart: isTieStart,
             tieEnd: isTieEnd,
             tripletGroupId: null,
           });
 
           position += chunk;
-          remaining -= chunk;
 
-          const newPosInMeasure = position - measureStart;
-          if (newPosInMeasure >= measureDuration - 0.001) {
+          const currentMeasureStart = Math.floor((position - _splitEpsilon) / measureDuration + 0.0001) * measureDuration;
+          const newPosInMeasure = position - currentMeasureStart;
+          if (newPosInMeasure >= measureDuration - _splitEpsilon) {
             measures.push(currentMeasure);
             currentMeasure = [];
           }
@@ -234,6 +402,18 @@
 
       return measures;
     }
+
+    window.__tapScoreTestHooks = window.__tapScoreTestHooks || {};
+    window.__tapScoreTestHooks.splitAndGroupForTest = function(data) {
+      const measures = splitAndGroup(data.notes, data.beatsPerMeasure, data.beatUnit);
+      const flattened = [];
+      for (const measure of measures) {
+        for (const note of measure) {
+          flattened.push(note);
+        }
+      }
+      return flattened;
+    };
 
     // -------------------------------------------------------------------------
     // Beat-aware beam grouping with secondary beam breaks
