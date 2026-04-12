@@ -9,6 +9,7 @@ EditorShortcutIntent? _resolveEvent({
   String? character,
   KeyboardInputMode inputMode = KeyboardInputMode.keySignatureAware,
   int octaveShift = 0,
+  Clef clef = Clef.treble,
 }) {
   return resolveEditorShortcutEvent(
     EditorShortcutEvent(
@@ -18,6 +19,7 @@ EditorShortcutIntent? _resolveEvent({
     ),
     inputMode: inputMode,
     octaveShift: octaveShift,
+    clef: clef,
   );
 }
 
@@ -25,12 +27,14 @@ EditorShortcutIntent? _resolveKey(
   LogicalKeyboardKey key, {
   KeyboardInputMode inputMode = KeyboardInputMode.keySignatureAware,
   int octaveShift = 0,
+  Clef clef = Clef.treble,
   String? character,
 }) {
   return resolveEditorShortcut(
     key,
     inputMode: inputMode,
     octaveShift: octaveShift,
+    clef: clef,
     character: character,
   );
 }
@@ -39,12 +43,14 @@ EditorShortcutIntent? _resolveCode(
   String code, {
   KeyboardInputMode inputMode = KeyboardInputMode.keySignatureAware,
   int octaveShift = 0,
+  Clef clef = Clef.treble,
   String? character,
 }) {
   return resolveEditorShortcutCode(
     code,
     inputMode: inputMode,
     octaveShift: octaveShift,
+    clef: clef,
     character: character,
   );
 }
@@ -93,6 +99,37 @@ void main() {
         octaveShift: 1,
       )?.midi,
       73,
+    );
+  });
+
+  test('bass clef shifts the shortcut window down an octave', () {
+    final bounds = keyboardShiftBoundsForClef(Clef.bass);
+    expect(bounds.minShift, 0);
+    expect(bounds.maxShift, 2);
+    expect(_resolveKey(LogicalKeyboardKey.keyD, clef: Clef.bass)?.midi, 48);
+    expect(
+      _resolveKey(
+        LogicalKeyboardKey.quote,
+        clef: Clef.bass,
+        character: '\'',
+      )?.midi,
+      62,
+    );
+    expect(
+      _resolveKey(
+        LogicalKeyboardKey.keyR,
+        inputMode: KeyboardInputMode.chromatic,
+        clef: Clef.bass,
+      )?.midi,
+      49,
+    );
+    expect(
+      _resolveKey(
+        LogicalKeyboardKey.keyD,
+        clef: Clef.bass,
+        octaveShift: 2,
+      )?.midi,
+      72,
     );
   });
 
@@ -205,5 +242,44 @@ void main() {
     expect(leftShiftHint.isShortcutEnabled, isTrue);
     expect(leftShiftHint.canTap, isTrue);
     expect(leftShiftHint.isShiftHint, isTrue);
+  });
+
+  test('bass clef piano key hints use the lower shortcut window', () {
+    final whiteHint = describePianoKeyHint(
+      48,
+      inputMode: KeyboardInputMode.keySignatureAware,
+      octaveShift: 0,
+      clef: Clef.bass,
+    );
+    expect(whiteHint.label, 'd');
+    expect(whiteHint.isShortcutEnabled, isTrue);
+
+    final rightShiftHint = describePianoKeyHint(
+      74,
+      inputMode: KeyboardInputMode.keySignatureAware,
+      octaveShift: 0,
+      clef: Clef.bass,
+    );
+    expect(rightShiftHint.label, ']');
+    expect(rightShiftHint.isShiftHint, isTrue);
+
+    final finalShiftHint = describePianoKeyHint(
+      86,
+      inputMode: KeyboardInputMode.keySignatureAware,
+      octaveShift: 2,
+      clef: Clef.bass,
+    );
+    expect(finalShiftHint.label, '\'');
+    expect(finalShiftHint.isShiftHint, isFalse);
+
+    final blockedShiftHint = describePianoKeyHint(
+      87,
+      inputMode: KeyboardInputMode.keySignatureAware,
+      octaveShift: 2,
+      clef: Clef.bass,
+    );
+    expect(blockedShiftHint.label, ']');
+    expect(blockedShiftHint.isShortcutEnabled, isFalse);
+    expect(blockedShiftHint.isShiftHint, isTrue);
   });
 }

@@ -18,13 +18,12 @@ import '../workspace/workspace_repository.dart';
 import '../workspace/workspace_session.dart';
 
 /// What kind of element is currently selected.
-enum SelectionKind { timeSig, keySig, note }
+enum SelectionKind { clef, keySig, timeSig, note }
 
 enum AudioStatus { idle, preloading, ready, error }
 
 /// Central state manager for the score editor.
 class ScoreNotifier extends ChangeNotifier {
-  static const int _defaultRestoreMidi = 60;
   static const double _epsilon = 0.001;
   static const Duration _draftSaveDelay = Duration(milliseconds: 250);
 
@@ -105,9 +104,11 @@ class ScoreNotifier extends ChangeNotifier {
   int _keyboardOctaveShift = 0;
   int get keyboardOctaveShift => _keyboardOctaveShift;
   bool get canShiftKeyboardMappingDown =>
-      _keyboardOctaveShift > minKeyboardOctaveShift;
+      _keyboardOctaveShift > _keyboardShiftBounds.minShift;
   bool get canShiftKeyboardMappingUp =>
-      _keyboardOctaveShift < maxKeyboardOctaveShift;
+      _keyboardOctaveShift < _keyboardShiftBounds.maxShift;
+  KeyboardShiftBounds get _keyboardShiftBounds =>
+      keyboardShiftBoundsForClef(score.clef);
 
   /// Auto-incrementing triplet group ID.
   int _nextTripletGroupId = 1;
@@ -552,7 +553,7 @@ class ScoreNotifier extends ChangeNotifier {
       final index = _selectedNoteIndex!;
       final old = score.notes[index];
       final updated = old.isRest
-          ? old.asPitched(defaultMidi: _defaultRestoreMidi)
+          ? old.asPitched(defaultMidi: score.clef.defaultRestoreMidi)
           : old.asRest();
       score.replaceAt(index, updated);
       _sanitizeSlursInRange(index - 1, index);
@@ -734,9 +735,8 @@ class ScoreNotifier extends ChangeNotifier {
   }
 
   void shiftKeyboardMapping(int direction) {
-    final nextShift = (_keyboardOctaveShift + direction).clamp(
-      minKeyboardOctaveShift,
-      maxKeyboardOctaveShift,
+    final nextShift = _keyboardShiftBounds.clamp(
+      _keyboardOctaveShift + direction,
     );
     if (nextShift == _keyboardOctaveShift) {
       return;
@@ -829,12 +829,21 @@ class ScoreNotifier extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Select the clef element.
+  void selectClef() {
+    _restMode = false;
+    _selectionKind = SelectionKind.clef;
+    _selectedNoteIndex = null;
+    _cursorIndex = 0;
+    notifyListeners();
+  }
+
   // ---------------------------------------------------------------------------
   // Navigation (← / →)
   // ---------------------------------------------------------------------------
 
   /// Move selection one step to the left.
-  /// Order: cursor(end) → note[n-1] → ... → note[0] → timeSig → keySig
+  /// Order: cursor(end) → note[n-1] → ... → note[0] → timeSig → keySig → clef
   void moveSelectionLeft() {
     switch (_selectionKind) {
       case null:
@@ -853,14 +862,18 @@ class ScoreNotifier extends ChangeNotifier {
       case SelectionKind.timeSig:
         selectKeySig();
       case SelectionKind.keySig:
+        selectClef();
+      case SelectionKind.clef:
         break;
     }
   }
 
   /// Move selection one step to the right.
-  /// Order: keySig → timeSig → note[0] → ... → note[n-1] → cursor(end)
+  /// Order: clef → keySig → timeSig → note[0] → ... → note[n-1] → cursor(end)
   void moveSelectionRight() {
     switch (_selectionKind) {
+      case SelectionKind.clef:
+        selectKeySig();
       case SelectionKind.keySig:
         selectTimeSig();
       case SelectionKind.timeSig:
@@ -888,10 +901,12 @@ class ScoreNotifier extends ChangeNotifier {
   /// Adjust the selected element up (+1) or down (-1).
   void adjustSelection(int direction) {
     switch (_selectionKind) {
-      case SelectionKind.timeSig:
-        cycleTimeSignature(direction);
+      case SelectionKind.clef:
+        cycleClef(direction);
       case SelectionKind.keySig:
         shiftKeySignature(direction);
+      case SelectionKind.timeSig:
+        cycleTimeSignature(direction);
       case SelectionKind.note:
         _diatonicStepSelected(direction);
       case null:
@@ -1284,6 +1299,25 @@ class ScoreNotifier extends ChangeNotifier {
   // Time signature
   // ---------------------------------------------------------------------------
 
+  /// Set clef explicitly.
+  void setClef(Clef clef) {
+    if (score.clef == clef) {
+      return;
+    }
+    score.clef = clef;
+    _keyboardOctaveShift = _keyboardShiftBounds.clamp(_keyboardOctaveShift);
+    _notifyScoreChanged();
+  }
+
+  /// Toggle between treble and bass clef.
+  void cycleClef(int direction) {
+    if (direction == 0) {
+      return;
+    }
+    final next = score.clef == Clef.treble ? Clef.bass : Clef.treble;
+    setClef(next);
+  }
+
   /// Set time signature (e.g. 3/4, 6/8).
   void setTimeSignature(int beats, int unit) {
     final nextBeats = beats.clamp(1, 16);
@@ -1370,7 +1404,9 @@ class ScoreNotifier extends ChangeNotifier {
     score.beatsPerMeasure = source.beatsPerMeasure;
     score.beatUnit = source.beatUnit;
     score.bpm = source.bpm;
+    score.clef = source.clef;
     score.keySignature = source.keySignature;
+    _keyboardOctaveShift = _keyboardShiftBounds.clamp(_keyboardOctaveShift);
 
     _selectionKind = null;
     _selectedNoteIndex = null;

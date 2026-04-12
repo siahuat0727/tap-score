@@ -65,6 +65,36 @@ void main() {
     },
   );
 
+  test('score renderer uses payload clef data for drawing and hit testing', () {
+    final html = File('assets/html/score_renderer.html').readAsStringSync();
+    final source = File(
+      'lib/widgets/score_view_widget.dart',
+    ).readAsStringSync();
+
+    expect(html, contains('function measureFirstMeasureLeadingWidth(clef,'));
+    expect(html, contains("measurementStave.addClef(clef);"));
+    expect(html, contains("stave.addClef(clef);"));
+    expect(
+      html,
+      contains(
+        "new StaveNote({ clef, keys: [restAnchorPitch], duration: dur + 'r' })",
+      ),
+    );
+    expect(
+      html,
+      contains(
+        "new StaveNote({ clef, keys: [pitch.toLowerCase()], duration: dur })",
+      ),
+    );
+    expect(html, contains("if (selectionKind === 'clef') {"));
+    expect(html, contains("const clefEl = svg.querySelector('.vf-clef');"));
+    expect(html, contains("_sendMessage({ type: 'clefTap' });"));
+    expect(html, isNot(contains("addClef('treble')")));
+    expect(source, contains("'clef': clef.vexflowName"));
+    expect(source, contains("'restAnchorPitch': clef.restAnchorPitch"));
+    expect(source, contains("case 'clefTap':"));
+  });
+
   test(
     'web score renderer disables pointer events for non-interactive views',
     () {
@@ -161,7 +191,9 @@ void main() {
     expect(html, contains('function _setRhythmInspectionContext(nextContext)'));
     expect(
       html,
-      contains("if (rhythmInspectionState.pinned && rhythmInspectionState.key === inspectKey) {"),
+      contains(
+        "if (rhythmInspectionState.pinned && rhythmInspectionState.key === inspectKey) {",
+      ),
     );
     expect(
       html,
@@ -201,9 +233,7 @@ void main() {
     expect(html, isNot(contains("point.setAttribute('stroke-width', '1.5');")));
     expect(
       html,
-      isNot(
-        contains("const hit = document.createElementNS(ns, 'circle');"),
-      ),
+      isNot(contains("const hit = document.createElementNS(ns, 'circle');")),
     );
     expect(html, isNot(contains("hit.setAttribute('r', '14');")));
     expect(html, isNot(contains("hit.setAttribute('fill', 'transparent');")));

@@ -114,8 +114,6 @@ const int keyboardVisibleStartMidi = 45; // A2
 const int keyboardVisibleEndMidi = 86; // D6
 const int keyboardMappedStartMidi = 57; // A3
 const int keyboardMappedEndMidi = 74; // D5
-const int minKeyboardOctaveShift = -1;
-const int maxKeyboardOctaveShift = 1;
 
 const Map<NoteDuration, String> durationShortcutLabels = {
   NoteDuration.whole: '1',
@@ -261,16 +259,37 @@ bool isBlackMidi(int midi) => switch (midi % 12) {
   _ => false,
 };
 
+class KeyboardShiftBounds {
+  final int minShift;
+  final int maxShift;
+
+  const KeyboardShiftBounds({required this.minShift, required this.maxShift});
+
+  int clamp(int shift) => shift.clamp(minShift, maxShift);
+}
+
+KeyboardShiftBounds keyboardShiftBoundsForClef(Clef clef) {
+  final offset = clef.keyboardShortcutMidiOffset;
+  final minShift =
+      ((keyboardVisibleStartMidi - keyboardMappedStartMidi - offset) / 12)
+          .ceil();
+  final maxShift =
+      ((keyboardVisibleEndMidi - keyboardMappedEndMidi - offset) / 12).floor();
+  return KeyboardShiftBounds(minShift: minShift, maxShift: maxShift);
+}
+
 EditorShortcutIntent? resolveEditorShortcut(
   LogicalKeyboardKey key, {
   required KeyboardInputMode inputMode,
   required int octaveShift,
+  Clef clef = Clef.treble,
   String? character,
 }) {
   return resolveEditorShortcutEvent(
     EditorShortcutEvent(logicalKey: key, character: character),
     inputMode: inputMode,
     octaveShift: octaveShift,
+    clef: clef,
   );
 }
 
@@ -278,12 +297,14 @@ EditorShortcutIntent? resolveEditorShortcutCode(
   String code, {
   required KeyboardInputMode inputMode,
   required int octaveShift,
+  Clef clef = Clef.treble,
   String? character,
 }) {
   return resolveEditorShortcutEvent(
     EditorShortcutEvent(code: code, character: character),
     inputMode: inputMode,
     octaveShift: octaveShift,
+    clef: clef,
   );
 }
 
@@ -291,11 +312,13 @@ EditorShortcutIntent? resolveEditorShortcutEvent(
   EditorShortcutEvent event, {
   required KeyboardInputMode inputMode,
   required int octaveShift,
+  Clef clef = Clef.treble,
 }) {
   final pitchIntent = _resolvePitchBinding(
     _pitchBindingForEvent(event),
     inputMode: inputMode,
     octaveShift: octaveShift,
+    clef: clef,
   );
   if (pitchIntent != null) {
     return pitchIntent;
@@ -309,15 +332,18 @@ PianoKeyHint describePianoKeyHint(
   int midi, {
   required KeyboardInputMode inputMode,
   required int octaveShift,
+  Clef clef = Clef.treble,
 }) {
   final canTap = inputMode == KeyboardInputMode.chromatic || !isBlackMidi(midi);
-  final windowStart = keyboardMappedStartMidi + (octaveShift * 12);
-  final windowEnd = keyboardMappedEndMidi + (octaveShift * 12);
+  final clefOffset = clef.keyboardShortcutMidiOffset;
+  final shiftBounds = keyboardShiftBoundsForClef(clef);
+  final windowStart = keyboardMappedStartMidi + clefOffset + (octaveShift * 12);
+  final windowEnd = keyboardMappedEndMidi + clefOffset + (octaveShift * 12);
 
   if (midi < windowStart) {
     return PianoKeyHint(
       label: 'q',
-      isShortcutEnabled: octaveShift > minKeyboardOctaveShift,
+      isShortcutEnabled: octaveShift > shiftBounds.minShift,
       canTap: canTap,
       isShiftHint: true,
     );
@@ -326,13 +352,13 @@ PianoKeyHint describePianoKeyHint(
   if (midi > windowEnd) {
     return PianoKeyHint(
       label: ']',
-      isShortcutEnabled: octaveShift < maxKeyboardOctaveShift,
+      isShortcutEnabled: octaveShift < shiftBounds.maxShift,
       canTap: canTap,
       isShiftHint: true,
     );
   }
 
-  final binding = _pitchBindingForShiftedMidi(midi, octaveShift);
+  final binding = _pitchBindingForShiftedMidi(midi, octaveShift, clefOffset);
   if (binding == null) {
     return PianoKeyHint(label: '', isShortcutEnabled: false, canTap: canTap);
   }
@@ -390,9 +416,13 @@ _PitchBinding? _pitchBindingForEvent(EditorShortcutEvent event) {
   return null;
 }
 
-_PitchBinding? _pitchBindingForShiftedMidi(int midi, int octaveShift) {
+_PitchBinding? _pitchBindingForShiftedMidi(
+  int midi,
+  int octaveShift,
+  int clefOffset,
+) {
   for (final binding in _pitchBindings) {
-    if (binding.baseMidi + (octaveShift * 12) == midi) {
+    if (binding.baseMidi + clefOffset + (octaveShift * 12) == midi) {
       return binding;
     }
   }
@@ -403,6 +433,7 @@ EditorShortcutIntent? _resolvePitchBinding(
   _PitchBinding? binding, {
   required KeyboardInputMode inputMode,
   required int octaveShift,
+  required Clef clef,
 }) {
   if (binding == null) {
     return null;
@@ -413,7 +444,7 @@ EditorShortcutIntent? _resolvePitchBinding(
   }
 
   return EditorShortcutIntent.insertPitch(
-    binding.baseMidi + (octaveShift * 12),
+    binding.baseMidi + clef.keyboardShortcutMidiOffset + (octaveShift * 12),
   );
 }
 

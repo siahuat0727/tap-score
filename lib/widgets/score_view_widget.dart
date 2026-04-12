@@ -54,6 +54,13 @@ class _ScoreViewWidgetState extends State<ScoreViewWidget> {
         if (!widget.interactive) return;
         final index = data['index'] as int?;
         if (index != null) notifier.selectNote(index);
+      case 'clefTap':
+        if (!widget.interactive) return;
+        if (notifier.selectionKind == SelectionKind.clef) {
+          _showClefPicker(context);
+        } else {
+          notifier.selectClef();
+        }
       case 'bgTap':
         if (!widget.interactive) return;
         notifier.selectNote(null);
@@ -90,6 +97,7 @@ class _ScoreViewWidgetState extends State<ScoreViewWidget> {
           EditorShortcutEvent(code: code, character: key),
           inputMode: notifier.keyboardInputMode,
           octaveShift: notifier.keyboardOctaveShift,
+          clef: notifier.score.clef,
         );
         if (shortcut != null) {
           notifier.handleEditorShortcut(shortcut);
@@ -118,6 +126,7 @@ class _ScoreViewWidgetState extends State<ScoreViewWidget> {
     if (send == null) return;
 
     final score = notifier.score;
+    final clef = score.clef;
     final keySig = score.keySignature;
 
     final notesList = score.notes.map((note) {
@@ -142,6 +151,8 @@ class _ScoreViewWidgetState extends State<ScoreViewWidget> {
 
     send({
       'type': 'render',
+      'clef': clef.vexflowName,
+      'restAnchorPitch': clef.restAnchorPitch,
       'beatsPerMeasure': score.beatsPerMeasure,
       'beatUnit': score.beatUnit,
       'keySignatureStr': keySig.vexflowKey,
@@ -161,6 +172,10 @@ class _ScoreViewWidgetState extends State<ScoreViewWidget> {
   // ---------------------------------------------------------------------------
   // Pickers (opened on tap-again when already selected)
   // ---------------------------------------------------------------------------
+
+  void _showClefPicker(BuildContext context) {
+    showClefPicker(context, context.read<ScoreNotifier>());
+  }
 
   void _showTimeSigPicker(BuildContext context) {
     showTimeSigPicker(context, context.read<ScoreNotifier>());

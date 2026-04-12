@@ -298,7 +298,7 @@
       return beams;
     }
 
-    function measureFirstMeasureLeadingWidth(staveHeight, staveTop, beatsPerMeasure, beatUnit, keySignatureStr) {
+    function measureFirstMeasureLeadingWidth(clef, staveHeight, staveTop, beatsPerMeasure, beatUnit, keySignatureStr) {
       const measurementHost = document.createElement('div');
       measurementHost.style.position = 'absolute';
       measurementHost.style.visibility = 'hidden';
@@ -312,7 +312,7 @@
         measurementRenderer.resize(280, staveHeight);
         const measurementCtx = measurementRenderer.getContext();
         const measurementStave = new Stave(0, staveTop, 240);
-        measurementStave.addClef('treble');
+        measurementStave.addClef(clef);
         measurementStave.addKeySignature(keySignatureStr);
         measurementStave.addTimeSignature(`${beatsPerMeasure}/${beatUnit}`);
         measurementStave.setContext(measurementCtx).draw();
@@ -344,7 +344,7 @@
 
       try {
 
-      const { beatsPerMeasure, beatUnit, keySignatureStr, alteredPitches,
+      const { clef, restAnchorPitch, beatsPerMeasure, beatUnit, keySignatureStr, alteredPitches,
               accidentalOffset, notes, selectedIndex, cursorIndex,
               playbackIndex, selectionKind, rhythmTest, title, bpm } = data;
 
@@ -358,6 +358,7 @@
       const noteSpacing = 48;
       const minMeasureWidth = 80;
       const firstMeasureLeadingWidth = measureFirstMeasureLeadingWidth(
+        clef,
         staveHeight,
         staveTop,
         beatsPerMeasure,
@@ -385,10 +386,10 @@
           const dur = dn.isDotted ? dn.duration + 'd' : dn.duration;
           let vfNote;
           if (dn.isRest) {
-            vfNote = new StaveNote({ keys: ['b/4'], duration: dur + 'r' });
+            vfNote = new StaveNote({ clef, keys: [restAnchorPitch], duration: dur + 'r' });
           } else {
             const pitch = midiToPitch(dn.midi);
-            vfNote = new StaveNote({ keys: [pitch.toLowerCase()], duration: dur });
+            vfNote = new StaveNote({ clef, keys: [pitch.toLowerCase()], duration: dur });
 
             const pc = dn.midi % 12;
             const naturalNote = [0,2,4,5,7,9,11].includes(pc);
@@ -468,7 +469,7 @@
 
         const stave = new Stave(xOffset, staveTop, mWidth);
         if (mi === 0) {
-          stave.addClef('treble');
+          stave.addClef(clef);
           stave.addKeySignature(keySignatureStr);
           stave.addTimeSignature(`${beatsPerMeasure}/${beatUnit}`);
         }
@@ -1454,7 +1455,10 @@
       if (!selectionKind) return;
       const ns = svg.namespaceURI;
 
-      if (selectionKind === 'timeSig') {
+      if (selectionKind === 'clef') {
+        const el = svg.querySelector('.vf-clef');
+        if (el) _highlightElement(svg, el, ns);
+      } else if (selectionKind === 'timeSig') {
         const el = svg.querySelector('.vf-timesignature');
         if (el) _highlightElement(svg, el, ns);
       } else if (selectionKind === 'keySig') {
@@ -1606,6 +1610,13 @@
         const rect = svg.getBoundingClientRect();
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
+
+        // Check clef element
+        const clefEl = svg.querySelector('.vf-clef');
+        if (clefEl && _isClickOnElement(clefEl, rect, x, y, 10)) {
+          _sendMessage({ type: 'clefTap' });
+          return;
+        }
 
         // Check time signature element
         const timeSigEl = svg.querySelector('.vf-timesignature');

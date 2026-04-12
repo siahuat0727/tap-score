@@ -86,7 +86,7 @@ void main() {
     expect(restored.tripletGroupId, isNull);
   });
 
-  test('rest without stored pitch restores to C4', () {
+  test('rest without stored pitch restores to the active clef default', () {
     final notifier = ScoreNotifier();
 
     notifier.score.addNote(const Note.rest(duration: NoteDuration.eighth));
@@ -97,6 +97,17 @@ void main() {
     expect(restored.isRest, isFalse);
     expect(restored.midi, 60);
     expect(restored.duration, NoteDuration.eighth);
+  });
+
+  test('bass clef restores rests to C3 by default', () {
+    final notifier = ScoreNotifier();
+
+    notifier.setClef(Clef.bass);
+    notifier.score.addNote(const Note.rest(duration: NoteDuration.eighth));
+    notifier.selectNote(0);
+    notifier.handleRestAction();
+
+    expect(notifier.score.notes.single.midi, 48);
   });
 
   test('toggle dotted mode edits the selected triplet group together', () {
@@ -172,6 +183,29 @@ void main() {
     expect(notifier.canShiftKeyboardMappingUp, isFalse);
   });
 
+  test(
+    'bass clef allows two upward keyboard shifts within the visible range',
+    () {
+      final notifier = ScoreNotifier();
+
+      notifier.setClef(Clef.bass);
+      expect(notifier.keyboardOctaveShift, 0);
+      expect(notifier.canShiftKeyboardMappingDown, isFalse);
+      expect(notifier.canShiftKeyboardMappingUp, isTrue);
+
+      notifier.shiftKeyboardMapping(1);
+      expect(notifier.keyboardOctaveShift, 1);
+      expect(notifier.canShiftKeyboardMappingUp, isTrue);
+
+      notifier.shiftKeyboardMapping(1);
+      expect(notifier.keyboardOctaveShift, 2);
+      expect(notifier.canShiftKeyboardMappingUp, isFalse);
+
+      notifier.shiftKeyboardMapping(1);
+      expect(notifier.keyboardOctaveShift, 2);
+    },
+  );
+
   test('editor shortcuts route through shared keyboard input state', () {
     final notifier = ScoreNotifier();
 
@@ -182,6 +216,35 @@ void main() {
     expect(notifier.keyboardOctaveShift, -1);
     expect(notifier.keyboardInputMode, KeyboardInputMode.chromatic);
     expect(notifier.score.notes.single.midi, 60);
+  });
+
+  test('setClef updates score metadata without changing existing notes', () {
+    final notifier = ScoreNotifier();
+    notifier.score.notes.addAll([
+      const Note(midi: 60, duration: NoteDuration.quarter),
+      const Note(midi: 43, duration: NoteDuration.half),
+    ]);
+
+    notifier.setClef(Clef.bass);
+
+    expect(notifier.score.clef, Clef.bass);
+    expect(notifier.score.notes.map((note) => note.midi).toList(), [60, 43]);
+  });
+
+  test('setClef clamps keyboard shift into the new clef range', () {
+    final notifier = ScoreNotifier();
+
+    notifier.shiftKeyboardMapping(-1);
+    expect(notifier.keyboardOctaveShift, -1);
+
+    notifier.setClef(Clef.bass);
+    expect(notifier.keyboardOctaveShift, 0);
+
+    notifier.shiftKeyboardMapping(2);
+    expect(notifier.keyboardOctaveShift, 2);
+
+    notifier.setClef(Clef.treble);
+    expect(notifier.keyboardOctaveShift, 1);
   });
 
   test(

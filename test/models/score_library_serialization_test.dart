@@ -26,12 +26,25 @@ void main() {
       beatsPerMeasure: 6,
       beatUnit: 8,
       bpm: 92,
+      clef: Clef.bass,
       keySignature: KeySignature.ebMajor,
     );
 
     final decoded = Score.fromJson(score.toJson());
 
     expect(decoded, score);
+  });
+
+  test('legacy score json without clef defaults to treble', () {
+    final decoded = Score.fromJson({
+      'notes': const [],
+      'beatsPerMeasure': 4,
+      'beatUnit': 4,
+      'bpm': 120,
+      'keySignature': 'cMajor',
+    });
+
+    expect(decoded.clef, Clef.treble);
   });
 
   test('score library snapshot round-trips through json', () {

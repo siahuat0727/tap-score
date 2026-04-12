@@ -1,5 +1,6 @@
-import 'note.dart';
+import 'enums.dart';
 import 'key_signature.dart';
+import 'note.dart';
 
 /// Common time signatures for cycling and picker UI.
 const List<(int, int)> commonTimeSignatures = [
@@ -27,6 +28,9 @@ class Score {
   /// Tempo in beats per minute.
   double bpm;
 
+  /// Staff clef. Default: treble.
+  Clef clef;
+
   /// Key signature. Default: C major.
   KeySignature keySignature;
 
@@ -35,6 +39,7 @@ class Score {
     this.beatsPerMeasure = 4,
     this.beatUnit = 4,
     this.bpm = 120,
+    this.clef = Clef.treble,
     this.keySignature = KeySignature.cMajor,
   }) : notes = notes ?? [];
 
@@ -89,6 +94,7 @@ class Score {
       beatsPerMeasure: beatsPerMeasure,
       beatUnit: beatUnit,
       bpm: bpm,
+      clef: clef,
       keySignature: keySignature,
     );
   }
@@ -99,6 +105,7 @@ class Score {
       'beatsPerMeasure': beatsPerMeasure,
       'beatUnit': beatUnit,
       'bpm': bpm,
+      'clef': clef.name,
       'keySignature': keySignature.name,
     };
   }
@@ -136,6 +143,11 @@ class Score {
       throw ArgumentError.value(json['bpm'], 'bpm', 'Expected a number');
     }
 
+    final clefName = json['clef'];
+    if (clefName != null && clefName is! String) {
+      throw ArgumentError.value(json['clef'], 'clef', 'Expected a clef name');
+    }
+
     final keySignatureName = json['keySignature'];
     if (keySignatureName is! String) {
       throw ArgumentError.value(
@@ -157,13 +169,14 @@ class Score {
       beatsPerMeasure: beatsPerMeasure,
       beatUnit: beatUnit,
       bpm: bpm.toDouble(),
+      clef: clefName == null ? Clef.treble : Clef.fromName(clefName),
       keySignature: KeySignature.fromName(keySignatureName),
     );
   }
 
   @override
   String toString() =>
-      'Score(${notes.length} notes, $beatsPerMeasure/$beatUnit, ${bpm}bpm, ${keySignature.displayName})';
+      'Score(${notes.length} notes, $beatsPerMeasure/$beatUnit, ${bpm}bpm, ${clef.displayName}, ${keySignature.displayName})';
 
   @override
   bool operator ==(Object other) {
@@ -172,6 +185,7 @@ class Score {
     if (beatsPerMeasure != other.beatsPerMeasure ||
         beatUnit != other.beatUnit ||
         bpm != other.bpm ||
+        clef != other.clef ||
         keySignature != other.keySignature ||
         notes.length != other.notes.length) {
       return false;
@@ -191,6 +205,7 @@ class Score {
     beatsPerMeasure,
     beatUnit,
     bpm,
+    clef,
     keySignature,
     Object.hashAll(notes),
   );

@@ -1,9 +1,75 @@
 import 'package:flutter/material.dart';
 
+import '../models/enums.dart';
 import '../models/key_signature.dart';
 import '../models/score.dart';
 import '../state/score_notifier.dart';
 import '../theme/app_colors.dart';
+
+/// Shows a bottom-sheet picker for selecting a clef.
+void showClefPicker(BuildContext context, ScoreNotifier notifier) {
+  showModalBottomSheet<void>(
+    context: context,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+    ),
+    builder: (ctx) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Padding(
+              padding: EdgeInsets.only(bottom: 12),
+              child: Text(
+                'Clef',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+              ),
+            ),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: Clef.values.map((clef) {
+                final isCurrent = notifier.score.clef == clef;
+                return GestureDetector(
+                  onTap: () {
+                    notifier.setClef(clef);
+                    Navigator.pop(ctx);
+                  },
+                  child: Container(
+                    width: 112,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    decoration: BoxDecoration(
+                      color: isCurrent
+                          ? AppColors.accentBlue
+                          : AppColors.surfaceContainer,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: isCurrent
+                            ? AppColors.accentBlue
+                            : AppColors.surfaceBorderDim,
+                      ),
+                    ),
+                    child: Text(
+                      clef.displayName,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: isCurrent ? Colors.white : AppColors.textPrimary,
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ],
+        ),
+      );
+    },
+  );
+}
 
 /// Shows a bottom-sheet picker for selecting a time signature.
 void showTimeSigPicker(BuildContext context, ScoreNotifier notifier) {

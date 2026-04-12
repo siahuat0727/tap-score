@@ -47,6 +47,7 @@
     "beatsPerMeasure": 4,
     "beatUnit": 4,
     "bpm": 96,
+    "clef": "treble",
     "keySignature": "gMajor"
   }
 }

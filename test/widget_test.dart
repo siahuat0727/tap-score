@@ -1064,6 +1064,22 @@ void main() {
     await tester.pump();
     expect(notifier.selectionKind, SelectionKind.timeSig);
 
+    _buttonInkWell(tester, const ValueKey('keyboard-nav-left')).onTap?.call();
+    await tester.pump();
+    expect(notifier.selectionKind, SelectionKind.keySig);
+
+    _buttonInkWell(tester, const ValueKey('keyboard-nav-left')).onTap?.call();
+    await tester.pump();
+    expect(notifier.selectionKind, SelectionKind.clef);
+
+    _buttonInkWell(tester, const ValueKey('keyboard-nav-right')).onTap?.call();
+    await tester.pump();
+    expect(notifier.selectionKind, SelectionKind.keySig);
+
+    _buttonInkWell(tester, const ValueKey('keyboard-nav-right')).onTap?.call();
+    await tester.pump();
+    expect(notifier.selectionKind, SelectionKind.timeSig);
+
     _buttonInkWell(tester, const ValueKey('keyboard-nav-down')).onTap?.call();
     await tester.pump();
     expect(notifier.score.beatsPerMeasure, 3);
@@ -1310,6 +1326,35 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.keyH);
     await tester.pump();
     expect(notifier.score.notes.single.midi, 65);
+
+    await tester.pump(const Duration(milliseconds: 600));
+  });
+
+  testWidgets('bass clef keyboard shortcuts can shift up twice', (
+    WidgetTester tester,
+  ) async {
+    final context = await _openBlankWorkspace(tester);
+    final notifier = Provider.of<ScoreNotifier>(context, listen: false);
+
+    notifier.setClef(Clef.bass);
+    await tester.pump();
+    expect(notifier.keyboardOctaveShift, 0);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.bracketRight);
+    await tester.pump();
+    expect(notifier.keyboardOctaveShift, 1);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.bracketRight);
+    await tester.pump();
+    expect(notifier.keyboardOctaveShift, 2);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.bracketRight);
+    await tester.pump();
+    expect(notifier.keyboardOctaveShift, 2);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyD);
+    await tester.pump();
+    expect(notifier.score.notes.single.midi, 72);
 
     await tester.pump(const Duration(milliseconds: 600));
   });

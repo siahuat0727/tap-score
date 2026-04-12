@@ -81,6 +81,7 @@ class _KeyboardContent extends StatelessWidget {
         midi,
         inputMode: notifier.keyboardInputMode,
         octaveShift: notifier.keyboardOctaveShift,
+        clef: notifier.score.clef,
       );
       whiteKeys.add(
         _WhiteKey(
@@ -114,6 +115,7 @@ class _KeyboardContent extends StatelessWidget {
         nextMidi,
         inputMode: notifier.keyboardInputMode,
         octaveShift: notifier.keyboardOctaveShift,
+        clef: notifier.score.clef,
       );
       blackKeys.add(
         _BlackKey(

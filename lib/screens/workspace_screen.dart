@@ -352,6 +352,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       EditorShortcutEvent(logicalKey: key, character: event.character),
       inputMode: notifier.keyboardInputMode,
       octaveShift: notifier.keyboardOctaveShift,
+      clef: notifier.score.clef,
     );
     if (shortcut == null) {
       return KeyEventResult.ignored;

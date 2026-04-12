@@ -1,3 +1,37 @@
+enum Clef {
+  treble,
+  bass;
+
+  String get vexflowName => name;
+
+  String get displayName => switch (this) {
+    Clef.treble => 'Treble',
+    Clef.bass => 'Bass',
+  };
+
+  int get defaultRestoreMidi => switch (this) {
+    Clef.treble => 60,
+    Clef.bass => 48,
+  };
+
+  int get keyboardShortcutMidiOffset => switch (this) {
+    Clef.treble => 0,
+    Clef.bass => -12,
+  };
+
+  String get restAnchorPitch => switch (this) {
+    Clef.treble => 'b/4',
+    Clef.bass => 'd/3',
+  };
+
+  static Clef fromName(String name) {
+    return Clef.values.firstWhere(
+      (clef) => clef.name == name,
+      orElse: () => throw ArgumentError.value(name, 'name', 'Unsupported clef'),
+    );
+  }
+}
+
 /// Duration of a musical note, relative to a whole note.
 enum NoteDuration {
   whole, // 4 beats

@@ -15,6 +15,7 @@ void main() {
     "beatsPerMeasure": 3,
     "beatUnit": 4,
     "bpm": 90,
+    "clef": "treble",
     "keySignature": "gMajor"
   }
 }
@@ -28,6 +29,7 @@ void main() {
     "beatsPerMeasure": 4,
     "beatUnit": 4,
     "bpm": 120,
+    "clef": "treble",
     "keySignature": "cMajor"
   }
 }
@@ -75,6 +77,7 @@ void main() {
     "beatsPerMeasure": 4,
     "beatUnit": 4,
     "bpm": 120,
+    "clef": "treble",
     "keySignature": "cMajor"
   }
 }
