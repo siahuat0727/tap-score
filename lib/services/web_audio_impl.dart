@@ -18,6 +18,9 @@ external JSNumber _playWebNote(int midi, int velocity);
 @JS('stopWebNote')
 external void _stopWebNote(int handleId);
 
+@JS('preloadWebNotes')
+external JSPromise<JSAny?> _preloadWebNotes(JSArray<JSNumber> midis);
+
 Future<bool> initWebAudio({
   Duration timeout = const Duration(seconds: 10),
 }) async {
@@ -46,4 +49,9 @@ int playWebNote(int midi, int velocity) {
 
 void stopWebNote(int handleId) {
   _stopWebNote(handleId);
+}
+
+Future<void> preloadWebNotes(List<int> midis) async {
+  final jsMidis = midis.map((midi) => midi.toJS).toList(growable: false).toJS;
+  await _preloadWebNotes(jsMidis).toDart;
 }

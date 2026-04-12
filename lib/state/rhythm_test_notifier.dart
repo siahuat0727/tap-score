@@ -13,6 +13,9 @@ enum RhythmTestPhase { idle, countIn, running, finished }
 
 class RhythmTestNotifier extends ChangeNotifier {
   static const Duration resultRevealLockDuration = Duration(seconds: 1);
+  static const Duration _visualPlayheadUpdateInterval = Duration(
+    milliseconds: 33,
+  );
 
   RhythmTestNotifier({
     required Score score,
@@ -66,6 +69,7 @@ class RhythmTestNotifier extends ChangeNotifier {
   final Map<int, AudioNoteHandle> _activePlaybackHandles = {};
   bool _resultCardVisible = true;
   bool _isDisposed = false;
+  int _lastVisualNotifyMicros = -1;
 
   Score get score => _score;
 
@@ -253,6 +257,16 @@ class RhythmTestNotifier extends ChangeNotifier {
       return;
     }
 
+    try {
+      await _audioService.preloadRhythmTestNotes(
+        _timeline.playbackNotes.map((note) => note.midi),
+      );
+    } catch (error) {
+      _errorMessage = 'Rhythm test audio preparation failed: $error';
+      _emitChange();
+      return;
+    }
+
     _isInitialized = true;
     _emitChange();
   }
@@ -282,6 +296,7 @@ class RhythmTestNotifier extends ChangeNotifier {
     _runningPulseIndex = null;
     _elapsedRunSeconds = 0;
     _playheadTimeSeconds = -_timeline.countInDurationSeconds;
+    _lastVisualNotifyMicros = 0;
     _emitChange();
 
     unawaited(_runSession(_sessionId));
@@ -318,6 +333,7 @@ class RhythmTestNotifier extends ChangeNotifier {
         timeSeconds: elapsedMicros / Duration.microsecondsPerSecond,
       ),
     );
+    _lastVisualNotifyMicros = stopwatch.elapsedMicroseconds;
     _emitChange();
   }
 
@@ -388,6 +404,7 @@ class RhythmTestNotifier extends ChangeNotifier {
 
       _countInPulseIndex = index;
       _audioService.playRhythmTestMetronomeClick(accented: index == 0);
+      _lastVisualNotifyMicros = stopwatch.elapsedMicroseconds;
       _emitChange();
     }
 
@@ -405,6 +422,7 @@ class RhythmTestNotifier extends ChangeNotifier {
     _playbackNoteIndex = _playbackNoteIndexForElapsed(0);
     _elapsedRunSeconds = 0;
     _playheadTimeSeconds = 0;
+    _lastVisualNotifyMicros = performanceStartMicros;
     _emitChange();
 
     final scheduledEvents = _buildScheduledRunEvents(
@@ -435,7 +453,6 @@ class RhythmTestNotifier extends ChangeNotifier {
             _activePlaybackHandles[event.note.noteIndex] = handle;
           }
       }
-      _emitChange();
     }
 
     final finishMicros =
@@ -453,6 +470,7 @@ class RhythmTestNotifier extends ChangeNotifier {
     _elapsedRunSeconds = _timeline.totalDurationSeconds;
     _playheadTimeSeconds = _timeline.totalDurationSeconds;
     _playbackNoteIndex = -1;
+    _lastVisualNotifyMicros = finishMicros;
     _emitChange();
 
     final graceMicros = (pulseMicros * _postRollPulseCount).round();
@@ -515,13 +533,19 @@ class RhythmTestNotifier extends ChangeNotifier {
     final nextElapsed = nextPlayhead
         .clamp(0, _timeline.totalDurationSeconds)
         .toDouble();
-    if ((nextPlayhead - _playheadTimeSeconds).abs() < 0.001 &&
-        (nextElapsed - _elapsedRunSeconds).abs() < 0.001) {
+    final playheadChanged =
+        (nextPlayhead - _playheadTimeSeconds).abs() >= 0.001 ||
+        (nextElapsed - _elapsedRunSeconds).abs() >= 0.001;
+    if (!playheadChanged) {
       return;
     }
 
+    final previousPulseIndex = _runningPulseIndex;
+    final previousPlaybackNoteIndex = _playbackNoteIndex;
     _playheadTimeSeconds = nextPlayhead;
     _elapsedRunSeconds = nextElapsed;
+    var runningPulseChanged = false;
+    var playbackNoteChanged = false;
     if (_phase == RhythmTestPhase.running) {
       final maxPulseIndex =
           ((_timeline.totalDurationSeconds / _timeline.pulseDurationSeconds)
@@ -534,7 +558,23 @@ class RhythmTestNotifier extends ChangeNotifier {
           .toInt();
       _runningPulseIndex = nextPulseIndex;
       _playbackNoteIndex = _playbackNoteIndexForElapsed(nextElapsed);
+      runningPulseChanged = nextPulseIndex != previousPulseIndex;
+      playbackNoteChanged = _playbackNoteIndex != previousPlaybackNoteIndex;
     }
+
+    if (runningPulseChanged || playbackNoteChanged) {
+      _lastVisualNotifyMicros = stopwatch.elapsedMicroseconds;
+      _emitChange();
+      return;
+    }
+
+    if (_lastVisualNotifyMicros >= 0 &&
+        stopwatch.elapsedMicroseconds - _lastVisualNotifyMicros <
+            _visualPlayheadUpdateInterval.inMicroseconds) {
+      return;
+    }
+
+    _lastVisualNotifyMicros = stopwatch.elapsedMicroseconds;
     _emitChange();
   }
 
@@ -625,6 +665,7 @@ class RhythmTestNotifier extends ChangeNotifier {
     _sessionStopwatch = null;
     _restartLocked = false;
     _activePlaybackHandles.clear();
+    _lastVisualNotifyMicros = -1;
   }
 
   int _playbackNoteIndexForElapsed(double elapsedSeconds) {

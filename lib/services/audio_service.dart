@@ -67,6 +67,31 @@ class AudioService {
     return _ensureInitialized();
   }
 
+  Future<void> preloadRhythmTestNotes(Iterable<int> melodyMidis) async {
+    if (!await init()) {
+      throw StateError(
+        initializationError ?? 'Rhythm test audio failed to initialize.',
+      );
+    }
+
+    if (_testMode || !kIsWeb) {
+      return;
+    }
+
+    final midis = {
+      _accentedMetronomeMidi,
+      _regularMetronomeMidi,
+      for (final midi in melodyMidis) midi.clamp(0, 127).toInt(),
+    }.toList(growable: false)
+      ..sort();
+
+    if (midis.isEmpty) {
+      return;
+    }
+
+    await web_audio.preloadWebNotes(midis);
+  }
+
   Future<bool> _ensureInitialized() async {
     if (_initialized) return true;
     if (_testMode) {

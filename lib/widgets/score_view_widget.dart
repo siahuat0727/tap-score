@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../input/editor_shortcuts.dart';
@@ -37,9 +39,61 @@ class ScoreViewWidget extends StatefulWidget {
   State<ScoreViewWidget> createState() => _ScoreViewWidgetState();
 }
 
+class ScoreRendererCommandController {
+  String? _lastStaticSignature;
+  String? _lastRhythmOverlaySignature;
+  int? _lastPlaybackIndex;
+
+  void reset() {
+    _lastStaticSignature = null;
+    _lastRhythmOverlaySignature = null;
+    _lastPlaybackIndex = null;
+  }
+
+  List<Map<String, dynamic>> buildCommands({
+    required Map<String, dynamic> staticPayload,
+    required Map<String, dynamic>? rhythmOverlayPayload,
+    required int playbackIndex,
+    bool forceStatic = false,
+  }) {
+    final commands = <Map<String, dynamic>>[];
+    final staticSignature = jsonEncode(staticPayload);
+    final rhythmOverlaySignature = jsonEncode(rhythmOverlayPayload);
+    final needsStaticRender =
+        forceStatic || staticSignature != _lastStaticSignature;
+
+    if (needsStaticRender) {
+      commands.add({'type': 'renderScoreStatic', ...staticPayload});
+      _lastStaticSignature = staticSignature;
+    }
+
+    if (needsStaticRender ||
+        rhythmOverlaySignature != _lastRhythmOverlaySignature) {
+      commands.add({
+        'type': 'updateRhythmOverlay',
+        'rhythmTest': rhythmOverlayPayload,
+      });
+      _lastRhythmOverlaySignature = rhythmOverlaySignature;
+    }
+
+    if (needsStaticRender || playbackIndex != _lastPlaybackIndex) {
+      commands.add({
+        'type': 'updatePlaybackIndex',
+        'playbackIndex': playbackIndex,
+      });
+      _lastPlaybackIndex = playbackIndex;
+    }
+
+    return commands;
+  }
+}
+
 class _ScoreViewWidgetState extends State<ScoreViewWidget> {
   /// Function provided by the platform renderer once it's ready.
-  void Function(Map<String, dynamic> payload)? _sendRender;
+  void Function(Map<String, dynamic> payload)? _sendCommand;
+  final ScoreRendererCommandController _commandController =
+      ScoreRendererCommandController();
+  ScoreNotifier? _notifier;
 
   // ---------------------------------------------------------------------------
   // JS → Dart message handler
@@ -49,7 +103,7 @@ class _ScoreViewWidgetState extends State<ScoreViewWidget> {
     final type = data['type'] as String?;
     switch (type) {
       case 'ready':
-        _renderNow(notifier);
+        _flushRendererCommands(forceStatic: true);
       case 'noteTap':
         if (!widget.interactive) return;
         final index = data['index'] as int?;
@@ -121,10 +175,7 @@ class _ScoreViewWidgetState extends State<ScoreViewWidget> {
   // ---------------------------------------------------------------------------
   // Dart → JS render
   // ---------------------------------------------------------------------------
-  void _renderNow(ScoreNotifier notifier) {
-    final send = _sendRender;
-    if (send == null) return;
-
+  Map<String, dynamic> _buildStaticPayload(ScoreNotifier notifier) {
     final score = notifier.score;
     final clef = score.clef;
     final keySig = score.keySignature;
@@ -147,10 +198,7 @@ class _ScoreViewWidgetState extends State<ScoreViewWidget> {
       title += ' \u2022';
     }
 
-    final playbackIndex = widget.playbackIndex ?? notifier.playbackIndex;
-
-    send({
-      'type': 'render',
+    return {
       'clef': clef.vexflowName,
       'restAnchorPitch': clef.restAnchorPitch,
       'beatsPerMeasure': score.beatsPerMeasure,
@@ -161,12 +209,33 @@ class _ScoreViewWidgetState extends State<ScoreViewWidget> {
       'notes': notesList,
       'selectedIndex': notifier.selectedIndex ?? -1,
       'cursorIndex': notifier.cursorIndex,
-      'playbackIndex': playbackIndex,
       'selectionKind': notifier.selectionKind?.name ?? '',
-      'rhythmTest': widget.rhythmOverlay?.toPayload(),
+      'showsRhythmOverlay': widget.rhythmOverlay != null,
       'title': title,
       'bpm': score.bpm.round(),
-    });
+    };
+  }
+
+  void _flushRendererCommands({bool forceStatic = false}) {
+    final notifier = _notifier;
+    final send = _sendCommand;
+    if (notifier == null || send == null) {
+      return;
+    }
+
+    final commands = _commandController.buildCommands(
+      staticPayload: _buildStaticPayload(notifier),
+      rhythmOverlayPayload: widget.rhythmOverlay?.toPayload(),
+      playbackIndex: widget.playbackIndex ?? notifier.playbackIndex,
+      forceStatic: forceStatic,
+    );
+    for (final command in commands) {
+      send(command);
+    }
+  }
+
+  void _handleScoreNotifierChanged() {
+    _flushRendererCommands();
   }
 
   // ---------------------------------------------------------------------------
@@ -190,50 +259,67 @@ class _ScoreViewWidgetState extends State<ScoreViewWidget> {
   // ---------------------------------------------------------------------------
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final notifier = context.read<ScoreNotifier>();
+    if (_notifier == notifier) {
+      return;
+    }
+    _notifier?.removeListener(_handleScoreNotifierChanged);
+    _notifier = notifier;
+    notifier.addListener(_handleScoreNotifierChanged);
+    _flushRendererCommands(forceStatic: true);
+  }
+
+  @override
+  void didUpdateWidget(covariant ScoreViewWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.rhythmOverlay != widget.rhythmOverlay ||
+        oldWidget.playbackIndex != widget.playbackIndex) {
+      _flushRendererCommands();
+    }
+  }
+
+  @override
+  void dispose() {
+    _notifier?.removeListener(_handleScoreNotifierChanged);
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final pointerInputEnabled =
         !widget.blockRendererPointerInput &&
         (widget.interactive ||
             (widget.rhythmOverlay?.enablesInspection ?? false));
 
-    return Consumer<ScoreNotifier>(
-      builder: (context, notifier, child) {
-        // Trigger re-render whenever score state changes.
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          _renderNow(notifier);
-        });
-
-        return Container(
-          key: const ValueKey('score-view-surface'),
-          decoration: BoxDecoration(
-            color: AppColors.scoreBackground,
-            borderRadius: BorderRadius.circular(12),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withAlpha(13),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
-              ),
-            ],
+    return Container(
+      key: const ValueKey('score-view-surface'),
+      decoration: BoxDecoration(
+        color: AppColors.scoreBackground,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withAlpha(13),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
           ),
-          margin: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-          clipBehavior: Clip.hardEdge,
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            // The platform renderer is stable (never rebuilt by Consumer)
-            // because it's passed via the `child` parameter.
-            child: child!,
-          ),
-        );
-      },
-      // Build the platform renderer once — it survives Consumer rebuilds.
-      child: buildScoreRenderer(
-        interactive: widget.interactive,
-        pointerInputEnabled: pointerInputEnabled,
-        onMessage: _onJsMessage,
-        onReady: (sendRender) {
-          setState(() => _sendRender = sendRender);
-        },
+        ],
+      ),
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+      clipBehavior: Clip.hardEdge,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: buildScoreRenderer(
+          interactive: widget.interactive,
+          pointerInputEnabled: pointerInputEnabled,
+          onMessage: _onJsMessage,
+          onReady: (sendCommand) {
+            _sendCommand = sendCommand;
+            _commandController.reset();
+            _flushRendererCommands(forceStatic: true);
+          },
+        ),
       ),
     );
   }

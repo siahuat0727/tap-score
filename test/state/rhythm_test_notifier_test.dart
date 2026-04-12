@@ -173,6 +173,54 @@ void main() {
     ]);
   });
 
+  test('init preloads rhythm test notes before a session starts', () async {
+    final audioService = _FakeAudioService();
+    final notifier = RhythmTestNotifier(
+      score: Score(
+        bpm: 120,
+        notes: const [
+          Note(midi: 60, duration: NoteDuration.quarter),
+          Note(midi: 62, duration: NoteDuration.quarter),
+        ],
+      ),
+      audioService: audioService,
+      timelineBuilder: _FixedTimelineBuilder(
+        const RhythmTimeline(
+          expectedEvents: [
+            ExpectedRhythmEvent(id: 1, noteIndex: 0, timeSeconds: 0),
+            ExpectedRhythmEvent(id: 2, noteIndex: 1, timeSeconds: 0.1),
+          ],
+          playbackNotes: [
+            RhythmMelodyEvent(
+              noteIndex: 0,
+              midi: 60,
+              startSeconds: 0,
+              durationSeconds: 0.1,
+            ),
+            RhythmMelodyEvent(
+              noteIndex: 1,
+              midi: 62,
+              startSeconds: 0.1,
+              durationSeconds: 0.1,
+            ),
+          ],
+          measureBoundaryTimesSeconds: [0, 0.2],
+          totalDurationSeconds: 0.2,
+          pulseDurationSeconds: 0.1,
+          pulsesPerMeasure: 4,
+        ),
+      ),
+    );
+
+    addTearDown(notifier.dispose);
+
+    await notifier.init();
+
+    expect(audioService.preloadRequests, [
+      [60, 62],
+    ]);
+  });
+
   test('running retriggers repeated same-pitch notes in order', () async {
     final audioService = _FakeAudioService();
     final notifier = RhythmTestNotifier(
@@ -600,6 +648,51 @@ void main() {
       expect(notifier.overlayRenderData.largeErrorThresholdBeats, 0.15);
     },
   );
+
+  test('count-in progress notifications stay below the live loop cadence', () async {
+    final notifier = RhythmTestNotifier(
+      score: Score(
+        bpm: 120,
+        notes: const [Note(midi: 60, duration: NoteDuration.quarter)],
+      ),
+      audioService: _FakeAudioService(),
+      timelineBuilder: _FixedTimelineBuilder(
+        const RhythmTimeline(
+          expectedEvents: [
+            ExpectedRhythmEvent(id: 1, noteIndex: 0, timeSeconds: 0),
+          ],
+          playbackNotes: [
+            RhythmMelodyEvent(
+              noteIndex: 0,
+              midi: 60,
+              startSeconds: 0,
+              durationSeconds: 0.2,
+            ),
+          ],
+          measureBoundaryTimesSeconds: [0, 0.2],
+          totalDurationSeconds: 0.2,
+          pulseDurationSeconds: 0.5,
+          pulsesPerMeasure: 4,
+        ),
+      ),
+    );
+
+    addTearDown(notifier.dispose);
+    await notifier.init();
+
+    var notifications = 0;
+    void listener() {
+      notifications += 1;
+    }
+
+    notifier.addListener(listener);
+    await notifier.start();
+    await Future<void>.delayed(const Duration(milliseconds: 70));
+    notifier.removeListener(listener);
+    notifier.stop();
+
+    expect(notifications, lessThanOrEqualTo(4));
+  });
 }
 
 class _FixedTimelineBuilder extends RhythmTimelineBuilder {
@@ -626,10 +719,16 @@ class _FixedMatcher extends RhythmMatcher {
 
 class _FakeAudioService extends AudioService {
   final List<String> events = [];
+  final List<List<int>> preloadRequests = [];
   int _nextHandleId = 1;
 
   @override
   Future<bool> init() async => true;
+
+  @override
+  Future<void> preloadRhythmTestNotes(Iterable<int> melodyMidis) async {
+    preloadRequests.add(melodyMidis.toList(growable: false));
+  }
 
   @override
   Future<AudioNoteHandle?> startNote(

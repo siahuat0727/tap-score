@@ -8,3 +8,5 @@ Future<bool> initWebAudio({
 
 int playWebNote(int midi, int velocity) => -1;
 void stopWebNote(int handleId) {}
+
+Future<void> preloadWebNotes(List<int> midis) async {}

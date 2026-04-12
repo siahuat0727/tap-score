@@ -232,6 +232,12 @@ void main() {
   test('score renderer handles the inline rhythm overlay payload', () {
     final html = File('assets/html/score_renderer.html').readAsStringSync();
 
+    expect(html, contains("case 'renderScoreStatic':"));
+    expect(html, contains("case 'updateRhythmOverlay':"));
+    expect(html, contains("case 'updatePlaybackIndex':"));
+    expect(html, contains('renderScoreStatic(data);'));
+    expect(html, contains('updateRhythmOverlay(data.rhythmTest || null);'));
+    expect(html, contains('_syncPlaybackIndex(data.playbackIndex);'));
     expect(html, contains('function _drawRhythmOverlay('));
     expect(html, contains('function _buildRhythmMeasureSegments('));
     expect(html, contains('function _buildRhythmPulseDescriptors('));
@@ -351,6 +357,7 @@ void main() {
     expect(html, isNot(contains('lockedRhythmInspectKey')));
     expect(html, isNot(contains('hoveredRhythmInspectKey')));
     expect(html, isNot(contains('renderScore(currentData);')));
+    expect(html, isNot(contains("if (data.type === 'render') {")));
     expect(html, isNot(contains("point.setAttribute('stroke', '#ffffff');")));
     expect(html, isNot(contains("point.setAttribute('stroke-width', '1.5');")));
     expect(

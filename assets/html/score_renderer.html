@@ -43,10 +43,27 @@
     const container = document.getElementById('score-canvas');
 
     // Current render state
-    let currentData = null;
+    let currentStaticData = null;
+    let currentRhythmOverlay = null;
+    let currentPlaybackIndex = -1;
     let rhythmViewportWasAutoFollowing = false;
     let rhythmInspectionState = { key: null, pinned: false };
     let rhythmInspectionContext = null;
+    let rendererState = _emptyRendererState();
+
+    function _emptyRendererState() {
+      return {
+        svg: null,
+        overlayLayer: null,
+        resultHighlightLayer: null,
+        measureRenderData: [],
+        allDisplayNotes: [],
+        allStaves: [],
+        noteElementsByIndex: new Map(),
+        noteBaseColors: new Map(),
+        rhythmOverlayLayout: null,
+      };
+    }
 
     // -------------------------------------------------------------------------
     // Duration / pitch helpers
@@ -534,23 +551,24 @@
     // -------------------------------------------------------------------------
     // Main render function
     // -------------------------------------------------------------------------
-    function renderScore(data) {
-      currentData = data;
+    function renderScoreStatic(data) {
+      currentStaticData = data;
       _detachRhythmInspectionContext();
       const previousContent = container.innerHTML;
       container.innerHTML = '';
+      rendererState = _emptyRendererState();
 
       try {
 
       const { clef, restAnchorPitch, beatsPerMeasure, beatUnit, keySignatureStr, alteredPitches,
               accidentalOffset, notes, selectedIndex, cursorIndex,
-              playbackIndex, selectionKind, rhythmTest, title, bpm } = data;
+              selectionKind, title, bpm, showsRhythmOverlay } = data;
 
       // ---- Layout constants ------------------------------------------------
       const hasTitle = title && title.length > 0;
       const hasTempo = bpm != null;
       const headerHeight = hasTitle ? 56 : hasTempo ? 38 : 0;
-      const baseStaveHeight = rhythmTest ? 308 : 176;
+      const baseStaveHeight = showsRhythmOverlay ? 308 : 176;
       const staveHeight = baseStaveHeight + headerHeight;
       const staveTop = 34 + headerHeight;
       const noteSpacing = 48;
@@ -606,10 +624,9 @@
             Dot.buildAndAttach([vfNote], { all: true });
           }
 
-          // Colouring: playback > selected > default
+          // Colouring: selected > default
           let color = '#333333';
-          if (dn.globalIndex === playbackIndex) color = '#43a047';
-          else if (dn.globalIndex === selectedIndex) color = '#1976d2';
+          if (dn.globalIndex === selectedIndex) color = '#1976d2';
           vfNote.setStyle({ fillStyle: color, strokeStyle: color });
 
           return vfNote;
@@ -799,6 +816,10 @@
       // ---- Draw highlights & cursor ----------------------------------------
       const svg = container.querySelector('svg');
       if (svg) {
+        rendererState.svg = svg;
+        rendererState.measureRenderData = measureRenderData;
+        rendererState.allDisplayNotes = allDisplayNotes;
+        rendererState.allStaves = allStaves;
         // ---- Draw title & tempo marking as SVG text -------------------------
         const ns = svg.namespaceURI;
 
@@ -829,14 +850,17 @@
           svg.appendChild(tempoEl);
         }
 
-        const rhythmOverlayLayout = _drawRhythmOverlay(
-          svg,
-          rhythmTest,
-          allStaves,
-          measureRenderData,
-        );
+        const resultHighlightLayer = document.createElementNS(ns, 'g');
+        resultHighlightLayer.setAttribute('data-layer', 'rhythm-result-highlights');
+        svg.appendChild(resultHighlightLayer);
+        const overlayLayer = document.createElementNS(ns, 'g');
+        overlayLayer.setAttribute('data-layer', 'rhythm-overlay');
+        svg.appendChild(overlayLayer);
+        rendererState.resultHighlightLayer = resultHighlightLayer;
+        rendererState.overlayLayer = overlayLayer;
+        rendererState.noteBaseColors = _buildNoteBaseColors(data);
+        _captureRenderedNoteElements(svg, allDisplayNotes);
         _drawHighlights(svg, data, allStaves, allDisplayNotes);
-        _drawRhythmResultNoteHighlights(svg, data, allDisplayNotes);
         _drawCursorLine(
           svg,
           data,
@@ -848,20 +872,126 @@
           rightPadding,
         );
         _attachTapHandlers(svg, data, allStaves, allDisplayNotes);
-        _syncRhythmViewport(rhythmTest, rhythmOverlayLayout);
       }
 
       } catch (e) {
         console.warn('Score render error:', e);
+        rendererState = _emptyRendererState();
         container.innerHTML = previousContent
           || '<p style="color:#b71c1c;padding:16px">Unable to render score</p>';
       }
+    }
+
+    function _buildNoteBaseColors(data) {
+      const colors = new Map();
+      const selectedColor = data.selectionKind === 'note' ? '#1976d2' : '#333333';
+      for (let index = 0; index < data.notes.length; index++) {
+        colors.set(
+          index,
+          index === data.selectedIndex ? selectedColor : '#333333',
+        );
+      }
+      return colors;
+    }
+
+    function _captureRenderedNoteElements(svg, allDisplayNotes) {
+      const noteElementsByIndex = new Map();
+      const noteEls = svg.querySelectorAll('.vf-stavenote');
+      for (let i = 0; i < allDisplayNotes.length; i++) {
+        const noteEl = noteEls[i];
+        if (!noteEl) {
+          continue;
+        }
+        const noteIndex = allDisplayNotes[i].globalIndex;
+        if (!noteElementsByIndex.has(noteIndex)) {
+          noteElementsByIndex.set(noteIndex, []);
+        }
+        noteElementsByIndex.get(noteIndex).push(noteEl);
+      }
+      rendererState.noteElementsByIndex = noteElementsByIndex;
+    }
+
+    function _setRenderedNoteColor(noteEl, color) {
+      const paintTargets = noteEl.querySelectorAll('path, rect, ellipse, circle, polygon, polyline');
+      if (paintTargets.length === 0) {
+        noteEl.setAttribute('fill', color);
+        noteEl.setAttribute('stroke', color);
+        return;
+      }
+      paintTargets.forEach((target) => {
+        target.setAttribute('fill', color);
+        target.setAttribute('stroke', color);
+      });
+    }
+
+    function _setLogicalNoteColor(noteIndex, color) {
+      const noteEls = rendererState.noteElementsByIndex.get(noteIndex);
+      if (!noteEls) {
+        return;
+      }
+      for (const noteEl of noteEls) {
+        _setRenderedNoteColor(noteEl, color);
+      }
+    }
+
+    function _syncPlaybackIndex(nextPlaybackIndex) {
+      const playbackIndex = typeof nextPlaybackIndex === 'number' ? nextPlaybackIndex : -1;
+      const previousPlaybackIndex = currentPlaybackIndex;
+      currentPlaybackIndex = playbackIndex;
+
+      if (rendererState.noteElementsByIndex.size === 0) {
+        return;
+      }
+
+      if (previousPlaybackIndex >= 0 && previousPlaybackIndex !== playbackIndex) {
+        _setLogicalNoteColor(
+          previousPlaybackIndex,
+          rendererState.noteBaseColors.get(previousPlaybackIndex) || '#333333',
+        );
+      }
+
+      if (playbackIndex >= 0) {
+        _setLogicalNoteColor(playbackIndex, '#43a047');
+      }
+    }
+
+    function _clearSvgLayer(layer) {
+      if (!layer) {
+        return;
+      }
+      while (layer.firstChild) {
+        layer.removeChild(layer.firstChild);
+      }
+    }
+
+    function updateRhythmOverlay(rhythmTest) {
+      currentRhythmOverlay = rhythmTest;
+      _detachRhythmInspectionContext();
+      _clearRhythmInspectState();
+      const { svg, overlayLayer, resultHighlightLayer, allStaves, measureRenderData } = rendererState;
+      if (!svg || !overlayLayer || !resultHighlightLayer) {
+        rhythmViewportWasAutoFollowing = false;
+        return;
+      }
+
+      _clearSvgLayer(overlayLayer);
+      _clearSvgLayer(resultHighlightLayer);
+      rendererState.rhythmOverlayLayout = _drawRhythmOverlay(
+        overlayLayer,
+        svg,
+        rhythmTest,
+        allStaves,
+        measureRenderData,
+      );
+      _drawRhythmResultNoteHighlights(resultHighlightLayer, rhythmTest);
+      _syncRhythmViewport(rhythmTest, rendererState.rhythmOverlayLayout);
     }
 
     // -------------------------------------------------------------------------
     // Rhythm test overlay — draw the tap lane directly under the score.
     // -------------------------------------------------------------------------
     function _drawRhythmOverlay(
+      target,
       svg,
       rhythmTest,
       allStaves,
@@ -917,7 +1047,7 @@
       lane.setAttribute('fill', '#f6efe2');
       lane.setAttribute('stroke', '#d7ccb6');
       lane.setAttribute('stroke-width', '1');
-      svg.appendChild(lane);
+      target.appendChild(lane);
 
       const leadIn = document.createElementNS(ns, 'rect');
       leadIn.setAttribute('x', leadInStartX);
@@ -926,7 +1056,7 @@
       leadIn.setAttribute('height', overlayBottom - overlayTop);
       leadIn.setAttribute('rx', '18');
       leadIn.setAttribute('fill', 'rgba(110, 98, 84, 0.05)');
-      svg.appendChild(leadIn);
+      target.appendChild(leadIn);
 
       const baseline = document.createElementNS(ns, 'line');
       baseline.setAttribute('x1', leadInStartX);
@@ -935,12 +1065,12 @@
       baseline.setAttribute('y2', baselineY);
       baseline.setAttribute('stroke', '#d5c8b1');
       baseline.setAttribute('stroke-width', '1.5');
-      svg.appendChild(baseline);
+      target.appendChild(baseline);
 
       for (let i = 0; i < measureSegments.length; i++) {
         const measure = measureSegments[i];
         _drawOverlayLine(
-          svg,
+          target,
           ns,
           measure.startX,
           overlayTop + 10,
@@ -957,7 +1087,7 @@
             measure.startX
             + ((measure.endX - measure.startX) * beat) / beatCount;
           _drawOverlayLine(
-            svg,
+            target,
             ns,
             beatX,
             overlayTop + 21,
@@ -967,9 +1097,9 @@
           );
         }
       }
-      _drawOverlayLine(svg, ns, lastMeasure.endX, overlayTop + 10, overlayBottom - 10, '#bda98b', 2.2);
+      _drawOverlayLine(target, ns, lastMeasure.endX, overlayTop + 10, overlayBottom - 10, '#bda98b', 2.2);
       _drawRhythmPulseRail(
-        svg,
+        target,
         ns,
         pulseDescriptors,
         activePulseIndex,
@@ -989,7 +1119,7 @@
             leadInStartX,
             timeZeroX,
           );
-          _drawOverlayPoint(svg, ns, tapX, overlayBottom - 18, '#6d4c41');
+          _drawOverlayPoint(target, ns, tapX, overlayBottom - 18, '#6d4c41');
         }
 
         if (showsPlayhead) {
@@ -1010,7 +1140,7 @@
           playhead.setAttribute('stroke', '#42a5f5');
           playhead.setAttribute('stroke-width', '2.5');
           playhead.setAttribute('stroke-linecap', 'round');
-          svg.appendChild(playhead);
+          target.appendChild(playhead);
         }
 
         return {
@@ -1082,7 +1212,7 @@
         link.setAttribute('stroke', linkColor);
         link.setAttribute('stroke-width', '3');
         link.setAttribute('stroke-linecap', 'round');
-        svg.appendChild(link);
+        target.appendChild(link);
 
         const linkKey = `pair:${pair.expectedId}:${pair.tapId}`;
         inspectionItems.set(
@@ -1097,7 +1227,7 @@
           ),
         );
         _appendRhythmInspectHitLine(
-          svg,
+          target,
           ns,
           expectedX,
           overlayTop + 18,
@@ -1126,7 +1256,7 @@
           timeZeroX,
         );
         _drawOverlayPoint(
-          svg,
+          target,
           ns,
           expectedX,
           overlayTop + 18,
@@ -1163,7 +1293,7 @@
               ),
         );
         _appendRhythmInspectHitPoint(
-          svg,
+          target,
           ns,
           expectedX,
           overlayTop + 18,
@@ -1182,7 +1312,7 @@
           timeZeroX,
         );
         const color = matchedTapIds.has(tap.id) ? '#00897b' : '#ef6c00';
-        _drawOverlayPoint(svg, ns, tapX, overlayBottom - 18, color);
+        _drawOverlayPoint(target, ns, tapX, overlayBottom - 18, color);
 
         const matchedPair = matchedPairByTapId.get(tap.id);
         const key = `tap:${tap.id}`;
@@ -1214,7 +1344,7 @@
               ),
         );
         _appendRhythmInspectHitPoint(
-          svg,
+          target,
           ns,
           tapX,
           overlayBottom - 18,
@@ -1223,7 +1353,7 @@
       }
 
       _drawRhythmErrorLabels(
-        svg,
+        target,
         ns,
         labelCandidates,
         overlayTop + 6,
@@ -1856,38 +1986,39 @@
       }
     }
 
-    function _drawRhythmResultNoteHighlights(svg, data, allDisplayNotes) {
-      const rhythmTest = data.rhythmTest;
+    function _drawRhythmResultNoteHighlights(layer, rhythmTest) {
       if (!rhythmTest || rhythmTest.phase !== 'result') return;
 
-      const noteEls = svg.querySelectorAll('.vf-stavenote');
+      const svg = rendererState.svg;
+      if (!svg) {
+        return;
+      }
       const ns = svg.namespaceURI;
       const missedNoteIndices = new Set(rhythmTest.missedExpectedNoteIndices || []);
       const largeErrorNoteIndices = new Set(rhythmTest.largeErrorNoteIndices || []);
+      const highlightedNoteIndices = new Set([
+        ...missedNoteIndices,
+        ...largeErrorNoteIndices,
+      ]);
 
-      for (let i = 0; i < allDisplayNotes.length; i++) {
-        const noteIndex = allDisplayNotes[i].globalIndex;
-        const noteEl = noteEls[i];
-        if (!noteEl) continue;
-
-        if (missedNoteIndices.has(noteIndex)) {
-          _highlightElement(svg, noteEl, ns, {
-            fill: 'rgba(198, 40, 40, 0.14)',
-            stroke: 'rgba(198, 40, 40, 0.72)',
-          });
-          continue;
-        }
-
-        if (largeErrorNoteIndices.has(noteIndex)) {
-          _highlightElement(svg, noteEl, ns, {
-            fill: 'rgba(239, 108, 0, 0.16)',
-            stroke: 'rgba(239, 108, 0, 0.75)',
-          });
+      for (const noteIndex of highlightedNoteIndices) {
+        const noteEls = rendererState.noteElementsByIndex.get(noteIndex) || [];
+        const options = missedNoteIndices.has(noteIndex)
+          ? {
+              fill: 'rgba(198, 40, 40, 0.14)',
+              stroke: 'rgba(198, 40, 40, 0.72)',
+            }
+          : {
+              fill: 'rgba(239, 108, 0, 0.16)',
+              stroke: 'rgba(239, 108, 0, 0.75)',
+            };
+        for (const noteEl of noteEls) {
+          _appendHighlightRect(layer, noteEl, ns, options);
         }
       }
     }
 
-    function _highlightElement(svg, el, ns, options = {}) {
+    function _createHighlightRect(el, ns, options = {}) {
       const bbox = el.getBBox();
       const rect = document.createElementNS(ns, 'rect');
       rect.setAttribute('x', bbox.x - 4);
@@ -1898,6 +2029,16 @@
       rect.setAttribute('fill', options.fill || 'rgba(25, 118, 210, 0.15)');
       rect.setAttribute('stroke', options.stroke || 'rgba(25, 118, 210, 0.4)');
       rect.setAttribute('stroke-width', '1');
+      return rect;
+    }
+
+    function _appendHighlightRect(layer, el, ns, options = {}) {
+      const rect = _createHighlightRect(el, ns, options);
+      layer.appendChild(rect);
+    }
+
+    function _highlightElement(svg, el, ns, options = {}) {
+      const rect = _createHighlightRect(el, ns, options);
       // Insert before the element so it's behind
       el.parentNode.insertBefore(rect, el);
     }
@@ -2056,12 +2197,24 @@
       }
     }
 
+    function _dispatchRenderCommand(data) {
+      switch (data.type) {
+        case 'renderScoreStatic':
+          renderScoreStatic(data);
+          return;
+        case 'updateRhythmOverlay':
+          updateRhythmOverlay(data.rhythmTest || null);
+          return;
+        case 'updatePlaybackIndex':
+          _syncPlaybackIndex(data.playbackIndex);
+          return;
+      }
+    }
+
     window.addEventListener('message', function(event) {
       try {
         const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
-        if (data.type === 'render') {
-          renderScore(data);
-        }
+        _dispatchRenderCommand(data);
       } catch(e) {
         console.error('message parse error', e);
       }
@@ -2069,7 +2222,7 @@
 
     window.renderFromDart = function(jsonStr) {
       try {
-        renderScore(JSON.parse(jsonStr));
+        _dispatchRenderCommand(JSON.parse(jsonStr));
       } catch(e) {
         console.error('renderFromDart error', e);
       }

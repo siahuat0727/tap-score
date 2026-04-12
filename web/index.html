@@ -458,6 +458,36 @@
       return _webAudioInitError;
     };
 
+    window.preloadWebNotes = async function(midis) {
+      if (!Array.isArray(midis)) {
+        throw new Error('Expected a MIDI note list for preload');
+      }
+
+      var initialized = await window.initWebAudio();
+      if (!initialized) {
+        throw new Error(_webAudioInitError || 'Web Audio is not ready');
+      }
+
+      var uniqueMidis = [];
+      var seen = {};
+      for (var i = 0; i < midis.length; i++) {
+        var midi = Number(midis[i]);
+        if (!Number.isFinite(midi)) {
+          throw new Error('Invalid MIDI note in preload request');
+        }
+        midi = Math.max(0, Math.min(127, Math.round(midi)));
+        if (seen[midi]) {
+          continue;
+        }
+        seen[midi] = true;
+        uniqueMidis.push(midi);
+      }
+
+      await Promise.all(uniqueMidis.map(function(midi) {
+        return _ensureNoteBuffer(midi);
+      }));
+    };
+
     window.playWebNote = function(midi, velocity) {
       if (!_audioCtx || !_webAudioReady) return -1;
 
