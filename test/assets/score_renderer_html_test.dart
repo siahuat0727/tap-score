@@ -3,12 +3,11 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-List<Map<String, dynamic>> _splitRendererNotesForTest(
-  Map<String, dynamic> payload,
-) {
+dynamic _runRendererHookForTest(String hookName, Map<String, dynamic> payload) {
   final html = File('assets/html/score_renderer.html').readAsStringSync();
   final script = '''
 const html = process.env.RENDERER_HTML;
+const hookName = process.env.RENDERER_HOOK_NAME;
 const payload = JSON.parse(process.env.RENDERER_PAYLOAD);
 const scriptMatches = [...html.matchAll(/<script(?:[^>]*)>([\\s\\S]*?)<\\/script>/g)];
 if (scriptMatches.length === 0) {
@@ -58,7 +57,7 @@ global.Vex = {
 };
 
 eval(inlineScript);
-process.stdout.write(JSON.stringify(window.__tapScoreTestHooks.splitAndGroupForTest(payload)));
+process.stdout.write(JSON.stringify(window.__tapScoreTestHooks[hookName](payload)));
 ''';
 
   final result = Process.runSync(
@@ -67,19 +66,66 @@ process.stdout.write(JSON.stringify(window.__tapScoreTestHooks.splitAndGroupForT
     environment: {
       ...Platform.environment,
       'RENDERER_HTML': html,
+      'RENDERER_HOOK_NAME': hookName,
       'RENDERER_PAYLOAD': jsonEncode(payload),
     },
   );
 
   expect(result.exitCode, 0, reason: result.stderr.toString());
+  return jsonDecode(result.stdout as String);
+}
 
-  final decoded = jsonDecode(result.stdout as String) as List<Object?>;
+List<Map<String, dynamic>> _mapListFromDynamic(dynamic value) {
+  final decoded = value as List<Object?>;
   return decoded
       .cast<Map<Object?, Object?>>()
       .map(
-        (note) => note.map((key, value) => MapEntry(key as String, value)),
+        (item) =>
+            item.map((key, itemValue) => MapEntry(key as String, itemValue)),
       )
       .toList();
+}
+
+List<Map<String, dynamic>> _splitRendererNotesForTest(
+  Map<String, dynamic> payload,
+) {
+  return _mapListFromDynamic(
+    _runRendererHookForTest('splitAndGroupForTest', payload),
+  );
+}
+
+List<String> _rhythmPulseAccentPatternForTest({
+  required int beatsPerMeasure,
+  required int beatUnit,
+}) {
+  final decoded =
+      _runRendererHookForTest('rhythmPulseAccentPatternForTest', {
+            'beatsPerMeasure': beatsPerMeasure,
+            'beatUnit': beatUnit,
+          })
+          as List<Object?>;
+  return decoded.cast<String>();
+}
+
+List<Map<String, dynamic>> _buildRhythmPulseDescriptorsForTest(
+  Map<String, dynamic> payload,
+) {
+  return _mapListFromDynamic(
+    _runRendererHookForTest('buildRhythmPulseDescriptorsForTest', payload),
+  );
+}
+
+int? _activeRhythmPulseIndexForTest({
+  required double playheadTimeSeconds,
+  required List<Map<String, dynamic>> pulseDescriptors,
+  required String overlayPhase,
+}) {
+  final result = _runRendererHookForTest('activeRhythmPulseIndexForTest', {
+    'playheadTimeSeconds': playheadTimeSeconds,
+    'pulseDescriptors': pulseDescriptors,
+    'overlayPhase': overlayPhase,
+  });
+  return result as int?;
 }
 
 void main() {
@@ -201,6 +247,10 @@ void main() {
 
     expect(html, contains('function _drawRhythmOverlay('));
     expect(html, contains('function _buildRhythmMeasureSegments('));
+    expect(html, contains('function _rhythmPulseAccentPattern('));
+    expect(html, contains('function _buildRhythmPulseDescriptors('));
+    expect(html, contains('function _activeRhythmPulseIndex('));
+    expect(html, contains('function _drawRhythmPulseRail('));
     expect(html, contains('function _drawRhythmErrorLabels('));
     expect(html, contains("const overlayPhase = rhythmTest.phase || 'idle';"));
     expect(html, contains("const showsPlayhead = overlayPhase === 'live';"));
@@ -237,6 +287,12 @@ void main() {
       html,
       contains('const measureSegments = _buildRhythmMeasureSegments('),
     );
+    expect(
+      html,
+      contains('const pulseDescriptors = _buildRhythmPulseDescriptors('),
+    );
+    expect(html, contains('const activePulseIndex = _activeRhythmPulseIndex('));
+    expect(html, contains('_drawRhythmPulseRail('));
     expect(
       html,
       contains(
@@ -329,6 +385,136 @@ void main() {
     expect(html, isNot(contains('noteCenterByIndex')));
   });
 
+  test('rhythm pulse accent pattern uses 4/4 grouping', () {
+    expect(_rhythmPulseAccentPatternForTest(beatsPerMeasure: 4, beatUnit: 4), [
+      'strong',
+      'weak',
+      'medium',
+      'weak',
+    ]);
+  });
+
+  test('rhythm pulse accent pattern uses 3/4 grouping', () {
+    expect(_rhythmPulseAccentPatternForTest(beatsPerMeasure: 3, beatUnit: 4), [
+      'strong',
+      'weak',
+      'weak',
+    ]);
+  });
+
+  test(
+    'rhythm pulse accent pattern uses 6/8 subdivision with grouped heads',
+    () {
+      expect(
+        _rhythmPulseAccentPatternForTest(beatsPerMeasure: 6, beatUnit: 8),
+        ['strong', 'weak', 'weak', 'medium', 'weak', 'weak'],
+      );
+    },
+  );
+
+  test('rhythm pulse accent pattern falls back for unsupported odd meters', () {
+    expect(_rhythmPulseAccentPatternForTest(beatsPerMeasure: 5, beatUnit: 8), [
+      'strong',
+      'weak',
+      'weak',
+      'weak',
+      'weak',
+    ]);
+  });
+
+  test(
+    'rhythm pulse descriptors include count-in and body pulses on one rail',
+    () {
+      final descriptors = _buildRhythmPulseDescriptorsForTest({
+        'measureSegments': [
+          {'startX': 100, 'endX': 220, 'durationSeconds': 4},
+          {'startX': 220, 'endX': 340, 'durationSeconds': 4},
+        ],
+        'measureBoundaryTimesSeconds': [0, 4, 8],
+        'pulseDurationSeconds': 1,
+        'countInDurationSeconds': 4,
+        'totalDurationSeconds': 8,
+        'leadInStartX': 40,
+        'timeZeroX': 100,
+        'beatsPerMeasure': 4,
+        'beatUnit': 4,
+      });
+
+      expect(descriptors, hasLength(12));
+      expect(
+        descriptors.take(4).map((pulse) => pulse['accentClass']).toList(),
+        ['strong', 'weak', 'medium', 'weak'],
+      );
+      expect(descriptors.take(4).map((pulse) => pulse['isCountIn']).toList(), [
+        true,
+        true,
+        true,
+        true,
+      ]);
+      expect(
+        descriptors.take(4).map((pulse) => pulse['measureIndex']).toList(),
+        [-1, -1, -1, -1],
+      );
+      expect(
+        descriptors
+            .skip(4)
+            .take(4)
+            .map((pulse) => pulse['accentClass'])
+            .toList(),
+        ['strong', 'weak', 'medium', 'weak'],
+      );
+      expect(descriptors[0]['x'], closeTo(40, 0.001));
+      expect(descriptors[3]['x'], closeTo(85, 0.001));
+      expect(descriptors[4]['x'], closeTo(100, 0.001));
+      expect(descriptors[8]['x'], closeTo(220, 0.001));
+    },
+  );
+
+  test(
+    'active rhythm pulse index handles count-in, live playback, and result mode',
+    () {
+      final descriptors = _buildRhythmPulseDescriptorsForTest({
+        'measureSegments': [
+          {'startX': 100, 'endX': 220, 'durationSeconds': 4},
+          {'startX': 220, 'endX': 340, 'durationSeconds': 4},
+        ],
+        'measureBoundaryTimesSeconds': [0, 4, 8],
+        'pulseDurationSeconds': 1,
+        'countInDurationSeconds': 4,
+        'totalDurationSeconds': 8,
+        'leadInStartX': 40,
+        'timeZeroX': 100,
+        'beatsPerMeasure': 4,
+        'beatUnit': 4,
+      });
+
+      expect(
+        _activeRhythmPulseIndexForTest(
+          playheadTimeSeconds: -1.2,
+          pulseDescriptors: descriptors,
+          overlayPhase: 'live',
+        ),
+        2,
+      );
+      expect(
+        _activeRhythmPulseIndexForTest(
+          playheadTimeSeconds: 5.4,
+          pulseDescriptors: descriptors,
+          overlayPhase: 'live',
+        ),
+        9,
+      );
+      expect(
+        _activeRhythmPulseIndexForTest(
+          playheadTimeSeconds: 5.4,
+          pulseDescriptors: descriptors,
+          overlayPhase: 'result',
+        ),
+        isNull,
+      );
+    },
+  );
+
   test(
     'simple-meter split heuristic preserves the following eighth-note beam pair',
     () {
@@ -344,14 +530,20 @@ void main() {
       });
 
       expect(displayNotes, hasLength(5));
-      expect(
-        displayNotes.map((note) => note['beats']).toList(),
-        [0.5, 1.5, 0.5, 0.5, 1.0],
-      );
-      expect(
-        displayNotes.map((note) => note['globalIndex']).toList(),
-        [0, 1, 1, 2, 3],
-      );
+      expect(displayNotes.map((note) => note['beats']).toList(), [
+        0.5,
+        1.5,
+        0.5,
+        0.5,
+        1.0,
+      ]);
+      expect(displayNotes.map((note) => note['globalIndex']).toList(), [
+        0,
+        1,
+        1,
+        2,
+        3,
+      ]);
 
       expect(displayNotes[1]['duration'], 'q');
       expect(displayNotes[1]['isDotted'], isTrue);
