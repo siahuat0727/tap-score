@@ -55,4 +55,19 @@ void main() {
       expect(result.largeErrorExpectedNoteIndicesForThreshold(0.1), [3]);
     },
   );
+
+  test('result display tap helpers subtract the applied shift', () {
+    const result = RhythmTestResult(
+      matchedPairs: [],
+      unmatchedExpectedEvents: [],
+      unmatchedTapEvents: [],
+      matchingWindowSeconds: 0.5,
+      appliedShiftSeconds: 0.2,
+    );
+    const rawTap = TapInputEvent(id: 7, timeSeconds: 1.35);
+
+    expect(result.displayTimeSecondsForTap(rawTap), closeTo(1.15, 0.0001));
+    expect(result.displayTapEvent(rawTap).timeSeconds, closeTo(1.15, 0.0001));
+    expect(result.displayTapEvent(rawTap).id, rawTap.id);
+  });
 }

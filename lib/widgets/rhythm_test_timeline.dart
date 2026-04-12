@@ -21,12 +21,24 @@ class RhythmTestTimeline extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final latestTapSeconds = tapEvents.isEmpty
+    final displayTapEvents =
+        result == null
+              ? tapEvents
+              : [
+                  for (final pair in result!.matchedPairs)
+                    result!.displayTapEvent(pair.tap),
+                  for (final tap in result!.unmatchedTapEvents)
+                    result!.displayTapEvent(tap),
+                ]
+          ..sort(
+            (left, right) => left.timeSeconds.compareTo(right.timeSeconds),
+          );
+    final latestTapSeconds = displayTapEvents.isEmpty
         ? 0.0
-        : tapEvents.last.timeSeconds;
-    final earliestTapSeconds = tapEvents.isEmpty
+        : displayTapEvents.last.timeSeconds;
+    final earliestTapSeconds = displayTapEvents.isEmpty
         ? 0.0
-        : tapEvents.map((tap) => tap.timeSeconds).reduce(math.min);
+        : displayTapEvents.first.timeSeconds;
     final displayStartSeconds = math.min(
       0.0,
       math.min(earliestTapSeconds, -timeline.matchingWindowSeconds),
@@ -57,7 +69,7 @@ class RhythmTestTimeline extends StatelessWidget {
           child: CustomPaint(
             painter: _RhythmTimelinePainter(
               timeline: timeline,
-              tapEvents: tapEvents,
+              tapEvents: displayTapEvents,
               result: result,
               displayStartSeconds: displayStartSeconds,
               displayEndSeconds: displayEndSeconds <= displayStartSeconds
@@ -148,7 +160,11 @@ class _RhythmTimelinePainter extends CustomPainter {
         matchedTapIds.add(pair.tap.id);
 
         final x1 = _xForTime(pair.expected.timeSeconds, left, usableWidth);
-        final x2 = _xForTime(pair.tap.timeSeconds, left, usableWidth);
+        final x2 = _xForTime(
+          result!.displayTimeSecondsForTap(pair.tap),
+          left,
+          usableWidth,
+        );
         final ratio =
             (pair.absoluteErrorSeconds / timeline.matchingWindowSeconds)
                 .clamp(0, 1)

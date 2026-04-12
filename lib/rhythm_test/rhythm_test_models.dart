@@ -128,6 +128,17 @@ class RhythmTestResult {
     return totalAbsoluteErrorSeconds / matchedPairs.length;
   }
 
+  double displayTimeSecondsForTap(TapInputEvent tap) {
+    return tap.timeSeconds - appliedShiftSeconds;
+  }
+
+  TapInputEvent displayTapEvent(TapInputEvent tap) {
+    return TapInputEvent(
+      id: tap.id,
+      timeSeconds: displayTimeSecondsForTap(tap),
+    );
+  }
+
   int largeErrorCountForThreshold(double thresholdSeconds) {
     return largeErrorExpectedNoteIndicesForThreshold(thresholdSeconds).length;
   }

@@ -28,6 +28,10 @@ void main() {
       [1, 1],
       [3, 3],
     ]);
+    expect(
+      result.matchedPairs.map((pair) => pair.errorSeconds),
+      orderedEquals([closeTo(0.05, 0.0001), closeTo(0.1, 0.0001)]),
+    );
   });
 
   test('matcher maximizes match count before minimizing error', () {
@@ -78,7 +82,8 @@ void main() {
           [3, 3],
         ],
       );
-      expect(result.totalAbsoluteErrorSeconds, closeTo(0.49, 0.0001));
+      expect(result.appliedShiftSeconds, closeTo(0.24, 0.0001));
+      expect(result.totalAbsoluteErrorSeconds, closeTo(0.23, 0.0001));
     },
   );
 
@@ -130,72 +135,159 @@ void main() {
     },
   );
 
+  test('matcher recovers a positive shift for uniformly late taps', () {
+    final result = matcher.match(
+      expectedEvents: const [
+        ExpectedRhythmEvent(id: 1, noteIndex: 0, timeSeconds: 0.00),
+        ExpectedRhythmEvent(id: 2, noteIndex: 1, timeSeconds: 0.25),
+        ExpectedRhythmEvent(id: 3, noteIndex: 2, timeSeconds: 0.50),
+        ExpectedRhythmEvent(id: 4, noteIndex: 3, timeSeconds: 0.75),
+      ],
+      tapEvents: const [
+        TapInputEvent(id: 1, timeSeconds: 0.18),
+        TapInputEvent(id: 2, timeSeconds: 0.43),
+        TapInputEvent(id: 3, timeSeconds: 0.68),
+        TapInputEvent(id: 4, timeSeconds: 0.93),
+      ],
+      matchingWindowSeconds: 1,
+    );
+
+    expect(result.matchedCount, 4);
+    expect(result.appliedShiftSeconds, closeTo(0.18, 0.0001));
+    expect(result.matchedPairs.map((pair) => [pair.expected.id, pair.tap.id]), [
+      [1, 1],
+      [2, 2],
+      [3, 3],
+      [4, 4],
+    ]);
+    expect(
+      result.matchedPairs.map((pair) => pair.errorSeconds),
+      everyElement(closeTo(0, 0.0001)),
+    );
+    expect(result.totalAbsoluteErrorSeconds, closeTo(0, 0.0001));
+    expect(result.unmatchedExpectedEvents, isEmpty);
+    expect(result.unmatchedTapEvents, isEmpty);
+  });
+
+  test('matcher recovers a negative shift for uniformly early taps', () {
+    final result = matcher.match(
+      expectedEvents: const [
+        ExpectedRhythmEvent(id: 1, noteIndex: 0, timeSeconds: 0.00),
+        ExpectedRhythmEvent(id: 2, noteIndex: 1, timeSeconds: 0.25),
+        ExpectedRhythmEvent(id: 3, noteIndex: 2, timeSeconds: 0.50),
+        ExpectedRhythmEvent(id: 4, noteIndex: 3, timeSeconds: 0.75),
+      ],
+      tapEvents: const [
+        TapInputEvent(id: 1, timeSeconds: -0.18),
+        TapInputEvent(id: 2, timeSeconds: 0.07),
+        TapInputEvent(id: 3, timeSeconds: 0.32),
+        TapInputEvent(id: 4, timeSeconds: 0.57),
+      ],
+      matchingWindowSeconds: 1,
+    );
+
+    expect(result.matchedCount, 4);
+    expect(result.appliedShiftSeconds, closeTo(-0.18, 0.0001));
+    expect(result.matchedPairs.map((pair) => [pair.expected.id, pair.tap.id]), [
+      [1, 1],
+      [2, 2],
+      [3, 3],
+      [4, 4],
+    ]);
+    expect(
+      result.matchedPairs.map((pair) => pair.errorSeconds),
+      everyElement(closeTo(0, 0.0001)),
+    );
+  });
+
   test(
-    'matcher keeps dense sixteenth notes on the same sequence when all taps are slightly late',
+    'matcher keeps shift estimation near the coherent center with one outlier',
     () {
       final result = matcher.match(
         expectedEvents: const [
-          ExpectedRhythmEvent(id: 1, noteIndex: 0, timeSeconds: 0.00),
-          ExpectedRhythmEvent(id: 2, noteIndex: 1, timeSeconds: 0.25),
-          ExpectedRhythmEvent(id: 3, noteIndex: 2, timeSeconds: 0.50),
-          ExpectedRhythmEvent(id: 4, noteIndex: 3, timeSeconds: 0.75),
+          ExpectedRhythmEvent(id: 1, noteIndex: 0, timeSeconds: 0),
+          ExpectedRhythmEvent(id: 2, noteIndex: 1, timeSeconds: 1),
+          ExpectedRhythmEvent(id: 3, noteIndex: 2, timeSeconds: 2),
+          ExpectedRhythmEvent(id: 4, noteIndex: 3, timeSeconds: 3),
         ],
         tapEvents: const [
-          TapInputEvent(id: 1, timeSeconds: 0.18),
-          TapInputEvent(id: 2, timeSeconds: 0.43),
-          TapInputEvent(id: 3, timeSeconds: 0.68),
-          TapInputEvent(id: 4, timeSeconds: 0.93),
+          TapInputEvent(id: 1, timeSeconds: 0.2),
+          TapInputEvent(id: 2, timeSeconds: 1.2),
+          TapInputEvent(id: 3, timeSeconds: 2.2),
+          TapInputEvent(id: 4, timeSeconds: 4.0),
         ],
-        matchingWindowSeconds: 1,
+        matchingWindowSeconds: 1.2,
       );
 
       expect(result.matchedCount, 4);
-      expect(result.appliedShiftSeconds, 0);
-      expect(
-        result.matchedPairs.map((pair) => [pair.expected.id, pair.tap.id]),
-        [
-          [1, 1],
-          [2, 2],
-          [3, 3],
-          [4, 4],
-        ],
-      );
-      expect(result.unmatchedExpectedEvents, isEmpty);
-      expect(result.unmatchedTapEvents, isEmpty);
+      expect(result.appliedShiftSeconds, closeTo(0.2, 0.0001));
+      expect(result.matchedPairs.map((pair) => pair.errorSeconds), [
+        closeTo(0, 0.0001),
+        closeTo(0, 0.0001),
+        closeTo(0, 0.0001),
+        closeTo(0.8, 0.0001),
+      ]);
     },
   );
 
-  test(
-    'matcher can match a dense group when each tap is less than one beat late',
-    () {
-      final result = matcher.match(
-        expectedEvents: const [
-          ExpectedRhythmEvent(id: 1, noteIndex: 0, timeSeconds: 0.00),
-          ExpectedRhythmEvent(id: 2, noteIndex: 1, timeSeconds: 0.25),
-          ExpectedRhythmEvent(id: 3, noteIndex: 2, timeSeconds: 0.50),
-          ExpectedRhythmEvent(id: 4, noteIndex: 3, timeSeconds: 0.75),
-        ],
-        tapEvents: const [
-          TapInputEvent(id: 1, timeSeconds: 0.92),
-          TapInputEvent(id: 2, timeSeconds: 1.17),
-          TapInputEvent(id: 3, timeSeconds: 1.42),
-          TapInputEvent(id: 4, timeSeconds: 1.67),
-        ],
-        matchingWindowSeconds: 1,
-      );
+  test('matcher stores matched pair errors as post-shift residuals', () {
+    final result = matcher.match(
+      expectedEvents: const [
+        ExpectedRhythmEvent(id: 1, noteIndex: 0, timeSeconds: 0),
+        ExpectedRhythmEvent(id: 2, noteIndex: 1, timeSeconds: 1),
+        ExpectedRhythmEvent(id: 3, noteIndex: 2, timeSeconds: 2),
+        ExpectedRhythmEvent(id: 4, noteIndex: 3, timeSeconds: 3),
+      ],
+      tapEvents: const [
+        TapInputEvent(id: 1, timeSeconds: 0.20),
+        TapInputEvent(id: 2, timeSeconds: 1.24),
+        TapInputEvent(id: 3, timeSeconds: 2.18),
+        TapInputEvent(id: 4, timeSeconds: 3.22),
+      ],
+      matchingWindowSeconds: 0.5,
+    );
 
-      expect(result.matchedCount, 4);
-      expect(
-        result.matchedPairs.map((pair) => [pair.expected.id, pair.tap.id]),
-        [
-          [1, 1],
-          [2, 2],
-          [3, 3],
-          [4, 4],
-        ],
-      );
-    },
-  );
+    expect(result.appliedShiftSeconds, closeTo(0.21, 0.0001));
+    expect(result.matchedPairs.map((pair) => pair.errorSeconds), [
+      closeTo(-0.01, 0.0001),
+      closeTo(0.03, 0.0001),
+      closeTo(-0.03, 0.0001),
+      closeTo(0.01, 0.0001),
+    ]);
+    expect(result.totalAbsoluteErrorSeconds, closeTo(0.08, 0.0001));
+  });
+
+  test('matcher can improve the final assignment on the second pass', () {
+    final result = matcher.match(
+      expectedEvents: const [
+        ExpectedRhythmEvent(id: 1, noteIndex: 0, timeSeconds: 0),
+        ExpectedRhythmEvent(id: 2, noteIndex: 1, timeSeconds: 1),
+        ExpectedRhythmEvent(id: 3, noteIndex: 2, timeSeconds: 2),
+        ExpectedRhythmEvent(id: 4, noteIndex: 3, timeSeconds: 3),
+        ExpectedRhythmEvent(id: 5, noteIndex: 4, timeSeconds: 4),
+      ],
+      tapEvents: const [
+        TapInputEvent(id: 1, timeSeconds: 0.45),
+        TapInputEvent(id: 2, timeSeconds: 1.45),
+        TapInputEvent(id: 3, timeSeconds: 2.45),
+        TapInputEvent(id: 4, timeSeconds: 3.45),
+        TapInputEvent(id: 5, timeSeconds: 4.55),
+      ],
+      matchingWindowSeconds: 0.5,
+    );
+
+    expect(result.matchedCount, 5);
+    expect(result.appliedShiftSeconds, closeTo(0.45, 0.0001));
+    expect(result.matchedPairs.map((pair) => [pair.expected.id, pair.tap.id]), [
+      [1, 1],
+      [2, 2],
+      [3, 3],
+      [4, 4],
+      [5, 5],
+    ]);
+    expect(result.unmatchedExpectedEvents, isEmpty);
+    expect(result.unmatchedTapEvents, isEmpty);
+  });
 
   test(
     'matcher uses squared error to break ties after match count and absolute error',

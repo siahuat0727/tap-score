@@ -96,10 +96,13 @@ class RhythmTestNotifier extends ChangeNotifier {
   RhythmOverlayRenderData get overlayRenderData {
     final largeErrorThresholdSeconds =
         _largeErrorThresholdBeats * _timeline.pulseDurationSeconds;
+    final result = _result;
     final resultTapEvents = [
-      if (_result != null) ...[
-        for (final pair in _result!.matchedPairs) pair.tap,
-        ..._result!.unmatchedTapEvents,
+      if (result != null) ...[
+        for (final pair in result.matchedPairs)
+          result.displayTapEvent(pair.tap),
+        for (final tap in result.unmatchedTapEvents)
+          result.displayTapEvent(tap),
       ],
     ]..sort((a, b) => a.timeSeconds.compareTo(b.timeSeconds));
 
@@ -118,17 +121,17 @@ class RhythmTestNotifier extends ChangeNotifier {
       expectedEvents: _timeline.expectedEvents,
       liveTapEvents: List.unmodifiable(_tapEvents),
       resultTapEvents: List.unmodifiable(resultTapEvents),
-      matchedPairs: _result?.matchedPairs ?? const <MatchedRhythmPair>[],
-      appliedShiftSeconds: _result?.appliedShiftSeconds ?? 0,
+      matchedPairs: result?.matchedPairs ?? const <MatchedRhythmPair>[],
+      appliedShiftSeconds: result?.appliedShiftSeconds ?? 0,
       errorLabelThresholdBeats: _displayConfig.errorLabelThresholdBeats,
       largeErrorThresholdBeats: _largeErrorThresholdBeats,
       largeErrorNoteIndices:
-          _result?.largeErrorExpectedNoteIndicesForThreshold(
+          result?.largeErrorExpectedNoteIndicesForThreshold(
             largeErrorThresholdSeconds,
           ) ??
           const <int>[],
       missedExpectedNoteIndices:
-          _result?.missedExpectedNoteIndices ?? const <int>[],
+          result?.missedExpectedNoteIndices ?? const <int>[],
     );
   }
 

@@ -543,14 +543,14 @@ void main() {
                   noteIndex: 0,
                   timeSeconds: 0,
                 ),
-                tap: TapInputEvent(id: 1, timeSeconds: 0.01),
-                errorSeconds: 0.01,
+                tap: TapInputEvent(id: 1, timeSeconds: 0.31),
+                errorSeconds: 0.11,
               ),
             ],
             unmatchedExpectedEvents: [],
-            unmatchedTapEvents: [],
+            unmatchedTapEvents: [TapInputEvent(id: 2, timeSeconds: 0.56)],
             matchingWindowSeconds: 0.1,
-            appliedShiftSeconds: 0,
+            appliedShiftSeconds: 0.2,
           ),
         ),
         waitBeforeScoring: () => scoringGate.future,
@@ -577,7 +577,19 @@ void main() {
 
       expect(notifier.result, isNotNull);
       expect(notifier.overlayRenderData.phase, RhythmOverlayRenderPhase.result);
-      expect(notifier.overlayRenderData.resultTapEvents, hasLength(1));
+      expect(
+        notifier.overlayRenderData.resultTapEvents.map(
+          (tap) => tap.timeSeconds,
+        ),
+        orderedEquals([closeTo(0.11, 0.0001), closeTo(0.36, 0.0001)]),
+      );
+      expect(
+        (notifier.overlayRenderData.toPayload()['resultTapEvents'] as List).map(
+          (tap) => (tap as Map<String, dynamic>)['timeSeconds'],
+        ),
+        orderedEquals([closeTo(0.11, 0.0001), closeTo(0.36, 0.0001)]),
+      );
+      expect(notifier.resultShiftLabel, '+2.00 beat');
     },
   );
 
@@ -649,50 +661,53 @@ void main() {
     },
   );
 
-  test('count-in progress notifications stay below the live loop cadence', () async {
-    final notifier = RhythmTestNotifier(
-      score: Score(
-        bpm: 120,
-        notes: const [Note(midi: 60, duration: NoteDuration.quarter)],
-      ),
-      audioService: _FakeAudioService(),
-      timelineBuilder: _FixedTimelineBuilder(
-        const RhythmTimeline(
-          expectedEvents: [
-            ExpectedRhythmEvent(id: 1, noteIndex: 0, timeSeconds: 0),
-          ],
-          playbackNotes: [
-            RhythmMelodyEvent(
-              noteIndex: 0,
-              midi: 60,
-              startSeconds: 0,
-              durationSeconds: 0.2,
-            ),
-          ],
-          measureBoundaryTimesSeconds: [0, 0.2],
-          totalDurationSeconds: 0.2,
-          pulseDurationSeconds: 0.5,
-          pulsesPerMeasure: 4,
+  test(
+    'count-in progress notifications stay below the live loop cadence',
+    () async {
+      final notifier = RhythmTestNotifier(
+        score: Score(
+          bpm: 120,
+          notes: const [Note(midi: 60, duration: NoteDuration.quarter)],
         ),
-      ),
-    );
+        audioService: _FakeAudioService(),
+        timelineBuilder: _FixedTimelineBuilder(
+          const RhythmTimeline(
+            expectedEvents: [
+              ExpectedRhythmEvent(id: 1, noteIndex: 0, timeSeconds: 0),
+            ],
+            playbackNotes: [
+              RhythmMelodyEvent(
+                noteIndex: 0,
+                midi: 60,
+                startSeconds: 0,
+                durationSeconds: 0.2,
+              ),
+            ],
+            measureBoundaryTimesSeconds: [0, 0.2],
+            totalDurationSeconds: 0.2,
+            pulseDurationSeconds: 0.5,
+            pulsesPerMeasure: 4,
+          ),
+        ),
+      );
 
-    addTearDown(notifier.dispose);
-    await notifier.init();
+      addTearDown(notifier.dispose);
+      await notifier.init();
 
-    var notifications = 0;
-    void listener() {
-      notifications += 1;
-    }
+      var notifications = 0;
+      void listener() {
+        notifications += 1;
+      }
 
-    notifier.addListener(listener);
-    await notifier.start();
-    await Future<void>.delayed(const Duration(milliseconds: 70));
-    notifier.removeListener(listener);
-    notifier.stop();
+      notifier.addListener(listener);
+      await notifier.start();
+      await Future<void>.delayed(const Duration(milliseconds: 70));
+      notifier.removeListener(listener);
+      notifier.stop();
 
-    expect(notifications, lessThanOrEqualTo(4));
-  });
+      expect(notifications, lessThanOrEqualTo(4));
+    },
+  );
 }
 
 class _FixedTimelineBuilder extends RhythmTimelineBuilder {

@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'rhythm_test_models.dart';
 
 class RhythmMatcher {
@@ -9,6 +11,35 @@ class RhythmMatcher {
     required List<ExpectedRhythmEvent> expectedEvents,
     required List<TapInputEvent> tapEvents,
     required double matchingWindowSeconds,
+  }) {
+    final firstPass = _matchWithExpectedOffset(
+      expectedEvents: expectedEvents,
+      tapEvents: tapEvents,
+      matchingWindowSeconds: matchingWindowSeconds,
+      expectedTimeOffsetSeconds: 0,
+    );
+    if (firstPass.matchedPairs.length < 3) {
+      return firstPass;
+    }
+
+    final appliedShiftSeconds = _estimateAppliedShiftSeconds(
+      matchedPairs: firstPass.matchedPairs,
+      matchingWindowSeconds: matchingWindowSeconds,
+    );
+
+    return _matchWithExpectedOffset(
+      expectedEvents: expectedEvents,
+      tapEvents: tapEvents,
+      matchingWindowSeconds: matchingWindowSeconds,
+      expectedTimeOffsetSeconds: appliedShiftSeconds,
+    );
+  }
+
+  RhythmTestResult _matchWithExpectedOffset({
+    required List<ExpectedRhythmEvent> expectedEvents,
+    required List<TapInputEvent> tapEvents,
+    required double matchingWindowSeconds,
+    required double expectedTimeOffsetSeconds,
   }) {
     final rows = expectedEvents.length + 1;
     final columns = tapEvents.length + 1;
@@ -57,8 +88,10 @@ class RhythmMatcher {
         }
 
         if (i < expectedEvents.length && j < tapEvents.length) {
+          final shiftedExpectedTimeSeconds =
+              expectedEvents[i].timeSeconds + expectedTimeOffsetSeconds;
           final errorSeconds =
-              tapEvents[j].timeSeconds - expectedEvents[i].timeSeconds;
+              tapEvents[j].timeSeconds - shiftedExpectedTimeSeconds;
           final absoluteErrorSeconds = errorSeconds.abs();
           if (absoluteErrorSeconds <= matchingWindowSeconds) {
             _updateState(
@@ -127,8 +160,67 @@ class RhythmMatcher {
       ),
       unmatchedTapEvents: unmatchedTapEvents.reversed.toList(growable: false),
       matchingWindowSeconds: matchingWindowSeconds,
-      appliedShiftSeconds: 0,
+      appliedShiftSeconds: expectedTimeOffsetSeconds,
     );
+  }
+
+  double _estimateAppliedShiftSeconds({
+    required List<MatchedRhythmPair> matchedPairs,
+    required double matchingWindowSeconds,
+  }) {
+    final shiftErrors = matchedPairs
+        .map((pair) => pair.tap.timeSeconds - pair.expected.timeSeconds)
+        .toList(growable: false);
+    final initialShiftSeconds = _median(shiftErrors);
+    final madSeconds = _medianAbsoluteDeviation(
+      values: shiftErrors,
+      center: initialShiftSeconds,
+    );
+    final effectiveMadSeconds = math.max(
+      madSeconds,
+      matchingWindowSeconds * 0.05,
+    );
+    final inlierShiftErrors = _inlierShiftErrors(
+      shiftErrors: shiftErrors,
+      center: initialShiftSeconds,
+      effectiveMadSeconds: effectiveMadSeconds,
+    );
+    if (inlierShiftErrors.length < 2) {
+      return initialShiftSeconds;
+    }
+    return _median(inlierShiftErrors);
+  }
+
+  double _median(List<double> values) {
+    final sortedValues = values.toList()..sort();
+    final middleIndex = sortedValues.length ~/ 2;
+    if (sortedValues.length.isOdd) {
+      return sortedValues[middleIndex];
+    }
+    return (sortedValues[middleIndex - 1] + sortedValues[middleIndex]) / 2;
+  }
+
+  double _medianAbsoluteDeviation({
+    required List<double> values,
+    required double center,
+  }) {
+    final absoluteDeviations = values
+        .map((value) => (value - center).abs())
+        .toList(growable: false);
+    return _median(absoluteDeviations);
+  }
+
+  List<double> _inlierShiftErrors({
+    required List<double> shiftErrors,
+    required double center,
+    required double effectiveMadSeconds,
+  }) {
+    final inlierLimitSeconds = 2.5 * effectiveMadSeconds;
+    return shiftErrors
+        .where(
+          (errorSeconds) => (errorSeconds - center).abs() <= inlierLimitSeconds,
+        )
+        .toList(growable: false);
   }
 
   void _updateState({
