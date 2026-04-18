@@ -35,30 +35,21 @@ void main() {
       (blankEditor as TapScoreWorkspaceRouteState).launchConfig.isBlank,
       isTrue,
     );
-    expect(
-      blankEditor.launchConfig.initialMode,
-      WorkspaceMode.compose,
-    );
+    expect(blankEditor.launchConfig.initialMode, WorkspaceMode.compose);
 
     expect(presetEditor, isA<TapScoreWorkspaceRouteState>());
     expect(
       (presetEditor as TapScoreWorkspaceRouteState).launchConfig.presetId,
       'triplet-study',
     );
-    expect(
-      presetEditor.launchConfig.initialMode,
-      WorkspaceMode.compose,
-    );
+    expect(presetEditor.launchConfig.initialMode, WorkspaceMode.compose);
 
     expect(practicePreset, isA<TapScoreWorkspaceRouteState>());
     expect(
       (practicePreset as TapScoreWorkspaceRouteState).launchConfig.presetId,
       'triplet-study',
     );
-    expect(
-      practicePreset.launchConfig.initialMode,
-      WorkspaceMode.rhythmTest,
-    );
+    expect(practicePreset.launchConfig.initialMode, WorkspaceMode.rhythmTest);
   });
 
   test('route restoration returns unified workspace locations', () {
@@ -112,4 +103,25 @@ void main() {
       '/practice?preset=triplet-study',
     );
   });
+
+  test(
+    'router delegate notifies when a direct workspace route is applied',
+    () async {
+      final delegate = TapScoreRouterDelegate();
+      var notifications = 0;
+      delegate.addListener(() {
+        notifications += 1;
+      });
+
+      await delegate.setNewRoutePath(
+        const TapScoreWorkspaceRouteState(
+          launchConfig: WorkspaceLaunchConfig.blank(),
+          routeLocation: '/editor?mode=blank',
+        ),
+      );
+
+      expect(notifications, 1);
+      expect(delegate.currentConfiguration, isA<TapScoreWorkspaceRouteState>());
+    },
+  );
 }

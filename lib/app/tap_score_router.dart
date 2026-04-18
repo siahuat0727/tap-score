@@ -216,6 +216,7 @@ class TapScoreRouterDelegate extends RouterDelegate<Object>
     if (configuration is TapScoreWorkspaceRouteState) {
       _workspaceSession += 1;
     }
+    notifyListeners();
   }
 
   @override
