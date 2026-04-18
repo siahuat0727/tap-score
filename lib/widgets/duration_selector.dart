@@ -6,6 +6,7 @@ import '../input/editor_shortcuts.dart';
 import '../models/enums.dart';
 import '../state/score_notifier.dart';
 import '../theme/app_colors.dart';
+import 'input_affordance.dart';
 import 'playback_controls.dart';
 
 const Map<NoteDuration, String> _noteGlyphAssets = {
@@ -39,17 +40,23 @@ const double _modifierGlyphHeight = 30;
 class DurationSelector extends StatelessWidget {
   const DurationSelector({
     this.leadingControls = const [],
+    this.compact = false,
     this.padding = const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
     super.key,
   });
 
   final List<Widget> leadingControls;
+  final bool compact;
   final EdgeInsetsGeometry padding;
 
   @override
   Widget build(BuildContext context) {
     return Consumer<ScoreNotifier>(
       builder: (context, notifier, child) {
+        final affordanceProfile = resolveInputAffordanceProfile(
+          context,
+          compact: compact,
+        );
         final buttons = [
           ...leadingControls,
           _SquareButton(
@@ -59,7 +66,9 @@ class DurationSelector extends StatelessWidget {
               duration: notifier.toolbarDuration,
               isRest: true,
             ),
-            shortcutLabel: restShortcutLabel,
+            shortcutLabel: affordanceProfile.showsKeyboardAffordances
+                ? restShortcutLabel
+                : null,
             isSelected: notifier.toolbarRestSelected,
             onTap: notifier.timingControlsEnabled
                 ? notifier.handleRestAction
@@ -74,7 +83,9 @@ class DurationSelector extends StatelessWidget {
                 duration: duration,
                 isRest: notifier.toolbarShowsRestDurations,
               ),
-              shortcutLabel: durationShortcutLabels[duration]!,
+              shortcutLabel: affordanceProfile.showsKeyboardAffordances
+                  ? durationShortcutLabels[duration]!
+                  : null,
               isSelected: notifier.toolbarDuration == duration,
               onTap: notifier.durationButtonsEnabled
                   ? () => notifier.setDuration(duration)
@@ -89,7 +100,9 @@ class DurationSelector extends StatelessWidget {
               _noteQuarterWithDotAsset,
               boxKey: ValueKey('dot-tool-glyph-box'),
             ),
-            shortcutLabel: dottedShortcutLabel,
+            shortcutLabel: affordanceProfile.showsKeyboardAffordances
+                ? dottedShortcutLabel
+                : null,
             isSelected: notifier.toolbarDottedSelected,
             onTap: notifier.timingControlsEnabled
                 ? notifier.toggleDottedMode
@@ -103,7 +116,9 @@ class DurationSelector extends StatelessWidget {
               _noteQuarterWithTieAsset,
               boxKey: ValueKey('slur-tool-glyph-box'),
             ),
-            shortcutLabel: slurShortcutLabel,
+            shortcutLabel: affordanceProfile.showsKeyboardAffordances
+                ? slurShortcutLabel
+                : null,
             isSelected: notifier.toolbarSlurSelected,
             onTap: notifier.slurButtonEnabled ? notifier.toggleSlurMode : null,
             activeColor: AppColors.toolSlur,
@@ -115,7 +130,9 @@ class DurationSelector extends StatelessWidget {
               _tupletBracketWithThreeAsset,
               boxKey: ValueKey('triplet-tool-glyph-box'),
             ),
-            shortcutLabel: tripletShortcutLabel,
+            shortcutLabel: affordanceProfile.showsKeyboardAffordances
+                ? tripletShortcutLabel
+                : null,
             isSelected: notifier.toolbarTripletSelected,
             onTap: notifier.tripletButtonEnabled
                 ? notifier.toggleTripletMode
@@ -316,13 +333,18 @@ class _ModifierAssetGlyph extends StatelessWidget {
 }
 
 class ToolbarEditStrip extends StatelessWidget {
-  const ToolbarEditStrip({this.padding = EdgeInsets.zero, super.key});
+  const ToolbarEditStrip({
+    this.compact = false,
+    this.padding = EdgeInsets.zero,
+    super.key,
+  });
 
+  final bool compact;
   final EdgeInsetsGeometry padding;
 
   @override
   Widget build(BuildContext context) {
-    return DurationSelector(padding: padding);
+    return DurationSelector(compact: compact, padding: padding);
   }
 }
 
@@ -333,6 +355,8 @@ class ToolbarInfoChips extends StatelessWidget {
     required this.keyLabel,
     required this.bpm,
     required this.tempoEnabled,
+    this.spacing = 10,
+    this.runSpacing = 8,
     super.key,
   });
 
@@ -341,12 +365,14 @@ class ToolbarInfoChips extends StatelessWidget {
   final String keyLabel;
   final double bpm;
   final bool tempoEnabled;
+  final double spacing;
+  final double runSpacing;
 
   @override
   Widget build(BuildContext context) {
     return Wrap(
-      spacing: 10,
-      runSpacing: 8,
+      spacing: spacing,
+      runSpacing: runSpacing,
       children: [
         ComposeTimeSigChip(
           key: const ValueKey('compose-time-signature'),

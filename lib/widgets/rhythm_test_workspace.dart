@@ -263,6 +263,18 @@ class _RhythmTestResultCard extends StatelessWidget {
             ),
           ],
         ),
+        const SizedBox(height: 16),
+        Text(
+          notifier.resultRecommendationLabel,
+          key: const ValueKey('rhythm-test-result-recommendation'),
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            color: AppColors.textBody,
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+            height: 1.4,
+          ),
+        ),
       ],
     );
   }

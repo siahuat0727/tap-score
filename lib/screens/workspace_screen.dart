@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -13,6 +14,7 @@ import '../state/rhythm_test_notifier.dart';
 import '../state/score_notifier.dart';
 import '../theme/app_colors.dart';
 import '../widgets/duration_selector.dart';
+import '../widgets/input_affordance.dart';
 import '../widgets/piano_keyboard.dart';
 import '../widgets/playback_controls.dart';
 import '../widgets/rhythm_test_workspace.dart';
@@ -428,22 +430,29 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   }
 
   Widget _buildComposeBody(ScoreNotifier notifier) {
-    return Column(
-      children: [
-        Expanded(
-          child: ScoreViewWidget(
-            interactive: true,
-            onRendererKeyDown: _handleRendererKeyDown,
-          ),
-        ),
-        Container(height: 1, color: AppColors.surfaceDivider),
-        Container(
-          key: const ValueKey('compose-toolbar'),
-          color: AppColors.surfaceContainer,
-          child: _ComposeToolbarLayout(notifier: notifier),
-        ),
-        const PianoKeyboard(),
-      ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final metrics = _ComposeViewportMetrics.fromSize(constraints.biggest);
+        final bodyLayout = metrics.resolveBodyLayout(constraints.maxHeight);
+
+        return Column(
+          children: [
+            SizedBox(
+              height: bodyLayout.scoreHeight,
+              child: ScoreViewWidget(
+                interactive: true,
+                onRendererKeyDown: _handleRendererKeyDown,
+              ),
+            ),
+            Container(height: 1, color: AppColors.surfaceDivider),
+            if (bodyLayout.composeDockHeight > 0)
+              SizedBox(
+                height: bodyLayout.composeDockHeight,
+                child: _ComposeDock(notifier: notifier, metrics: metrics),
+              ),
+          ],
+        );
+      },
     );
   }
 
@@ -468,10 +477,142 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   }
 }
 
-class _ComposeToolbarLayout extends StatelessWidget {
-  const _ComposeToolbarLayout({required this.notifier});
+class _ComposeDock extends StatelessWidget {
+  const _ComposeDock({required this.notifier, required this.metrics});
 
   final ScoreNotifier notifier;
+  final _ComposeViewportMetrics metrics;
+
+  @override
+  Widget build(BuildContext context) {
+    final content = Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          key: const ValueKey('compose-toolbar'),
+          color: AppColors.surfaceContainer,
+          child: _ComposeToolbarLayout(notifier: notifier, metrics: metrics),
+        ),
+        PianoKeyboard(layout: metrics.keyboardLayout),
+      ],
+    );
+    return SingleChildScrollView(
+      key: const ValueKey('compose-dock-scroll-view'),
+      child: content,
+    );
+  }
+}
+
+class _ComposeViewportMetrics {
+  const _ComposeViewportMetrics({
+    required this.preferredScoreMinHeight,
+    required this.minimumVisibleScoreHeight,
+    required this.preferredToolbarHeight,
+    required this.minimumComposeDockViewportHeight,
+    required this.toolbarPadding,
+    required this.toolbarSectionPadding,
+    required this.toolbarSectionGap,
+    required this.infoChipSpacing,
+    required this.infoChipRunSpacing,
+    required this.keyboardLayout,
+  });
+
+  static const regular = _ComposeViewportMetrics(
+    preferredScoreMinHeight: 280,
+    minimumVisibleScoreHeight: 168,
+    preferredToolbarHeight: 132,
+    minimumComposeDockViewportHeight: 132,
+    toolbarPadding: EdgeInsets.fromLTRB(12, 10, 12, 8),
+    toolbarSectionPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+    toolbarSectionGap: 10,
+    infoChipSpacing: 10,
+    infoChipRunSpacing: 8,
+    keyboardLayout: PianoKeyboardLayout.regular,
+  );
+
+  static const compact = _ComposeViewportMetrics(
+    preferredScoreMinHeight: 264,
+    minimumVisibleScoreHeight: 148,
+    preferredToolbarHeight: 108,
+    minimumComposeDockViewportHeight: 108,
+    toolbarPadding: EdgeInsets.fromLTRB(10, 8, 10, 6),
+    toolbarSectionPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+    toolbarSectionGap: 8,
+    infoChipSpacing: 8,
+    infoChipRunSpacing: 6,
+    keyboardLayout: PianoKeyboardLayout.compact,
+  );
+
+  final double preferredScoreMinHeight;
+  final double minimumVisibleScoreHeight;
+  final double preferredToolbarHeight;
+  final double minimumComposeDockViewportHeight;
+  final EdgeInsets toolbarPadding;
+  final EdgeInsets toolbarSectionPadding;
+  final double toolbarSectionGap;
+  final double infoChipSpacing;
+  final double infoChipRunSpacing;
+  final PianoKeyboardLayout keyboardLayout;
+
+  double get preferredComposeDockHeight =>
+      preferredToolbarHeight + keyboardLayout.height;
+
+  _ComposeBodyLayout resolveBodyLayout(double availableHeight) {
+    final contentHeight = math.max(availableHeight, 0.0);
+    if (contentHeight <= 0) {
+      return const _ComposeBodyLayout(scoreHeight: 0, composeDockHeight: 0);
+    }
+
+    final dividerHeight = contentHeight > 1 ? 1.0 : 0.0;
+    final minDockViewportHeight = math.min(
+      minimumComposeDockViewportHeight,
+      math.max(contentHeight - dividerHeight, 0.0),
+    );
+    final maxScoreHeight = math.max(
+      contentHeight - minDockViewportHeight - dividerHeight,
+      0.0,
+    );
+    final minScoreHeight = math.min(minimumVisibleScoreHeight, maxScoreHeight);
+    final preferredScoreHeight = math.max(
+      preferredScoreMinHeight,
+      contentHeight - preferredComposeDockHeight - dividerHeight,
+    );
+    final scoreHeight = preferredScoreHeight.clamp(
+      minScoreHeight,
+      maxScoreHeight,
+    );
+    final composeDockHeight = math.max(
+      contentHeight - scoreHeight - dividerHeight,
+      0.0,
+    );
+
+    return _ComposeBodyLayout(
+      scoreHeight: scoreHeight,
+      composeDockHeight: composeDockHeight,
+    );
+  }
+
+  static _ComposeViewportMetrics fromSize(Size size) {
+    final isCompact = size.width < 900 || size.height < 640;
+    return isCompact ? compact : regular;
+  }
+}
+
+class _ComposeBodyLayout {
+  const _ComposeBodyLayout({
+    required this.scoreHeight,
+    required this.composeDockHeight,
+  });
+
+  final double scoreHeight;
+  final double composeDockHeight;
+}
+
+class _ComposeToolbarLayout extends StatelessWidget {
+  const _ComposeToolbarLayout({required this.notifier, required this.metrics});
+
+  final ScoreNotifier notifier;
+  final _ComposeViewportMetrics metrics;
 
   @override
   Widget build(BuildContext context) {
@@ -497,20 +638,28 @@ class _ComposeToolbarLayout extends StatelessWidget {
           keyLabel: notifier.score.keySignature.vexflowKey,
           bpm: notifier.score.bpm,
           tempoEnabled: !notifier.isPlaying,
+          spacing: metrics.infoChipSpacing,
+          runSpacing: metrics.infoChipRunSpacing,
+        );
+        final affordanceProfile = resolveInputAffordanceProfile(
+          context,
+          compact: metrics.keyboardLayout.isCompact,
         );
 
-        final toolbarControls = const ToolbarEditStrip(
+        final toolbarControls = ToolbarEditStrip(
+          compact: metrics.keyboardLayout.isCompact,
           padding: EdgeInsets.zero,
         );
         final isCompact = constraints.maxWidth < 1100;
 
         return Padding(
-          padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+          padding: metrics.toolbarPadding,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               if (isCompact)
                 _ToolbarSection(
+                  padding: metrics.toolbarSectionPadding,
                   child: Row(
                     children: [
                       playButton,
@@ -529,11 +678,29 @@ class _ComposeToolbarLayout extends StatelessWidget {
                   children: [
                     playButton,
                     const SizedBox(width: 12),
-                    Expanded(child: _ToolbarSection(child: infoChips)),
+                    Expanded(
+                      child: _ToolbarSection(
+                        padding: metrics.toolbarSectionPadding,
+                        child: infoChips,
+                      ),
+                    ),
                   ],
                 ),
-              const SizedBox(height: 10),
+              if (notifier.score.notes.isEmpty) ...[
+                SizedBox(height: metrics.toolbarSectionGap),
+                _ToolbarSection(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: metrics.keyboardLayout.isCompact ? 10 : 12,
+                    vertical: metrics.keyboardLayout.isCompact ? 6 : 8,
+                  ),
+                  child: _ComposeGuidanceStrip(
+                    message: affordanceProfile.composeEmptyStateGuidance,
+                  ),
+                ),
+              ],
+              SizedBox(height: metrics.toolbarSectionGap),
               _ToolbarSection(
+                padding: metrics.toolbarSectionPadding,
                 child: Align(
                   alignment: Alignment.centerLeft,
                   child: toolbarControls,
@@ -547,10 +714,43 @@ class _ComposeToolbarLayout extends StatelessWidget {
   }
 }
 
+class _ComposeGuidanceStrip extends StatelessWidget {
+  const _ComposeGuidanceStrip({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        const Icon(
+          Icons.info_outline_rounded,
+          size: 16,
+          color: AppColors.textMuted,
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            message,
+            key: const ValueKey('compose-empty-guidance'),
+            style: const TextStyle(
+              color: AppColors.textMuted,
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              height: 1.35,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _ToolbarSection extends StatelessWidget {
-  const _ToolbarSection({required this.child});
+  const _ToolbarSection({required this.child, required this.padding});
 
   final Widget child;
+  final EdgeInsets padding;
 
   @override
   Widget build(BuildContext context) {
@@ -560,10 +760,7 @@ class _ToolbarSection extends StatelessWidget {
         borderRadius: BorderRadius.circular(18),
         border: Border.all(color: AppColors.surfaceBorder.withAlpha(160)),
       ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        child: child,
-      ),
+      child: Padding(padding: padding, child: child),
     );
   }
 }

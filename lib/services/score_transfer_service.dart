@@ -2,13 +2,10 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/rendering.dart';
-import 'package:share_plus/share_plus.dart';
 
 import '../models/portable_score_document.dart';
-import 'score_transfer_web_download_stub.dart'
-    if (dart.library.html) 'score_transfer_web_download_web.dart';
+import 'score_transfer_export.dart';
 
 class ScoreTransferException implements Exception {
   const ScoreTransferException(this.message, {this.cause});
@@ -97,20 +94,11 @@ class PlatformScoreTransferService implements ScoreTransferService {
     );
 
     try {
-      if (kIsWeb) {
-        downloadJsonFile(bytes: bytes, fileName: fileName);
-        return;
-      }
-
-      await SharePlus.instance.share(
-        ShareParams(
-          files: [
-            XFile.fromData(bytes, mimeType: 'application/json', name: fileName),
-          ],
-          title: document.name,
-          subject: document.name,
-          sharePositionOrigin: sharePositionOrigin,
-        ),
+      await exportScoreTransferDocument(
+        document,
+        bytes: bytes,
+        fileName: fileName,
+        sharePositionOrigin: sharePositionOrigin,
       );
     } catch (error) {
       throw ScoreTransferException(

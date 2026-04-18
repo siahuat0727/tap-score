@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 
@@ -213,13 +214,19 @@ class RhythmTestNotifier extends ChangeNotifier {
     return maxErrorSeconds / _timeline.pulseDurationSeconds;
   }
 
-  String get resultShiftLabel {
+  double? get resultShiftBeats {
     final result = _result;
     if (result == null) {
+      return null;
+    }
+    return result.appliedShiftSeconds / _timeline.pulseDurationSeconds;
+  }
+
+  String get resultShiftLabel {
+    final shiftBeats = resultShiftBeats;
+    if (shiftBeats == null) {
       return '';
     }
-    final shiftBeats =
-        result.appliedShiftSeconds / _timeline.pulseDurationSeconds;
     return '${shiftBeats >= 0 ? '+' : ''}${shiftBeats.toStringAsFixed(2)} beat';
   }
 
@@ -238,6 +245,30 @@ class RhythmTestNotifier extends ChangeNotifier {
 
   String get largeOffsetThresholdLabel =>
       '${_largeErrorThresholdBeats.toStringAsFixed(2)} beat';
+
+  int get suggestedRetryBpm => math.max(40, (_score.bpm * 0.85).round());
+
+  String get resultRecommendationLabel {
+    if (_result == null) {
+      return '';
+    }
+
+    if (resultErrorCount > 0) {
+      return 'Retry slower at $suggestedRetryBpm BPM and tap only note starts.';
+    }
+
+    if (resultLargeErrorCount > 0) {
+      final shiftBeats = resultShiftBeats;
+      if (shiftBeats != null && shiftBeats.abs() >= 0.05) {
+        final direction = shiftBeats > 0 ? 'late' : 'early';
+        final correction = shiftBeats > 0 ? 'earlier' : 'later';
+        return "You're consistently $direction. Keep BPM and tap slightly $correction.";
+      }
+      return 'Keep BPM and tighten alignment.';
+    }
+
+    return 'Raise BPM by 5–10 and retry.';
+  }
 
   String get primaryActionLabel => isBusy ? 'Tap' : 'Start';
 

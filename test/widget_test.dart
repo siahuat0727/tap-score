@@ -57,10 +57,25 @@ DurationSelector _buildDurationSelector() {
   return const DurationSelector();
 }
 
+ThemeData? _themeForPlatform(TargetPlatform? platform) {
+  if (platform == null) {
+    return null;
+  }
+  return ThemeData(platform: platform);
+}
+
+Widget _buildScaffoldShell(Widget child, {TargetPlatform? platform}) {
+  return MaterialApp(
+    theme: _themeForPlatform(platform),
+    home: Scaffold(body: child),
+  );
+}
+
 Widget _buildModifierAlignmentGolden() {
   return ChangeNotifierProvider(
     create: (_) => ScoreNotifier(),
     child: MaterialApp(
+      theme: _themeForPlatform(TargetPlatform.macOS),
       home: Material(
         color: const Color(0xFFFBF6EE),
         child: Center(
@@ -99,10 +114,12 @@ Widget _buildWorkspace(
   ScoreNotifier notifier, {
   WorkspaceLaunchConfig launchConfig = const WorkspaceLaunchConfig.blank(),
   AudioService? rhythmTestAudioService,
+  TargetPlatform? platform,
 }) {
   return ChangeNotifierProvider.value(
     value: notifier,
     child: MaterialApp(
+      theme: _themeForPlatform(platform),
       home: WorkspaceScreen(
         launchConfig: launchConfig,
         rhythmTestAudioService: rhythmTestAudioService,
@@ -376,6 +393,181 @@ void main() {
       expect(playRect.left, lessThan(restRect.left));
     },
   );
+
+  testWidgets('editor keeps the score readable in compact Chrome viewport', (
+    WidgetTester tester,
+  ) async {
+    final notifier = ScoreNotifier(
+      workspaceRepository: _ImmediateWorkspaceRepository(
+        _namedWorkspaceLoadResult(
+          name: 'Basic 4/4',
+          score: Score(
+            notes: const [
+              Note(midi: 60, duration: NoteDuration.quarter),
+              Note(midi: 62, duration: NoteDuration.quarter),
+              Note(midi: 64, duration: NoteDuration.quarter),
+              Note(midi: 65, duration: NoteDuration.quarter),
+            ],
+          ),
+        ),
+      ),
+    );
+    addTearDown(notifier.dispose);
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(749, 589);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(_buildWorkspace(notifier));
+    await _pumpWorkspaceReady(tester);
+
+    final scoreRect = tester.getRect(
+      find.byKey(const ValueKey('score-view-surface')),
+    );
+
+    expect(scoreRect.height, greaterThanOrEqualTo(240));
+    expect(find.byKey(const ValueKey('compose-toolbar')), findsOneWidget);
+    expect(find.byType(PianoKeyboard), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'editor preserves score-first layout in compact mobile viewport',
+    (WidgetTester tester) async {
+      final notifier = ScoreNotifier(
+        workspaceRepository: _ImmediateWorkspaceRepository(
+          _namedWorkspaceLoadResult(
+            name: 'Compact Etude',
+            score: Score(
+              notes: const [
+                Note(midi: 60, duration: NoteDuration.quarter),
+                Note(midi: 67, duration: NoteDuration.quarter),
+              ],
+            ),
+          ),
+        ),
+      );
+      addTearDown(notifier.dispose);
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(390, 700);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(_buildWorkspace(notifier));
+      await _pumpWorkspaceReady(tester);
+
+      final scoreRect = tester.getRect(
+        find.byKey(const ValueKey('score-view-surface')),
+      );
+
+      expect(scoreRect.height, greaterThanOrEqualTo(240));
+      expect(find.byKey(const ValueKey('compose-play-button')), findsOneWidget);
+      expect(find.byKey(const ValueKey('rest-tool')), findsOneWidget);
+      expect(find.byType(PianoKeyboard), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('compose dock stays reachable in a short viewport', (
+    WidgetTester tester,
+  ) async {
+    final notifier = _buildInitializedWorkspaceNotifier(score: Score());
+    addTearDown(notifier.dispose);
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 320);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(_buildWorkspace(notifier));
+    await _pumpWorkspaceReady(tester);
+
+    expect(
+      find.byKey(const ValueKey('compose-dock-scroll-view')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('compose-toolbar')), findsOneWidget);
+    expect(find.byType(PianoKeyboard), findsOneWidget);
+    expect(
+      tester
+          .getSize(find.byKey(const ValueKey('compose-dock-scroll-view')))
+          .height,
+      greaterThan(0),
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('blank compose workspace shows desktop empty-state guidance', (
+    WidgetTester tester,
+  ) async {
+    final notifier = _buildInitializedWorkspaceNotifier(score: Score());
+    addTearDown(notifier.dispose);
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1280, 960);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      _buildWorkspace(notifier, platform: TargetPlatform.macOS),
+    );
+    await _pumpWorkspaceReady(tester);
+
+    expect(
+      find.byKey(const ValueKey('compose-empty-guidance')),
+      findsOneWidget,
+    );
+    expect(
+      find.text('Tap the piano or press A/S/D... to enter notes. Space plays.'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('blank compose workspace shows touch-first guidance copy', (
+    WidgetTester tester,
+  ) async {
+    final notifier = _buildInitializedWorkspaceNotifier(score: Score());
+    addTearDown(notifier.dispose);
+
+    await tester.pumpWidget(
+      _buildWorkspace(notifier, platform: TargetPlatform.iOS),
+    );
+    await _pumpWorkspaceReady(tester);
+
+    expect(
+      find.byKey(const ValueKey('compose-empty-guidance')),
+      findsOneWidget,
+    );
+    expect(
+      find.text('Tap the piano to enter notes. Press Play to listen back.'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('compose guidance disappears after the first inserted note', (
+    WidgetTester tester,
+  ) async {
+    final notifier = _buildInitializedWorkspaceNotifier(score: Score());
+    addTearDown(notifier.dispose);
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1280, 960);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      _buildWorkspace(notifier, platform: TargetPlatform.macOS),
+    );
+    await _pumpWorkspaceReady(tester);
+
+    expect(
+      find.byKey(const ValueKey('compose-empty-guidance')),
+      findsOneWidget,
+    );
+
+    notifier.insertPitchedNote(60);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.byKey(const ValueKey('compose-empty-guidance')), findsNothing);
+  });
 
   testWidgets('modifier tools use the same baseline-aligned glyph slot', (
     WidgetTester tester,
@@ -684,11 +876,15 @@ void main() {
     WidgetTester tester,
   ) async {
     final notifier = ScoreNotifier();
+    addTearDown(notifier.dispose);
 
     await tester.pumpWidget(
       ChangeNotifierProvider.value(
         value: notifier,
-        child: MaterialApp(home: Scaffold(body: _buildDurationSelector())),
+        child: _buildScaffoldShell(
+          _buildDurationSelector(),
+          platform: TargetPlatform.macOS,
+        ),
       ),
     );
 
@@ -713,6 +909,30 @@ void main() {
     expect(find.byKey(const ValueKey('duration-half')), findsOneWidget);
     expect(find.byKey(const ValueKey('duration-quarter')), findsOneWidget);
     expect(find.byKey(const ValueKey('duration-thirtySecond')), findsOneWidget);
+  });
+
+  testWidgets('duration selector hides shortcut badges on touch-first', (
+    WidgetTester tester,
+  ) async {
+    final notifier = ScoreNotifier();
+    addTearDown(notifier.dispose);
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider.value(
+        value: notifier,
+        child: _buildScaffoldShell(
+          _buildDurationSelector(),
+          platform: TargetPlatform.android,
+        ),
+      ),
+    );
+
+    expect(find.byKey(const ValueKey('rest-tool')), findsOneWidget);
+    expect(find.text('1'), findsNothing);
+    expect(find.text('6'), findsNothing);
+    expect(find.text('7'), findsNothing);
+    expect(find.text('8'), findsNothing);
+    expect(find.text('9'), findsNothing);
   });
 
   testWidgets('duration selector reflects the selected rest timing state', (
@@ -986,7 +1206,10 @@ void main() {
     await tester.pumpWidget(
       ChangeNotifierProvider(
         create: (_) => ScoreNotifier(),
-        child: const MaterialApp(home: Scaffold(body: PianoKeyboard())),
+        child: _buildScaffoldShell(
+          const PianoKeyboard(),
+          platform: TargetPlatform.macOS,
+        ),
       ),
     );
 
@@ -1001,6 +1224,36 @@ void main() {
     expect(find.text('Chromatic'), findsNothing);
     expect(find.text('C#4'), findsNothing);
     expect(find.text('A#3'), findsNothing);
+  });
+
+  testWidgets('piano keyboard hides shortcut hints on touch-first', (
+    WidgetTester tester,
+  ) async {
+    final notifier = ScoreNotifier();
+    addTearDown(notifier.dispose);
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider.value(
+        value: notifier,
+        child: _buildScaffoldShell(
+          const PianoKeyboard(),
+          platform: TargetPlatform.android,
+        ),
+      ),
+    );
+
+    expect(find.text('a'), findsNothing);
+    expect(find.text('e'), findsNothing);
+    expect(find.text('q'), findsNothing);
+    expect(find.text(']'), findsNothing);
+    expect(find.text('Key Sig'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('piano-white-60')),
+        matching: find.text('C4'),
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets(
@@ -1225,6 +1478,7 @@ void main() {
       _buildWorkspace(
         notifier,
         rhythmTestAudioService: AudioService(testMode: true),
+        platform: TargetPlatform.macOS,
       ),
     );
     await _pumpWorkspaceReady(tester);
@@ -1456,6 +1710,21 @@ WorkspaceLoadResult _workspaceLoadResult({
     workspace: WorkspaceSession(
       editorScore: copiedScore.copy(),
       document: WorkspaceDocument.draft(score: copiedScore),
+      savedScores: const [],
+      presetScores: const [],
+    ),
+  );
+}
+
+WorkspaceLoadResult _namedWorkspaceLoadResult({
+  required Score score,
+  required String name,
+}) {
+  final copiedScore = score.copy();
+  return WorkspaceLoadResult(
+    workspace: WorkspaceSession(
+      editorScore: copiedScore.copy(),
+      document: WorkspaceDocument.imported(name: name, score: copiedScore),
       savedScores: const [],
       presetScores: const [],
     ),

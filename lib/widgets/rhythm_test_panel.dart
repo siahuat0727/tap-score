@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../state/rhythm_test_notifier.dart';
 import '../theme/app_colors.dart';
+import 'input_affordance.dart';
 
 class RhythmTestPanel extends StatelessWidget {
   const RhythmTestPanel({required this.onTempoChanged, super.key});
@@ -31,6 +32,10 @@ class RhythmTestPanel extends StatelessWidget {
                         constraints.maxWidth < 420 ||
                         constraints.maxHeight < 190;
                     final wide = constraints.maxWidth >= 700;
+                    final affordanceProfile = resolveInputAffordanceProfile(
+                      context,
+                      compact: !wide,
+                    );
 
                     final parameters = _ParameterColumn(
                       bpm: notifier.score.bpm,
@@ -58,6 +63,8 @@ class RhythmTestPanel extends StatelessWidget {
                                 Expanded(
                                   child: _ActionGroup(
                                     notifier: notifier,
+                                    showKeyboardHint: affordanceProfile
+                                        .showsKeyboardAffordances,
                                     compact: false,
                                     wide: true,
                                   ),
@@ -80,6 +87,8 @@ class RhythmTestPanel extends StatelessWidget {
                           const SizedBox(height: 8),
                           _ActionGroup(
                             notifier: notifier,
+                            showKeyboardHint:
+                                affordanceProfile.showsKeyboardAffordances,
                             compact: true,
                             wide: false,
                           ),
@@ -98,6 +107,8 @@ class RhythmTestPanel extends StatelessWidget {
                         const SizedBox(height: 16),
                         _ActionGroup(
                           notifier: notifier,
+                          showKeyboardHint:
+                              affordanceProfile.showsKeyboardAffordances,
                           compact: false,
                           wide: false,
                         ),
@@ -374,11 +385,13 @@ class _AdjustButton extends StatelessWidget {
 class _PrimaryActionButton extends StatelessWidget {
   const _PrimaryActionButton({
     required this.notifier,
+    required this.showKeyboardHint,
     required this.compact,
     required this.wide,
   });
 
   final RhythmTestNotifier notifier;
+  final bool showKeyboardHint;
   final bool compact;
   final bool wide;
 
@@ -406,7 +419,7 @@ class _PrimaryActionButton extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            compact
+            compact && showKeyboardHint
                 ? '${notifier.primaryActionLabel} · ${notifier.primaryActionHint}'
                 : notifier.primaryActionLabel,
             style: TextStyle(
@@ -415,7 +428,7 @@ class _PrimaryActionButton extends StatelessWidget {
               letterSpacing: 0.3,
             ),
           ),
-          if (!compact) ...[
+          if (!compact && showKeyboardHint) ...[
             SizedBox(height: wide ? 8 : 4),
             Text(
               notifier.primaryActionHint,
@@ -446,11 +459,13 @@ class _PrimaryActionButton extends StatelessWidget {
 class _ActionGroup extends StatelessWidget {
   const _ActionGroup({
     required this.notifier,
+    required this.showKeyboardHint,
     required this.compact,
     required this.wide,
   });
 
   final RhythmTestNotifier notifier;
+  final bool showKeyboardHint;
   final bool compact;
   final bool wide;
 
@@ -462,6 +477,7 @@ class _ActionGroup extends StatelessWidget {
           Positioned.fill(
             child: _PrimaryActionButton(
               notifier: notifier,
+              showKeyboardHint: showKeyboardHint,
               compact: compact,
               wide: wide,
             ),
@@ -479,6 +495,7 @@ class _ActionGroup extends StatelessWidget {
     if (!notifier.canStop) {
       return _PrimaryActionButton(
         notifier: notifier,
+        showKeyboardHint: showKeyboardHint,
         compact: compact,
         wide: wide,
       );
@@ -491,6 +508,7 @@ class _ActionGroup extends StatelessWidget {
           Expanded(
             child: _PrimaryActionButton(
               notifier: notifier,
+              showKeyboardHint: showKeyboardHint,
               compact: compact,
               wide: wide,
             ),

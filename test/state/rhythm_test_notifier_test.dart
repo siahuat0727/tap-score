@@ -498,6 +498,11 @@ void main() {
       expect(notifier.resultStatusLabel, 'Failed');
       expect(notifier.resultSummaryLabel, contains('BPM 120'));
       expect(notifier.largeOffsetThresholdLabel, '0.10 beat');
+      expect(notifier.suggestedRetryBpm, 102);
+      expect(
+        notifier.resultRecommendationLabel,
+        'Retry slower at 102 BPM and tap only note starts.',
+      );
       expect(notifier.overlayRenderData.phase, RhythmOverlayRenderPhase.result);
       expect(notifier.overlayRenderData.errorLabelThresholdBeats, 0.05);
       expect(notifier.overlayRenderData.largeErrorThresholdBeats, 0.1);
@@ -650,6 +655,10 @@ void main() {
       expect(notifier.resultLargeErrorCount, 1);
       expect(notifier.resultStatusLabel, 'Clean, but loose');
       expect(notifier.resultMaxErrorBeats, closeTo(0.12, 0.001));
+      expect(
+        notifier.resultRecommendationLabel,
+        'Keep BPM and tighten alignment.',
+      );
       expect(notifier.overlayRenderData.largeErrorThresholdBeats, 0.1);
 
       notifier.setLargeErrorThreshold(0.15);
@@ -657,7 +666,74 @@ void main() {
       expect(notifier.largeErrorThresholdBeats, 0.15);
       expect(notifier.resultLargeErrorCount, 0);
       expect(notifier.resultStatusLabel, 'Perfect');
+      expect(
+        notifier.resultRecommendationLabel,
+        'Raise BPM by 5–10 and retry.',
+      );
       expect(notifier.overlayRenderData.largeErrorThresholdBeats, 0.15);
+    },
+  );
+
+  test(
+    'clean but loose recommendation identifies consistent late taps',
+    () async {
+      final notifier = RhythmTestNotifier(
+        score: Score(
+          bpm: 120,
+          notes: const [Note(midi: 60, duration: NoteDuration.quarter)],
+        ),
+        audioService: _FakeAudioService(),
+        timelineBuilder: _FixedTimelineBuilder(
+          const RhythmTimeline(
+            expectedEvents: [
+              ExpectedRhythmEvent(id: 1, noteIndex: 0, timeSeconds: 0),
+            ],
+            playbackNotes: [
+              RhythmMelodyEvent(
+                noteIndex: 0,
+                midi: 60,
+                startSeconds: 0,
+                durationSeconds: 0.2,
+              ),
+            ],
+            measureBoundaryTimesSeconds: [0, 0.2],
+            totalDurationSeconds: 0.2,
+            pulseDurationSeconds: 0.1,
+            pulsesPerMeasure: 4,
+          ),
+        ),
+        matcher: _FixedMatcher(
+          const RhythmTestResult(
+            matchedPairs: [
+              MatchedRhythmPair(
+                expected: ExpectedRhythmEvent(
+                  id: 1,
+                  noteIndex: 0,
+                  timeSeconds: 0,
+                ),
+                tap: TapInputEvent(id: 1, timeSeconds: 0.012),
+                errorSeconds: 0.012,
+              ),
+            ],
+            unmatchedExpectedEvents: [],
+            unmatchedTapEvents: [],
+            matchingWindowSeconds: 0.1,
+            appliedShiftSeconds: 0.006,
+          ),
+        ),
+      );
+
+      addTearDown(notifier.dispose);
+
+      await notifier.start();
+      await Future<void>.delayed(const Duration(milliseconds: 820));
+
+      expect(notifier.resultStatusLabel, 'Clean, but loose');
+      expect(notifier.resultShiftBeats, closeTo(0.06, 0.001));
+      expect(
+        notifier.resultRecommendationLabel,
+        "You're consistently late. Keep BPM and tap slightly earlier.",
+      );
     },
   );
 

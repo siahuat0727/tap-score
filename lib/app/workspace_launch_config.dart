@@ -9,9 +9,8 @@ class WorkspaceLaunchConfig {
     required this.initialMode,
   });
 
-  const WorkspaceLaunchConfig.restore({required WorkspaceMode initialMode})
-    : seedConfig = const ScoreSeedConfig.restore(),
-      initialMode = initialMode;
+  const WorkspaceLaunchConfig.restore({required this.initialMode})
+    : seedConfig = const ScoreSeedConfig.restore();
 
   const WorkspaceLaunchConfig.blank()
     : seedConfig = const ScoreSeedConfig.blank(),

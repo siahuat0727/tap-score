@@ -83,7 +83,7 @@ void main() {
       addTearDown(notifier.dispose);
       await notifier.init();
 
-      await tester.pumpWidget(_wrap(notifier));
+      await tester.pumpWidget(_wrap(notifier, platform: TargetPlatform.macOS));
       await tester.pump();
 
       await tester.runAsync(() async {
@@ -122,6 +122,14 @@ void main() {
         findsOneWidget,
       );
       expect(find.textContaining('Shift +0.00 beat'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('rhythm-test-result-recommendation')),
+        findsOneWidget,
+      );
+      expect(
+        find.text('Retry slower at 102 BPM and tap only note starts.'),
+        findsOneWidget,
+      );
 
       final workspaceRect = tester.getRect(find.byType(RhythmTestWorkspace));
       final resultRect = tester.getRect(
@@ -150,6 +158,28 @@ void main() {
       );
     },
   );
+
+  testWidgets('primary action hides keyboard hint on touch-first profile', (
+    WidgetTester tester,
+  ) async {
+    final notifier = _buildNotifier();
+    addTearDown(notifier.dispose);
+    await notifier.init();
+
+    await tester.pumpWidget(_wrap(notifier, platform: TargetPlatform.android));
+    await tester.pump();
+
+    expect(find.textContaining('Space'), findsNothing);
+
+    await tester.runAsync(() async {
+      await notifier.performPrimaryAction();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    });
+    await tester.pump();
+
+    expect(find.textContaining('Tap'), findsOneWidget);
+    expect(find.textContaining('Space'), findsNothing);
+  });
 
   testWidgets('stop button is visible during play and restores idle UI', (
     WidgetTester tester,
@@ -287,15 +317,124 @@ void main() {
     expect(find.text('Calculating result…'), findsNothing);
     expect(find.text('Failed'), findsOneWidget);
   });
+
+  testWidgets('result card shows clean but loose recommendation', (
+    WidgetTester tester,
+  ) async {
+    final notifier = _buildNotifier(
+      matcher: _FixedMatcher(
+        const RhythmTestResult(
+          matchedPairs: [
+            MatchedRhythmPair(
+              expected: ExpectedRhythmEvent(
+                id: 1,
+                noteIndex: 0,
+                timeSeconds: 0,
+              ),
+              tap: TapInputEvent(id: 1, timeSeconds: 0.012),
+              errorSeconds: 0.012,
+            ),
+            MatchedRhythmPair(
+              expected: ExpectedRhythmEvent(
+                id: 2,
+                noteIndex: 1,
+                timeSeconds: 0.1,
+              ),
+              tap: TapInputEvent(id: 2, timeSeconds: 0.112),
+              errorSeconds: 0.012,
+            ),
+          ],
+          unmatchedExpectedEvents: [],
+          unmatchedTapEvents: [],
+          matchingWindowSeconds: 0.1,
+          appliedShiftSeconds: 0.006,
+        ),
+      ),
+    );
+    addTearDown(notifier.dispose);
+    await notifier.init();
+
+    await tester.pumpWidget(_wrap(notifier, platform: TargetPlatform.macOS));
+    await tester.pump();
+
+    await tester.runAsync(() async {
+      await notifier.performPrimaryAction();
+      await Future<void>.delayed(const Duration(milliseconds: 900));
+    });
+    await tester.pump();
+
+    expect(find.text('Clean, but loose'), findsOneWidget);
+    expect(
+      find.text("You're consistently late. Keep BPM and tap slightly earlier."),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('result card shows perfect recommendation', (
+    WidgetTester tester,
+  ) async {
+    final notifier = _buildNotifier(
+      matcher: _FixedMatcher(
+        const RhythmTestResult(
+          matchedPairs: [
+            MatchedRhythmPair(
+              expected: ExpectedRhythmEvent(
+                id: 1,
+                noteIndex: 0,
+                timeSeconds: 0,
+              ),
+              tap: TapInputEvent(id: 1, timeSeconds: 0.002),
+              errorSeconds: 0.002,
+            ),
+            MatchedRhythmPair(
+              expected: ExpectedRhythmEvent(
+                id: 2,
+                noteIndex: 1,
+                timeSeconds: 0.1,
+              ),
+              tap: TapInputEvent(id: 2, timeSeconds: 0.102),
+              errorSeconds: 0.002,
+            ),
+          ],
+          unmatchedExpectedEvents: [],
+          unmatchedTapEvents: [],
+          matchingWindowSeconds: 0.1,
+          appliedShiftSeconds: 0,
+        ),
+      ),
+    );
+    addTearDown(notifier.dispose);
+    await notifier.init();
+
+    await tester.pumpWidget(_wrap(notifier, platform: TargetPlatform.macOS));
+    await tester.pump();
+
+    await tester.runAsync(() async {
+      await notifier.performPrimaryAction();
+      await Future<void>.delayed(const Duration(milliseconds: 900));
+    });
+    await tester.pump();
+
+    expect(find.text('Perfect'), findsOneWidget);
+    expect(find.text('Raise BPM by 5–10 and retry.'), findsOneWidget);
+  });
 }
 
-Widget _wrap(RhythmTestNotifier notifier) {
+ThemeData? _themeForPlatform(TargetPlatform? platform) {
+  if (platform == null) {
+    return null;
+  }
+  return ThemeData(platform: platform);
+}
+
+Widget _wrap(RhythmTestNotifier notifier, {TargetPlatform? platform}) {
   return MultiProvider(
     providers: [
       ChangeNotifierProvider(create: (_) => ScoreNotifier()),
       ChangeNotifierProvider.value(value: notifier),
     ],
     child: MaterialApp(
+      theme: _themeForPlatform(platform),
       home: Scaffold(
         body: RhythmTestWorkspace(
           onTempoChanged: notifier.setTempo,
