@@ -243,6 +243,9 @@ void main() {
     expect(html, contains('function _buildRhythmPulseDescriptors('));
     expect(html, contains('function _activeRhythmPulseIndex('));
     expect(html, contains('function _drawRhythmPulseRail('));
+    expect(html, contains('function _syncLiveRhythmOverlay('));
+    expect(html, contains('function _syncRhythmPulseRail('));
+    expect(html, contains('function _applyRhythmPulseState('));
     expect(html, contains('function _drawRhythmErrorLabels('));
     expect(html, contains("const overlayPhase = rhythmTest.phase || 'idle';"));
     expect(html, contains("const showsPlayhead = overlayPhase === 'live';"));
@@ -298,9 +301,14 @@ void main() {
       contains('const timeZeroX = measureRenderData[0].contentStartX;'),
     );
     expect(html, contains('const leadInStartX = measureRenderData[0].startX;'));
+    expect(html, contains("playhead = document.createElementNS(ns, 'line');"));
     expect(
       html,
-      contains("const playhead = document.createElementNS(ns, 'line');"),
+      contains("playhead.setAttribute('data-rhythm-playhead', 'true');"),
+    );
+    expect(
+      html,
+      contains("point.setAttribute('data-rhythm-live-tap-id', String(tapId));"),
     );
     expect(
       html,

@@ -43,42 +43,50 @@ class ScoreViewWidget extends StatefulWidget {
 
 class ScoreRendererCommandController {
   String? _lastStaticSignature;
-  String? _lastRhythmOverlaySignature;
+  bool _hadRhythmOverlay = false;
   int? _lastPlaybackIndex;
 
   void reset() {
     _lastStaticSignature = null;
-    _lastRhythmOverlaySignature = null;
+    _hadRhythmOverlay = false;
     _lastPlaybackIndex = null;
   }
 
   List<Map<String, dynamic>> buildCommands({
-    required Map<String, dynamic> staticPayload,
-    required Map<String, dynamic>? rhythmOverlayPayload,
+    Map<String, dynamic>? staticPayload,
+    Map<String, dynamic>? rhythmOverlayPayload,
     required int playbackIndex,
     bool forceStatic = false,
+    bool overlayChanged = false,
+    bool playbackChanged = false,
   }) {
     final commands = <Map<String, dynamic>>[];
-    final staticSignature = jsonEncode(staticPayload);
-    final rhythmOverlaySignature = jsonEncode(rhythmOverlayPayload);
+    final staticSignature = staticPayload == null
+        ? null
+        : jsonEncode(staticPayload);
     final needsStaticRender =
-        forceStatic || staticSignature != _lastStaticSignature;
+        forceStatic ||
+        staticSignature != null && staticSignature != _lastStaticSignature;
 
     if (needsStaticRender) {
-      commands.add({'type': 'renderScoreStatic', ...staticPayload});
+      commands.add({'type': 'renderScoreStatic', ...staticPayload!});
       _lastStaticSignature = staticSignature;
     }
 
+    final hasRhythmOverlay = rhythmOverlayPayload != null;
     if (needsStaticRender ||
-        rhythmOverlaySignature != _lastRhythmOverlaySignature) {
+        overlayChanged ||
+        hasRhythmOverlay != _hadRhythmOverlay) {
       commands.add({
         'type': 'updateRhythmOverlay',
         'rhythmTest': rhythmOverlayPayload,
       });
-      _lastRhythmOverlaySignature = rhythmOverlaySignature;
+      _hadRhythmOverlay = hasRhythmOverlay;
     }
 
-    if (needsStaticRender || playbackIndex != _lastPlaybackIndex) {
+    if (needsStaticRender ||
+        playbackChanged ||
+        playbackIndex != _lastPlaybackIndex) {
       commands.add({
         'type': 'updatePlaybackIndex',
         'playbackIndex': playbackIndex,
@@ -218,18 +226,28 @@ class _ScoreViewWidgetState extends State<ScoreViewWidget> {
     };
   }
 
-  void _flushRendererCommands({bool forceStatic = false}) {
+  void _flushRendererCommands({
+    bool forceStatic = false,
+    bool staticChanged = false,
+    bool overlayChanged = false,
+    bool playbackChanged = false,
+  }) {
     final notifier = _notifier;
     final send = _sendCommand;
     if (notifier == null || send == null) {
       return;
     }
 
+    final needsStaticRender = forceStatic || staticChanged;
     final commands = _commandController.buildCommands(
-      staticPayload: _buildStaticPayload(notifier),
-      rhythmOverlayPayload: widget.rhythmOverlay?.toPayload(),
+      staticPayload: needsStaticRender ? _buildStaticPayload(notifier) : null,
+      rhythmOverlayPayload: needsStaticRender || overlayChanged
+          ? widget.rhythmOverlay?.toPayload()
+          : null,
       playbackIndex: widget.playbackIndex ?? notifier.playbackIndex,
       forceStatic: forceStatic,
+      overlayChanged: overlayChanged,
+      playbackChanged: playbackChanged,
     );
     for (final command in commands) {
       send(command);
@@ -237,7 +255,7 @@ class _ScoreViewWidgetState extends State<ScoreViewWidget> {
   }
 
   void _handleScoreNotifierChanged() {
-    _flushRendererCommands();
+    _flushRendererCommands(staticChanged: true);
   }
 
   // ---------------------------------------------------------------------------
@@ -276,9 +294,13 @@ class _ScoreViewWidgetState extends State<ScoreViewWidget> {
   @override
   void didUpdateWidget(covariant ScoreViewWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.rhythmOverlay != widget.rhythmOverlay ||
-        oldWidget.playbackIndex != widget.playbackIndex) {
-      _flushRendererCommands();
+    final overlayChanged = oldWidget.rhythmOverlay != widget.rhythmOverlay;
+    final playbackChanged = oldWidget.playbackIndex != widget.playbackIndex;
+    if (overlayChanged || playbackChanged) {
+      _flushRendererCommands(
+        overlayChanged: overlayChanged,
+        playbackChanged: playbackChanged,
+      );
     }
   }
 

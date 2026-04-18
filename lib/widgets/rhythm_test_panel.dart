@@ -5,6 +5,20 @@ import '../state/rhythm_test_notifier.dart';
 import '../theme/app_colors.dart';
 import 'input_affordance.dart';
 
+typedef _RhythmTestPanelLayoutState = ({
+  String? errorMessage,
+  double bpm,
+  double largeErrorThresholdBeats,
+  bool isBusy,
+});
+
+typedef _RhythmTestActionState = ({
+  bool primaryActionEnabled,
+  String primaryActionLabel,
+  String primaryActionHint,
+  bool canStop,
+});
+
 class RhythmTestPanel extends StatelessWidget {
   const RhythmTestPanel({required this.onTempoChanged, super.key});
 
@@ -12,115 +26,116 @@ class RhythmTestPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<RhythmTestNotifier>(
-      builder: (context, notifier, _) {
-        return ColoredBox(
-          color: AppColors.surfaceContainer,
-          child: Center(
-            child: Padding(
-              padding: EdgeInsets.fromLTRB(
-                16,
-                notifier.errorMessage == null ? 12 : 14,
-                16,
-                notifier.errorMessage == null ? 14 : 16,
-              ),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 960),
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final compact =
-                        constraints.maxWidth < 420 ||
-                        constraints.maxHeight < 190;
-                    final wide = constraints.maxWidth >= 700;
-                    final affordanceProfile = resolveInputAffordanceProfile(
-                      context,
-                      compact: !wide,
-                    );
-
-                    final parameters = _ParameterColumn(
-                      bpm: notifier.score.bpm,
-                      largeErrorThresholdBeats:
-                          notifier.largeErrorThresholdBeats,
-                      enabled: !notifier.isBusy,
-                      compact: compact,
-                      onTempoChanged: onTempoChanged,
-                    );
-
-                    if (wide) {
-                      return Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          if (notifier.errorMessage != null) ...[
-                            _InfoBanner(message: notifier.errorMessage!),
-                            const SizedBox(height: 14),
-                          ],
-                          Expanded(
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                Expanded(child: parameters),
-                                const SizedBox(width: 18),
-                                Expanded(
-                                  child: _ActionGroup(
-                                    notifier: notifier,
-                                    showKeyboardHint: affordanceProfile
-                                        .showsKeyboardAffordances,
-                                    compact: false,
-                                    wide: true,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      );
-                    }
-
-                    if (compact) {
-                      return Column(
-                        children: [
-                          if (notifier.errorMessage != null) ...[
-                            _InfoBanner(message: notifier.errorMessage!),
-                            const SizedBox(height: 8),
-                          ],
-                          Expanded(child: Center(child: parameters)),
-                          const SizedBox(height: 8),
-                          _ActionGroup(
-                            notifier: notifier,
-                            showKeyboardHint:
-                                affordanceProfile.showsKeyboardAffordances,
-                            compact: true,
-                            wide: false,
-                          ),
-                        ],
-                      );
-                    }
-
-                    return Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        if (notifier.errorMessage != null) ...[
-                          _InfoBanner(message: notifier.errorMessage!),
-                          const SizedBox(height: 12),
-                        ],
-                        parameters,
-                        const SizedBox(height: 16),
-                        _ActionGroup(
-                          notifier: notifier,
-                          showKeyboardHint:
-                              affordanceProfile.showsKeyboardAffordances,
-                          compact: false,
-                          wide: false,
-                        ),
-                      ],
-                    );
-                  },
-                ),
-              ),
-            ),
+    final state = context
+        .select<RhythmTestNotifier, _RhythmTestPanelLayoutState>(
+          (notifier) => (
+            errorMessage: notifier.errorMessage,
+            bpm: notifier.score.bpm,
+            largeErrorThresholdBeats: notifier.largeErrorThresholdBeats,
+            isBusy: notifier.isBusy,
           ),
         );
-      },
+
+    return ColoredBox(
+      color: AppColors.surfaceContainer,
+      child: Center(
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(
+            16,
+            state.errorMessage == null ? 12 : 14,
+            16,
+            state.errorMessage == null ? 14 : 16,
+          ),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 960),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final compact =
+                    constraints.maxWidth < 420 || constraints.maxHeight < 190;
+                final wide = constraints.maxWidth >= 700;
+                final affordanceProfile = resolveInputAffordanceProfile(
+                  context,
+                  compact: !wide,
+                );
+
+                final parameters = _ParameterColumn(
+                  bpm: state.bpm,
+                  largeErrorThresholdBeats: state.largeErrorThresholdBeats,
+                  enabled: !state.isBusy,
+                  compact: compact,
+                  onTempoChanged: onTempoChanged,
+                );
+
+                if (wide) {
+                  return Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      if (state.errorMessage != null) ...[
+                        _InfoBanner(message: state.errorMessage!),
+                        const SizedBox(height: 14),
+                      ],
+                      Expanded(
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Expanded(child: parameters),
+                            const SizedBox(width: 18),
+                            Expanded(
+                              child: _ActionGroup(
+                                showKeyboardHint:
+                                    affordanceProfile.showsKeyboardAffordances,
+                                compact: false,
+                                wide: true,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  );
+                }
+
+                if (compact) {
+                  return Column(
+                    children: [
+                      if (state.errorMessage != null) ...[
+                        _InfoBanner(message: state.errorMessage!),
+                        const SizedBox(height: 8),
+                      ],
+                      Expanded(child: Center(child: parameters)),
+                      const SizedBox(height: 8),
+                      _ActionGroup(
+                        showKeyboardHint:
+                            affordanceProfile.showsKeyboardAffordances,
+                        compact: true,
+                        wide: false,
+                      ),
+                    ],
+                  );
+                }
+
+                return Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    if (state.errorMessage != null) ...[
+                      _InfoBanner(message: state.errorMessage!),
+                      const SizedBox(height: 12),
+                    ],
+                    parameters,
+                    const SizedBox(height: 16),
+                    _ActionGroup(
+                      showKeyboardHint:
+                          affordanceProfile.showsKeyboardAffordances,
+                      compact: false,
+                      wide: false,
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -384,20 +399,23 @@ class _AdjustButton extends StatelessWidget {
 
 class _PrimaryActionButton extends StatelessWidget {
   const _PrimaryActionButton({
-    required this.notifier,
+    required this.enabled,
+    required this.label,
+    required this.hint,
     required this.showKeyboardHint,
     required this.compact,
     required this.wide,
   });
 
-  final RhythmTestNotifier notifier;
+  final bool enabled;
+  final String label;
+  final String hint;
   final bool showKeyboardHint;
   final bool compact;
   final bool wide;
 
   @override
   Widget build(BuildContext context) {
-    final enabled = notifier.primaryActionEnabled;
     final button = FilledButton(
       key: const ValueKey('rhythm-test-primary'),
       onPressed: enabled
@@ -419,9 +437,7 @@ class _PrimaryActionButton extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            compact && showKeyboardHint
-                ? '${notifier.primaryActionLabel} · ${notifier.primaryActionHint}'
-                : notifier.primaryActionLabel,
+            compact && showKeyboardHint ? '$label · $hint' : label,
             style: TextStyle(
               fontSize: wide ? 34 : (compact ? 18 : 24),
               fontWeight: FontWeight.w800,
@@ -431,7 +447,7 @@ class _PrimaryActionButton extends StatelessWidget {
           if (!compact && showKeyboardHint) ...[
             SizedBox(height: wide ? 8 : 4),
             Text(
-              notifier.primaryActionHint,
+              hint,
               style: TextStyle(
                 fontSize: wide ? 14 : 12,
                 fontWeight: FontWeight.w700,
@@ -458,31 +474,40 @@ class _PrimaryActionButton extends StatelessWidget {
 
 class _ActionGroup extends StatelessWidget {
   const _ActionGroup({
-    required this.notifier,
     required this.showKeyboardHint,
     required this.compact,
     required this.wide,
   });
 
-  final RhythmTestNotifier notifier;
   final bool showKeyboardHint;
   final bool compact;
   final bool wide;
 
   @override
   Widget build(BuildContext context) {
+    final state = context.select<RhythmTestNotifier, _RhythmTestActionState>(
+      (notifier) => (
+        primaryActionEnabled: notifier.primaryActionEnabled,
+        primaryActionLabel: notifier.primaryActionLabel,
+        primaryActionHint: notifier.primaryActionHint,
+        canStop: notifier.canStop,
+      ),
+    );
+
     if (wide) {
       return Stack(
         children: [
           Positioned.fill(
             child: _PrimaryActionButton(
-              notifier: notifier,
+              enabled: state.primaryActionEnabled,
+              label: state.primaryActionLabel,
+              hint: state.primaryActionHint,
               showKeyboardHint: showKeyboardHint,
               compact: compact,
               wide: wide,
             ),
           ),
-          if (notifier.canStop)
+          if (state.canStop)
             Positioned(
               top: 10,
               right: 10,
@@ -492,9 +517,11 @@ class _ActionGroup extends StatelessWidget {
       );
     }
 
-    if (!notifier.canStop) {
+    if (!state.canStop) {
       return _PrimaryActionButton(
-        notifier: notifier,
+        enabled: state.primaryActionEnabled,
+        label: state.primaryActionLabel,
+        hint: state.primaryActionHint,
         showKeyboardHint: showKeyboardHint,
         compact: compact,
         wide: wide,
@@ -507,7 +534,9 @@ class _ActionGroup extends StatelessWidget {
         children: [
           Expanded(
             child: _PrimaryActionButton(
-              notifier: notifier,
+              enabled: state.primaryActionEnabled,
+              label: state.primaryActionLabel,
+              hint: state.primaryActionHint,
               showKeyboardHint: showKeyboardHint,
               compact: compact,
               wide: wide,

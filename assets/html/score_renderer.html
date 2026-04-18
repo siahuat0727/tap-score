@@ -62,6 +62,8 @@
         noteElementsByIndex: new Map(),
         noteBaseColors: new Map(),
         rhythmOverlayLayout: null,
+        rhythmOverlayPhase: null,
+        rhythmLiveOverlayHandles: null,
       };
     }
 
@@ -966,25 +968,148 @@
 
     function updateRhythmOverlay(rhythmTest) {
       currentRhythmOverlay = rhythmTest;
-      _detachRhythmInspectionContext();
-      _clearRhythmInspectState();
       const { svg, overlayLayer, resultHighlightLayer, allStaves, measureRenderData } = rendererState;
       if (!svg || !overlayLayer || !resultHighlightLayer) {
         rhythmViewportWasAutoFollowing = false;
+        rendererState.rhythmOverlayPhase = null;
+        rendererState.rhythmLiveOverlayHandles = null;
         return;
       }
 
+      const nextPhase = rhythmTest ? rhythmTest.phase || 'idle' : null;
+      const canPatchLive =
+        nextPhase === 'live' &&
+        rendererState.rhythmOverlayPhase === 'live' &&
+        rendererState.rhythmOverlayLayout != null &&
+        rendererState.rhythmLiveOverlayHandles != null;
+      if (canPatchLive) {
+        _syncLiveRhythmOverlay(
+          rhythmTest,
+          rendererState.rhythmOverlayLayout,
+          rendererState.rhythmLiveOverlayHandles,
+        );
+        _clearSvgLayer(resultHighlightLayer);
+        _syncRhythmViewport(rhythmTest, rendererState.rhythmOverlayLayout);
+        return;
+      }
+
+      _detachRhythmInspectionContext();
+      _clearRhythmInspectState();
       _clearSvgLayer(overlayLayer);
       _clearSvgLayer(resultHighlightLayer);
-      rendererState.rhythmOverlayLayout = _drawRhythmOverlay(
+      const overlayRender = _drawRhythmOverlay(
         overlayLayer,
         svg,
         rhythmTest,
         allStaves,
         measureRenderData,
       );
+      rendererState.rhythmOverlayLayout = overlayRender;
+      rendererState.rhythmOverlayPhase = nextPhase;
+      rendererState.rhythmLiveOverlayHandles = overlayRender
+        ? overlayRender.liveHandles || null
+        : null;
       _drawRhythmResultNoteHighlights(resultHighlightLayer, rhythmTest);
       _syncRhythmViewport(rhythmTest, rendererState.rhythmOverlayLayout);
+    }
+
+    function _syncLiveRhythmOverlay(rhythmTest, rhythmOverlayLayout, liveHandles) {
+      if (!rhythmTest || !rhythmOverlayLayout || !liveHandles) {
+        return;
+      }
+
+      const activePulseIndex = _activeRhythmPulseIndex(
+        rhythmTest.playheadTimeSeconds,
+        rhythmOverlayLayout.pulseDescriptors,
+        'live',
+      );
+      _syncRhythmPulseRail(liveHandles.pulseElements, activePulseIndex, 'live');
+      _syncLiveRhythmTapPoints(
+        liveHandles.liveTapLayer,
+        liveHandles,
+        rhythmTest,
+        rhythmOverlayLayout,
+      );
+      _syncLiveRhythmPlayhead(
+        liveHandles.playheadLine,
+        rhythmTest,
+        rhythmOverlayLayout,
+      );
+    }
+
+    function _syncLiveRhythmTapPoints(
+      liveTapLayer,
+      liveHandles,
+      rhythmTest,
+      rhythmOverlayLayout,
+    ) {
+      const tapEvents = rhythmTest.liveTapEvents || [];
+      const renderedTapIds = liveHandles.renderedTapIds || [];
+      const renderedCount = renderedTapIds.length;
+      let needsReset = renderedCount > tapEvents.length;
+
+      if (!needsReset) {
+        for (let i = 0; i < renderedCount; i++) {
+          if (renderedTapIds[i] !== tapEvents[i].id) {
+            needsReset = true;
+            break;
+          }
+        }
+      }
+
+      if (needsReset) {
+        _clearSvgLayer(liveTapLayer);
+        liveHandles.renderedTapIds = [];
+      }
+
+      for (let i = liveHandles.renderedTapIds.length; i < tapEvents.length; i++) {
+        const tap = tapEvents[i];
+        const tapX = _xForRhythmTime(
+          tap.timeSeconds,
+          rhythmOverlayLayout.measureSegments,
+          rhythmTest.measureBoundaryTimesSeconds,
+          rhythmTest.totalDurationSeconds,
+          rhythmTest.countInDurationSeconds,
+          rhythmOverlayLayout.leadInStartX,
+          rhythmOverlayLayout.timeZeroX,
+        );
+        _appendLiveRhythmTapPoint(
+          liveTapLayer,
+          liveHandles.ns,
+          tap.id,
+          tapX,
+          rhythmOverlayLayout.overlayBottom - 18,
+        );
+        liveHandles.renderedTapIds.push(tap.id);
+      }
+    }
+
+    function _appendLiveRhythmTapPoint(target, ns, tapId, x, y) {
+      const point = document.createElementNS(ns, 'circle');
+      point.setAttribute('data-rhythm-live-tap-id', String(tapId));
+      point.setAttribute('cx', x);
+      point.setAttribute('cy', y);
+      point.setAttribute('r', '3.5');
+      point.setAttribute('fill', '#6d4c41');
+      target.appendChild(point);
+    }
+
+    function _syncLiveRhythmPlayhead(playheadLine, rhythmTest, rhythmOverlayLayout) {
+      if (!playheadLine) {
+        return;
+      }
+
+      const playheadX = _xForRhythmTime(
+        rhythmTest.playheadTimeSeconds,
+        rhythmOverlayLayout.measureSegments,
+        rhythmTest.measureBoundaryTimesSeconds,
+        rhythmTest.totalDurationSeconds,
+        rhythmTest.countInDurationSeconds,
+        rhythmOverlayLayout.leadInStartX,
+        rhythmOverlayLayout.timeZeroX,
+      );
+      playheadLine.setAttribute('x1', playheadX);
+      playheadLine.setAttribute('x2', playheadX);
     }
 
     // -------------------------------------------------------------------------
@@ -1098,7 +1223,7 @@
         }
       }
       _drawOverlayLine(target, ns, lastMeasure.endX, overlayTop + 10, overlayBottom - 10, '#bda98b', 2.2);
-      _drawRhythmPulseRail(
+      const pulseElements = _drawRhythmPulseRail(
         target,
         ns,
         pulseDescriptors,
@@ -1109,6 +1234,8 @@
       if (!showsResultOverlay) {
         _clearRhythmInspectState();
         _setRhythmInspectionContext(null);
+        const liveTapLayer = document.createElementNS(ns, 'g');
+        target.appendChild(liveTapLayer);
         for (const tap of rhythmTest.liveTapEvents) {
           const tapX = _xForRhythmTime(
             tap.timeSeconds,
@@ -1119,9 +1246,16 @@
             leadInStartX,
             timeZeroX,
           );
-          _drawOverlayPoint(target, ns, tapX, overlayBottom - 18, '#6d4c41');
+          _appendLiveRhythmTapPoint(
+            liveTapLayer,
+            ns,
+            tap.id,
+            tapX,
+            overlayBottom - 18,
+          );
         }
 
+        let playhead = null;
         if (showsPlayhead) {
           const playheadX = _xForRhythmTime(
             rhythmTest.playheadTimeSeconds,
@@ -1132,7 +1266,8 @@
             leadInStartX,
             timeZeroX,
           );
-          const playhead = document.createElementNS(ns, 'line');
+          playhead = document.createElementNS(ns, 'line');
+          playhead.setAttribute('data-rhythm-playhead', 'true');
           playhead.setAttribute('x1', playheadX);
           playhead.setAttribute('x2', playheadX);
           playhead.setAttribute('y1', overlayTop - 8);
@@ -1147,7 +1282,16 @@
           measureSegments,
           leadInStartX,
           timeZeroX,
+          overlayBottom,
+          pulseDescriptors,
           contentEndX: lastMeasure.endX,
+          liveHandles: {
+            ns,
+            pulseElements,
+            liveTapLayer,
+            playheadLine: playhead,
+            renderedTapIds: rhythmTest.liveTapEvents.map((tap) => tap.id),
+          },
         };
       }
 
@@ -1500,67 +1644,108 @@
 
     function _drawRhythmPulseRail(svg, ns, pulseDescriptors, activePulseIndex, layout) {
       if (!pulseDescriptors || pulseDescriptors.length === 0) {
-        return;
+        return [];
       }
 
-      const isResultPhase = layout.overlayPhase === 'result';
-      const baseRadius = 4.4;
-      const baseFill = '#8b7760';
+      const pulseElements = [];
 
       for (let i = 0; i < pulseDescriptors.length; i++) {
         const descriptor = pulseDescriptors[i];
-        const isActive = activePulseIndex === i;
-        const isPast = activePulseIndex != null && i < activePulseIndex;
+        const halo = document.createElementNS(ns, 'circle');
+        halo.setAttribute('cx', descriptor.x);
+        halo.setAttribute('cy', layout.baselineY);
+        halo.setAttribute('data-rhythm-pulse-index', String(i));
+        halo.setAttribute('data-rhythm-pulse-part', 'halo');
+        svg.appendChild(halo);
+
+        const ring = document.createElementNS(ns, 'circle');
+        ring.setAttribute('cx', descriptor.x);
+        ring.setAttribute('cy', layout.baselineY);
+        ring.setAttribute('fill', 'none');
+        ring.setAttribute('data-rhythm-pulse-index', String(i));
+        ring.setAttribute('data-rhythm-pulse-part', 'ring');
+        svg.appendChild(ring);
+
         const marker = document.createElementNS(ns, 'circle');
-        const markerRadius = isActive ? baseRadius + 1.8 : baseRadius;
-
-        if (isActive) {
-          const halo = document.createElementNS(ns, 'circle');
-          halo.setAttribute('cx', descriptor.x);
-          halo.setAttribute('cy', layout.baselineY);
-          halo.setAttribute('r', markerRadius + 5.2);
-          halo.setAttribute('fill', 'rgba(189, 158, 112, 0.16)');
-          svg.appendChild(halo);
-
-          const ring = document.createElementNS(ns, 'circle');
-          ring.setAttribute('cx', descriptor.x);
-          ring.setAttribute('cy', layout.baselineY);
-          ring.setAttribute('r', markerRadius + 3);
-          ring.setAttribute('fill', 'none');
-          ring.setAttribute('stroke', 'rgba(171, 134, 83, 0.48)');
-          ring.setAttribute('stroke-width', '1.4');
-          svg.appendChild(ring);
-        }
-
         marker.setAttribute('cx', descriptor.x);
         marker.setAttribute('cy', layout.baselineY);
-        marker.setAttribute('r', markerRadius);
-        marker.setAttribute(
-          'fill',
-          isResultPhase
-            ? '#c5b8a6'
-            : isActive
-            ? '#f0dfbf'
-            : baseFill,
-        );
-        marker.setAttribute(
-          'fill-opacity',
-          isResultPhase
-            ? '0.78'
-            : isActive
-            ? '1'
-            : isPast
-            ? '0.42'
-            : '0.68',
-        );
-        if (isActive) {
-          marker.setAttribute('stroke', '#9a7a4f');
-          marker.setAttribute('stroke-width', '1.1');
-        } else {
-          marker.setAttribute('stroke', 'none');
-        }
+        marker.setAttribute('data-rhythm-pulse-index', String(i));
+        marker.setAttribute('data-rhythm-pulse-part', 'marker');
         svg.appendChild(marker);
+
+        const elements = { halo, ring, marker };
+        _applyRhythmPulseState(
+          elements,
+          activePulseIndex === i,
+          activePulseIndex != null && i < activePulseIndex,
+          layout.overlayPhase,
+        );
+        pulseElements.push(elements);
       }
+
+      return pulseElements;
+    }
+
+    function _syncRhythmPulseRail(pulseElements, activePulseIndex, overlayPhase) {
+      if (!pulseElements || pulseElements.length === 0) {
+        return;
+      }
+
+      for (let i = 0; i < pulseElements.length; i++) {
+        _applyRhythmPulseState(
+          pulseElements[i],
+          activePulseIndex === i,
+          activePulseIndex != null && i < activePulseIndex,
+          overlayPhase,
+        );
+      }
+    }
+
+    function _applyRhythmPulseState(elements, isActive, isPast, overlayPhase) {
+      const isResultPhase = overlayPhase === 'result';
+      const baseRadius = 4.4;
+      const markerRadius = isActive ? baseRadius + 1.8 : baseRadius;
+
+      elements.halo.setAttribute('r', markerRadius + 5.2);
+      elements.halo.setAttribute('fill', 'rgba(189, 158, 112, 0.16)');
+      elements.halo.setAttribute(
+        'visibility',
+        isActive && !isResultPhase ? 'visible' : 'hidden',
+      );
+
+      elements.ring.setAttribute('r', markerRadius + 3);
+      elements.ring.setAttribute('stroke', 'rgba(171, 134, 83, 0.48)');
+      elements.ring.setAttribute('stroke-width', '1.4');
+      elements.ring.setAttribute(
+        'visibility',
+        isActive && !isResultPhase ? 'visible' : 'hidden',
+      );
+
+      elements.marker.setAttribute('r', markerRadius);
+      elements.marker.setAttribute(
+        'fill',
+        isResultPhase
+          ? '#c5b8a6'
+          : isActive
+          ? '#f0dfbf'
+          : '#8b7760',
+      );
+      elements.marker.setAttribute(
+        'fill-opacity',
+        isResultPhase
+          ? '0.78'
+          : isActive
+          ? '1'
+          : isPast
+          ? '0.42'
+          : '0.68',
+      );
+      if (isActive && !isResultPhase) {
+        elements.marker.setAttribute('stroke', '#9a7a4f');
+        elements.marker.setAttribute('stroke-width', '1.1');
+        return;
+      }
+      elements.marker.setAttribute('stroke', 'none');
     }
 
     function _drawOverlayLine(svg, ns, x, y1, y2, color, strokeWidth) {

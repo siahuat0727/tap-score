@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../rhythm_test/rhythm_test_models.dart';
 import '../state/rhythm_test_notifier.dart';
 import '../theme/app_colors.dart';
 import 'rhythm_test_panel.dart';
@@ -21,62 +22,99 @@ class RhythmTestWorkspace extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<RhythmTestNotifier>(
-      builder: (context, notifier, _) {
-        return LayoutBuilder(
-          builder: (context, constraints) {
-            final baseControlBarHeight = constraints.maxWidth < 700
-                ? 208.0
-                : 176.0;
-            final controlBarHeight = notifier.errorMessage == null
-                ? baseControlBarHeight
-                : baseControlBarHeight + 84;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final baseControlBarHeight = constraints.maxWidth < 700 ? 208.0 : 176.0;
+        final errorMessage = context.select<RhythmTestNotifier, String?>(
+          (notifier) => notifier.errorMessage,
+        );
+        final controlBarHeight = errorMessage == null
+            ? baseControlBarHeight
+            : baseControlBarHeight + 84;
 
-            return Column(
-              children: [
-                Expanded(
-                  child: Stack(
-                    children: [
-                      Positioned.fill(
-                        child: ScoreViewWidget(
-                          interactive: false,
-                          blockRendererPointerInput:
-                              notifier.showCenteredResult,
-                          onRendererKeyDown: onRendererKeyDown,
-                          onRendererReady: onRendererReady,
-                          rhythmOverlay: notifier.overlayRenderData,
-                          playbackIndex: notifier.playbackNoteIndex,
-                        ),
-                      ),
-                      Positioned.fill(
-                        child: Align(
-                          alignment: const Alignment(0, 0.72),
-                          child: Padding(
-                            padding: const EdgeInsets.fromLTRB(20, 32, 20, 28),
-                            child: AnimatedSwitcher(
-                              duration: const Duration(milliseconds: 180),
-                              child: notifier.showCenteredResult
-                                  ? const _RhythmTestResultCard(
-                                      key: ValueKey('rhythm-test-result-card'),
-                                    )
-                                  : const SizedBox.shrink(),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
+        return Column(
+          children: [
+            Expanded(
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: _RhythmTestScoreSurface(
+                      onRendererKeyDown: onRendererKeyDown,
+                      onRendererReady: onRendererReady,
+                    ),
                   ),
-                ),
-                Container(height: 1, color: AppColors.surfaceDivider),
-                SizedBox(
-                  height: controlBarHeight,
-                  child: RhythmTestPanel(onTempoChanged: onTempoChanged),
-                ),
-              ],
-            );
-          },
+                  const Positioned.fill(child: _RhythmTestResultOverlay()),
+                ],
+              ),
+            ),
+            Container(height: 1, color: AppColors.surfaceDivider),
+            SizedBox(
+              height: controlBarHeight,
+              child: RhythmTestPanel(onTempoChanged: onTempoChanged),
+            ),
+          ],
         );
       },
+    );
+  }
+}
+
+class _RhythmTestScoreSurface extends StatelessWidget {
+  const _RhythmTestScoreSurface({
+    required this.onRendererKeyDown,
+    this.onRendererReady,
+  });
+
+  final bool Function(String? key, String? code, bool repeat)?
+  onRendererKeyDown;
+  final VoidCallback? onRendererReady;
+
+  @override
+  Widget build(BuildContext context) {
+    final blockRendererPointerInput = context.select<RhythmTestNotifier, bool>(
+      (notifier) => notifier.showCenteredResult,
+    );
+    final rhythmOverlay = context
+        .select<RhythmTestNotifier, RhythmOverlayRenderData>(
+          (notifier) => notifier.overlayRenderData,
+        );
+    final playbackIndex = context.select<RhythmTestNotifier, int>(
+      (notifier) => notifier.playbackNoteIndex,
+    );
+
+    return ScoreViewWidget(
+      interactive: false,
+      blockRendererPointerInput: blockRendererPointerInput,
+      onRendererKeyDown: onRendererKeyDown,
+      onRendererReady: onRendererReady,
+      rhythmOverlay: rhythmOverlay,
+      playbackIndex: playbackIndex,
+    );
+  }
+}
+
+class _RhythmTestResultOverlay extends StatelessWidget {
+  const _RhythmTestResultOverlay();
+
+  @override
+  Widget build(BuildContext context) {
+    final showCenteredResult = context.select<RhythmTestNotifier, bool>(
+      (notifier) => notifier.showCenteredResult,
+    );
+
+    return Align(
+      alignment: const Alignment(0, 0.72),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 32, 20, 28),
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 180),
+          child: showCenteredResult
+              ? const _RhythmTestResultCard(
+                  key: ValueKey('rhythm-test-result-card'),
+                )
+              : const SizedBox.shrink(),
+        ),
+      ),
     );
   }
 }

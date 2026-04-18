@@ -9,12 +9,15 @@ void main() {
       staticPayload: _staticPayload(selectedIndex: -1),
       rhythmOverlayPayload: _rhythmOverlayPayload(playheadTimeSeconds: -0.4),
       playbackIndex: -1,
+      overlayChanged: true,
+      playbackChanged: true,
     );
 
-    expect(
-      commands.map((command) => command['type']).toList(),
-      ['renderScoreStatic', 'updateRhythmOverlay', 'updatePlaybackIndex'],
-    );
+    expect(commands.map((command) => command['type']).toList(), [
+      'renderScoreStatic',
+      'updateRhythmOverlay',
+      'updatePlaybackIndex',
+    ]);
   });
 
   test('rhythm overlay changes do not require a static render', () {
@@ -24,12 +27,14 @@ void main() {
       staticPayload: _staticPayload(selectedIndex: -1),
       rhythmOverlayPayload: _rhythmOverlayPayload(playheadTimeSeconds: -0.4),
       playbackIndex: -1,
+      overlayChanged: true,
+      playbackChanged: true,
     );
 
     final commands = controller.buildCommands(
-      staticPayload: _staticPayload(selectedIndex: -1),
       rhythmOverlayPayload: _rhythmOverlayPayload(playheadTimeSeconds: -0.2),
       playbackIndex: -1,
+      overlayChanged: true,
     );
 
     expect(commands, hasLength(1));
@@ -43,12 +48,14 @@ void main() {
       staticPayload: _staticPayload(selectedIndex: -1),
       rhythmOverlayPayload: _rhythmOverlayPayload(playheadTimeSeconds: -0.4),
       playbackIndex: -1,
+      overlayChanged: true,
+      playbackChanged: true,
     );
 
     final commands = controller.buildCommands(
-      staticPayload: _staticPayload(selectedIndex: -1),
       rhythmOverlayPayload: _rhythmOverlayPayload(playheadTimeSeconds: -0.4),
       playbackIndex: 2,
+      playbackChanged: true,
     );
 
     expect(commands, hasLength(1));
@@ -63,6 +70,8 @@ void main() {
       staticPayload: _staticPayload(selectedIndex: -1),
       rhythmOverlayPayload: _rhythmOverlayPayload(playheadTimeSeconds: -0.4),
       playbackIndex: 1,
+      overlayChanged: true,
+      playbackChanged: true,
     );
 
     final commands = controller.buildCommands(
@@ -71,10 +80,11 @@ void main() {
       playbackIndex: 1,
     );
 
-    expect(
-      commands.map((command) => command['type']).toList(),
-      ['renderScoreStatic', 'updateRhythmOverlay', 'updatePlaybackIndex'],
-    );
+    expect(commands.map((command) => command['type']).toList(), [
+      'renderScoreStatic',
+      'updateRhythmOverlay',
+      'updatePlaybackIndex',
+    ]);
   });
 }
 
