@@ -10,12 +10,14 @@ class RhythmTestWorkspace extends StatelessWidget {
   const RhythmTestWorkspace({
     required this.onTempoChanged,
     required this.onRendererKeyDown,
+    this.onRendererReady,
     super.key,
   });
 
   final ValueChanged<double> onTempoChanged;
   final bool Function(String? key, String? code, bool repeat)?
   onRendererKeyDown;
+  final VoidCallback? onRendererReady;
 
   @override
   Widget build(BuildContext context) {
@@ -41,6 +43,7 @@ class RhythmTestWorkspace extends StatelessWidget {
                           blockRendererPointerInput:
                               notifier.showCenteredResult,
                           onRendererKeyDown: onRendererKeyDown,
+                          onRendererReady: onRendererReady,
                           rhythmOverlay: notifier.overlayRenderData,
                           playbackIndex: notifier.playbackNoteIndex,
                         ),

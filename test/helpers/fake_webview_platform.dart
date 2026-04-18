@@ -2,6 +2,22 @@ import 'package:flutter/material.dart';
 import 'package:webview_flutter_platform_interface/webview_flutter_platform_interface.dart';
 
 class FakeWebViewPlatform extends WebViewPlatform {
+  static bool autoDispatchReady = true;
+  static final List<void Function()> _pendingReadyCallbacks = [];
+
+  static void reset() {
+    autoDispatchReady = true;
+    _pendingReadyCallbacks.clear();
+  }
+
+  static void dispatchPendingReadyMessages() {
+    final callbacks = List<void Function()>.from(_pendingReadyCallbacks);
+    _pendingReadyCallbacks.clear();
+    for (final callback in callbacks) {
+      callback();
+    }
+  }
+
   @override
   PlatformWebViewController createPlatformWebViewController(
     PlatformWebViewControllerCreationParams params,
@@ -34,6 +50,8 @@ class FakeWebViewPlatform extends WebViewPlatform {
 class _FakeWebViewController extends PlatformWebViewController {
   _FakeWebViewController(super.params) : super.implementation();
 
+  final Map<String, JavaScriptChannelParams> _channels = {};
+
   @override
   Future<void> setJavaScriptMode(JavaScriptMode javaScriptMode) async {}
 
@@ -48,10 +66,29 @@ class _FakeWebViewController extends PlatformWebViewController {
   @override
   Future<void> addJavaScriptChannel(
     JavaScriptChannelParams javaScriptChannelParams,
-  ) async {}
+  ) async {
+    _channels[javaScriptChannelParams.name] = javaScriptChannelParams;
+  }
 
   @override
-  Future<void> loadFlutterAsset(String key) async {}
+  Future<void> loadFlutterAsset(String key) async {
+    void sendReady() {
+      final channel = _channels['TapScore'];
+      if (channel == null) {
+        return;
+      }
+      channel.onMessageReceived(
+        const JavaScriptMessage(message: '{"type":"ready"}'),
+      );
+    }
+
+    if (FakeWebViewPlatform.autoDispatchReady) {
+      Future<void>.microtask(sendReady);
+      return;
+    }
+
+    FakeWebViewPlatform._pendingReadyCallbacks.add(sendReady);
+  }
 
   @override
   Future<void> runJavaScript(String javaScript) async {}

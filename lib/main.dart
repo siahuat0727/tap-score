@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'app/app_shell_ready_bridge.dart';
 import 'app/tap_score_router.dart';
+import 'services/audio_service.dart';
 import 'services/preset_score_repository.dart';
 import 'services/score_library_repository.dart';
 import 'services/score_transfer_service.dart';
@@ -19,6 +20,7 @@ class TapScoreApp extends StatefulWidget {
     this.scoreLibraryRepository,
     this.scoreTransferService,
     this.workspaceRepository,
+    this.rhythmTestAudioService,
     super.key,
   });
 
@@ -26,6 +28,7 @@ class TapScoreApp extends StatefulWidget {
   final ScoreLibraryRepository? scoreLibraryRepository;
   final ScoreTransferService? scoreTransferService;
   final WorkspaceRepository? workspaceRepository;
+  final AudioService? rhythmTestAudioService;
 
   @override
   State<TapScoreApp> createState() => _TapScoreAppState();
@@ -37,6 +40,7 @@ class _TapScoreAppState extends State<TapScoreApp> {
     scoreLibraryRepository: widget.scoreLibraryRepository,
     scoreTransferService: widget.scoreTransferService,
     workspaceRepository: widget.workspaceRepository,
+    rhythmTestAudioService: widget.rhythmTestAudioService,
   );
   final TapScoreRouteInformationParser _routeInformationParser =
       TapScoreRouteInformationParser();

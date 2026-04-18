@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../models/portable_score_document.dart';
 import '../screens/launch_screen.dart';
 import '../screens/workspace_screen.dart';
+import '../services/audio_service.dart';
 import '../services/preset_score_repository.dart';
 import '../services/score_library_repository.dart';
 import '../services/score_transfer_service.dart';
@@ -122,6 +123,7 @@ class TapScoreRouterDelegate extends RouterDelegate<Object>
     this.presetScoreRepository,
     this.scoreLibraryRepository,
     this.scoreTransferService,
+    this.rhythmTestAudioService,
     WorkspaceRepository? workspaceRepository,
   }) : _workspaceRepository =
            workspaceRepository ??
@@ -133,6 +135,7 @@ class TapScoreRouterDelegate extends RouterDelegate<Object>
   final PresetScoreRepository? presetScoreRepository;
   final ScoreLibraryRepository? scoreLibraryRepository;
   final ScoreTransferService? scoreTransferService;
+  final AudioService? rhythmTestAudioService;
   final WorkspaceRepository _workspaceRepository;
 
   @override
@@ -233,10 +236,12 @@ class TapScoreRouterDelegate extends RouterDelegate<Object>
       TapScoreWorkspaceRouteState(:final launchConfig) => MaterialPage<void>(
         key: ValueKey('tap-score-workspace-page-$_workspaceSession'),
         child: ChangeNotifierProvider(
-          create: (_) => ScoreNotifier(workspaceRepository: _workspaceRepository),
+          create: (_) =>
+              ScoreNotifier(workspaceRepository: _workspaceRepository),
           child: WorkspaceScreen(
             launchConfig: launchConfig,
             scoreTransferService: scoreTransferService,
+            rhythmTestAudioService: rhythmTestAudioService,
             onGoHome: showHome,
             onRouteSync: syncWorkspaceRoute,
           ),

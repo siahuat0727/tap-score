@@ -12,12 +12,13 @@ void main() {
     expect(html, contains('Browser and Flutter bootstrap'));
     expect(html, contains('App shell ready'));
     expect(html, contains('Workspace prepares inside the app'));
+    expect(html, contains('Loading score surface'));
+    expect(html, contains('Initializing Web Audio'));
     expect(html, contains('tap-score:flutter-first-frame'));
+    expect(html, contains('tap-score:workspace-startup'));
+    expect(html, contains('directWorkspaceRoute'));
     expect(html, contains('Tap Score could not start'));
-    expect(
-      html,
-      contains('flutter_bootstrap.js?v=__TAP_SCORE_DEPLOY_ID__'),
-    );
+    expect(html, contains('flutter_bootstrap.js?v=__TAP_SCORE_DEPLOY_ID__'));
 
     expect(bootstrap, contains('onEntrypointLoaded'));
     expect(bootstrap, contains('__TAP_SCORE_DEPLOY_ID__'));
@@ -37,10 +38,17 @@ void main() {
     expect(headers, contains('/flutter_service_worker.js'));
     expect(headers, contains('/manifest.json'));
     expect(headers, contains('/version.json'));
-    expect(headers, contains('Cache-Control: public, max-age=0, must-revalidate'));
     expect(
       headers,
-      isNot(contains('Cache-Control: public, max-age=31536000, immutable\n\n/*.mjs')),
+      contains('Cache-Control: public, max-age=0, must-revalidate'),
+    );
+    expect(
+      headers,
+      isNot(
+        contains(
+          'Cache-Control: public, max-age=31536000, immutable\n\n/*.mjs',
+        ),
+      ),
     );
   });
 }

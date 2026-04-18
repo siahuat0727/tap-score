@@ -23,6 +23,7 @@ class ScoreViewWidget extends StatefulWidget {
     this.interactive = true,
     this.blockRendererPointerInput = false,
     this.onRendererKeyDown,
+    this.onRendererReady,
     this.rhythmOverlay,
     this.playbackIndex,
     super.key,
@@ -32,6 +33,7 @@ class ScoreViewWidget extends StatefulWidget {
   final bool blockRendererPointerInput;
   final bool Function(String? key, String? code, bool repeat)?
   onRendererKeyDown;
+  final VoidCallback? onRendererReady;
   final RhythmOverlayRenderData? rhythmOverlay;
   final int? playbackIndex;
 
@@ -317,6 +319,7 @@ class _ScoreViewWidgetState extends State<ScoreViewWidget> {
           onReady: (sendCommand) {
             _sendCommand = sendCommand;
             _commandController.reset();
+            widget.onRendererReady?.call();
             _flushRendererCommands(forceStatic: true);
           },
         ),

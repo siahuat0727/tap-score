@@ -176,62 +176,123 @@
         <li id="tap-score-bootstrap-step-workspace" class="bootstrap-step">
           Workspace prepares inside the app
         </li>
+        <li id="tap-score-bootstrap-step-renderer" class="bootstrap-step">
+          Loading score surface
+        </li>
+        <li id="tap-score-bootstrap-step-audio" class="bootstrap-step" hidden>
+          Initializing Web Audio
+        </li>
       </ol>
     </div>
   </div>
   <script>
     window.tapScoreBootstrap = (function() {
+      var initialPath = window.location.pathname.replace(/\/+$/, '') || '/';
+      var directWorkspaceRoute =
+        initialPath === '/editor' || initialPath === '/practice';
       var root = document.getElementById('tap-score-bootstrap');
       var title = document.getElementById('tap-score-bootstrap-title');
       var detail = document.getElementById('tap-score-bootstrap-detail');
       var browserStep = document.getElementById('tap-score-bootstrap-step-browser');
       var appStep = document.getElementById('tap-score-bootstrap-step-app');
       var workspaceStep = document.getElementById('tap-score-bootstrap-step-workspace');
+      var rendererStep = document.getElementById('tap-score-bootstrap-step-renderer');
+      var audioStep = document.getElementById('tap-score-bootstrap-step-audio');
+
+      function _normalizeState(state) {
+        if (!state) return '';
+        return state.indexOf('is-') === 0 ? state : 'is-' + state;
+      }
 
       function _setStepState(element, state) {
         element.classList.remove('is-active', 'is-complete', 'is-error');
         if (state) {
-          element.classList.add(state);
+          element.classList.add(_normalizeState(state));
         }
       }
 
-      function _applyStage(nextTitle, nextDetail, browserState, appState) {
-        title.textContent = nextTitle;
-        detail.textContent = nextDetail;
-        _setStepState(browserStep, browserState);
-        _setStepState(appStep, appState);
+      function _setStepLabel(element, label) {
+        if (label) {
+          element.textContent = label;
+        }
+      }
+
+      function _setStepVisibility(element, visible) {
+        element.hidden = !visible;
+      }
+
+      function _applyStage(config) {
+        title.textContent = config.title;
+        detail.textContent = config.detail;
+        _setStepState(browserStep, config.browserState);
+        _setStepState(appStep, config.appState);
+        _setStepState(workspaceStep, config.workspaceState);
+        _setStepState(rendererStep, config.rendererState);
+        _setStepState(audioStep, config.audioState);
+        _setStepLabel(workspaceStep, config.workspaceLabel);
+        _setStepLabel(rendererStep, config.rendererLabel);
+        _setStepLabel(audioStep, config.audioLabel);
+        _setStepVisibility(audioStep, !!config.audioLabel);
+        if (config.hide || config.yieldToFlutter) {
+          root.classList.add('is-hidden');
+        } else {
+          root.classList.remove('is-hidden');
+        }
       }
 
       function setStage(stage) {
         if (stage === 'engine') {
           _applyStage(
-            'Starting Tap Score',
-            'Flutter downloaded. Starting the engine.',
-            'is-complete',
-            'is-active'
+            {
+              title: 'Starting Tap Score',
+              detail: 'Flutter downloaded. Starting the engine.',
+              browserState: 'complete',
+              appState: 'active',
+              workspaceState: 'pending',
+              rendererState: 'pending'
+            }
           );
           return;
         }
 
         if (stage === 'launch') {
           _applyStage(
-            'Starting Tap Score',
-            'Launching the app shell.',
-            'is-complete',
-            'is-active'
+            {
+              title: 'Starting Tap Score',
+              detail: 'Launching the app shell.',
+              browserState: 'complete',
+              appState: 'active',
+              workspaceState: 'pending',
+              rendererState: 'pending'
+            }
           );
         }
       }
 
       function markFlutterReady() {
-        _applyStage(
-          'Tap Score is ready',
-          'The app shell is on screen. Workspace setup continues inside the app when needed.',
-          'is-complete',
-          'is-complete'
-        );
-        workspaceStep.classList.add('is-active');
-        root.classList.add('is-hidden');
+        if (!directWorkspaceRoute) {
+          _applyStage({
+            title: 'Tap Score is ready',
+            detail: 'The app shell is on screen. Workspace setup continues inside the app when needed.',
+            browserState: 'complete',
+            appState: 'complete',
+            workspaceState: 'pending',
+            rendererState: 'pending',
+            hide: true
+          });
+          return;
+        }
+
+        _applyStage({
+          title: 'Preparing workspace',
+          detail: 'Tap Score is restoring the workspace before opening the page.',
+          browserState: 'complete',
+          appState: 'complete',
+          workspaceState: 'active',
+          rendererState: 'pending',
+          workspaceLabel: 'Workspace prepares inside the app',
+          rendererLabel: 'Loading score surface'
+        });
       }
 
       function fail(nextDetail) {
@@ -240,16 +301,47 @@
         _setStepState(browserStep, 'is-error');
         _setStepState(appStep, 'is-error');
         _setStepState(workspaceStep, 'is-error');
+        _setStepState(rendererStep, 'is-error');
+        _setStepState(audioStep, 'is-error');
+      }
+
+      function syncWorkspaceStartup(event) {
+        var detailPayload = event && event.detail;
+        if (typeof detailPayload !== 'string') {
+          return;
+        }
+
+        try {
+          var payload = JSON.parse(detailPayload);
+          _applyStage({
+            title: payload.title || 'Preparing workspace',
+            detail: payload.detail || 'Tap Score is preparing the workspace.',
+            browserState: 'complete',
+            appState: 'complete',
+            workspaceState: payload.workspaceState || 'pending',
+            rendererState: payload.rendererState || 'pending',
+            audioState: payload.audioState || '',
+            workspaceLabel: payload.workspaceLabel || 'Workspace prepares inside the app',
+            rendererLabel: payload.rendererLabel || 'Loading score surface',
+            audioLabel: payload.audioLabel || '',
+            hide: payload.dismissBootstrap === true,
+            yieldToFlutter: payload.yieldToFlutter === true
+          });
+        } catch (_) {
+          // Ignore malformed bridge payloads.
+        }
       }
 
       window.addEventListener('tap-score:flutter-first-frame', function() {
         markFlutterReady();
       }, { once: true });
+      window.addEventListener('tap-score:workspace-startup', syncWorkspaceStartup);
 
       return {
         fail: fail,
         markFlutterReady: markFlutterReady,
         setStage: setStage,
+        syncWorkspaceStartup: syncWorkspaceStartup,
       };
     })();
 

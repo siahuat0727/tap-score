@@ -107,6 +107,7 @@ TapScoreApp _buildTestApp({
     presetScoreRepository: _WidgetPresetScoreRepository(presets),
     scoreLibraryRepository: _WidgetMemoryScoreLibraryRepository(snapshot),
     scoreTransferService: scoreTransferService,
+    rhythmTestAudioService: AudioService(testMode: true),
   );
 }
 
@@ -141,8 +142,17 @@ Future<BuildContext> _openBlankWorkspace(
 }
 
 Future<void> _pumpWorkspaceReady(WidgetTester tester) async {
-  await tester.pump();
-  await tester.pump(const Duration(milliseconds: 300));
+  for (var i = 0; i < 40; i++) {
+    await tester.pump(const Duration(milliseconds: 50));
+    final workspaceVisible = find.byType(WorkspaceScreen).evaluate().isNotEmpty;
+    final startupVisible = find
+        .byKey(const ValueKey('workspace-startup-card'))
+        .evaluate()
+        .isNotEmpty;
+    if (workspaceVisible && !startupVisible) {
+      return;
+    }
+  }
 }
 
 ScoreNotifier _buildInitializedWorkspaceNotifier({
@@ -160,6 +170,10 @@ ScoreNotifier _buildInitializedWorkspaceNotifier({
 void main() {
   setUpAll(() {
     WebViewPlatform.instance = FakeWebViewPlatform();
+  });
+
+  setUp(() {
+    FakeWebViewPlatform.reset();
   });
 
   testWidgets('app launches to the lightweight home screen', (
@@ -239,6 +253,7 @@ void main() {
   testWidgets(
     'editor deep link keeps the shell visible while the workspace prepares',
     (WidgetTester tester) async {
+      FakeWebViewPlatform.autoDispatchReady = false;
       final loadGate = Completer<WorkspaceLoadResult>();
       final notifier = ScoreNotifier(
         workspaceRepository: _DelayedWorkspaceRepository(loadGate.future),
@@ -261,7 +276,7 @@ void main() {
         findsOneWidget,
       );
       expect(
-        find.byKey(const ValueKey('workspace-startup-step-app')),
+        find.byKey(const ValueKey('workspace-startup-step-workspace')),
         findsOneWidget,
       );
       expect(find.text('Restoring last workspace'), findsWidgets);
@@ -269,6 +284,16 @@ void main() {
       expect(find.byKey(const ValueKey('score-view-surface')), findsNothing);
 
       loadGate.complete(_workspaceLoadResult(score: Score()));
+      await tester.pump();
+
+      expect(
+        find.byKey(const ValueKey('workspace-startup-card')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const ValueKey('compose-toolbar')), findsOneWidget);
+      expect(find.byKey(const ValueKey('score-view-surface')), findsOneWidget);
+
+      FakeWebViewPlatform.dispatchPendingReadyMessages();
       await _pumpWorkspaceReady(tester);
 
       expect(
@@ -313,11 +338,104 @@ void main() {
         findsOneWidget,
       );
       expect(find.text('Preparing rhythm test'), findsWidgets);
-      expect(find.byKey(const ValueKey('rhythm-test-primary')), findsNothing);
+      expect(
+        find.byKey(const ValueKey('workspace-startup-step-audio')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const ValueKey('rhythm-test-primary')), findsOneWidget);
 
       audioGate.complete(true);
       await _pumpWorkspaceReady(tester);
 
+      expect(
+        find.byKey(const ValueKey('workspace-startup-card')),
+        findsNothing,
+      );
+      expect(find.byKey(const ValueKey('rhythm-test-primary')), findsOneWidget);
+    },
+  );
+
+  testWidgets('practice startup retries audio once before succeeding', (
+    WidgetTester tester,
+  ) async {
+    final notifier = ScoreNotifier(
+      workspaceRepository: _ImmediateWorkspaceRepository(
+        _workspaceLoadResult(
+          score: Score(
+            notes: const [Note(midi: 67, duration: NoteDuration.quarter)],
+          ),
+        ),
+      ),
+    );
+    final secondAttempt = Completer<bool>();
+    final audioService = _SequencedInitAudioService([
+      Future<bool>.value(false),
+      secondAttempt.future,
+    ]);
+    addTearDown(notifier.dispose);
+
+    await tester.pumpWidget(
+      _buildWorkspace(
+        notifier,
+        launchConfig: const WorkspaceLaunchConfig.restore(
+          initialMode: WorkspaceMode.rhythmTest,
+        ),
+        rhythmTestAudioService: audioService,
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('Retrying rhythm test audio'), findsOneWidget);
+    expect(audioService.initCalls, 2);
+
+    secondAttempt.complete(true);
+    await _pumpWorkspaceReady(tester);
+
+    expect(find.byKey(const ValueKey('workspace-startup-card')), findsNothing);
+    expect(find.byKey(const ValueKey('rhythm-test-primary')), findsOneWidget);
+  });
+
+  testWidgets(
+    'practice startup exposes manual retry after two failed attempts',
+    (WidgetTester tester) async {
+      final notifier = ScoreNotifier(
+        workspaceRepository: _ImmediateWorkspaceRepository(
+          _workspaceLoadResult(
+            score: Score(
+              notes: const [Note(midi: 67, duration: NoteDuration.quarter)],
+            ),
+          ),
+        ),
+      );
+      final audioService = _SequencedInitAudioService([
+        Future<bool>.value(false),
+        Future<bool>.value(false),
+        Future<bool>.value(true),
+      ]);
+      addTearDown(notifier.dispose);
+
+      await tester.pumpWidget(
+        _buildWorkspace(
+          notifier,
+          launchConfig: const WorkspaceLaunchConfig.restore(
+            initialMode: WorkspaceMode.rhythmTest,
+          ),
+          rhythmTestAudioService: audioService,
+        ),
+      );
+      await _pumpWorkspaceReady(tester);
+
+      expect(
+        find.byKey(const ValueKey('workspace-startup-retry')),
+        findsOneWidget,
+      );
+      expect(audioService.initCalls, 2);
+
+      await tester.tap(find.byKey(const ValueKey('workspace-startup-retry')));
+      await _pumpWorkspaceReady(tester);
+
+      expect(audioService.initCalls, 3);
       expect(
         find.byKey(const ValueKey('workspace-startup-card')),
         findsNothing,
@@ -332,7 +450,12 @@ void main() {
     final notifier = _buildInitializedWorkspaceNotifier();
     addTearDown(notifier.dispose);
 
-    await tester.pumpWidget(_buildWorkspace(notifier));
+    await tester.pumpWidget(
+      _buildWorkspace(
+        notifier,
+        rhythmTestAudioService: AudioService(testMode: true),
+      ),
+    );
     await _pumpWorkspaceReady(tester);
 
     final saveRect = tester.getRect(
@@ -356,7 +479,12 @@ void main() {
       final notifier = _buildInitializedWorkspaceNotifier();
       addTearDown(notifier.dispose);
 
-      await tester.pumpWidget(_buildWorkspace(notifier));
+      await tester.pumpWidget(
+        _buildWorkspace(
+          notifier,
+          rhythmTestAudioService: AudioService(testMode: true),
+        ),
+      );
       await _pumpWorkspaceReady(tester);
 
       expect(
@@ -418,7 +546,12 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    await tester.pumpWidget(_buildWorkspace(notifier));
+    await tester.pumpWidget(
+      _buildWorkspace(
+        notifier,
+        rhythmTestAudioService: AudioService(testMode: true),
+      ),
+    );
     await _pumpWorkspaceReady(tester);
 
     final scoreRect = tester.getRect(
@@ -453,7 +586,12 @@ void main() {
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
 
-      await tester.pumpWidget(_buildWorkspace(notifier));
+      await tester.pumpWidget(
+        _buildWorkspace(
+          notifier,
+          rhythmTestAudioService: AudioService(testMode: true),
+        ),
+      );
       await _pumpWorkspaceReady(tester);
 
       final scoreRect = tester.getRect(
@@ -478,7 +616,12 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    await tester.pumpWidget(_buildWorkspace(notifier));
+    await tester.pumpWidget(
+      _buildWorkspace(
+        notifier,
+        rhythmTestAudioService: AudioService(testMode: true),
+      ),
+    );
     await _pumpWorkspaceReady(tester);
 
     expect(
@@ -627,7 +770,12 @@ void main() {
     final notifier = _buildInitializedWorkspaceNotifier();
     addTearDown(notifier.dispose);
 
-    await tester.pumpWidget(_buildWorkspace(notifier));
+    await tester.pumpWidget(
+      _buildWorkspace(
+        notifier,
+        rhythmTestAudioService: AudioService(testMode: true),
+      ),
+    );
     await _pumpWorkspaceReady(tester);
 
     final before = tester.getRect(
@@ -657,7 +805,12 @@ void main() {
     final notifier = _buildInitializedWorkspaceNotifier();
     addTearDown(notifier.dispose);
 
-    await tester.pumpWidget(_buildWorkspace(notifier));
+    await tester.pumpWidget(
+      _buildWorkspace(
+        notifier,
+        rhythmTestAudioService: AudioService(testMode: true),
+      ),
+    );
     await _pumpWorkspaceReady(tester);
 
     expect(
@@ -690,7 +843,12 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    await tester.pumpWidget(_buildWorkspace(notifier));
+    await tester.pumpWidget(
+      _buildWorkspace(
+        notifier,
+        rhythmTestAudioService: AudioService(testMode: true),
+      ),
+    );
     await _pumpWorkspaceReady(tester);
 
     final topBarRect = tester.getRect(
@@ -720,7 +878,12 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    await tester.pumpWidget(_buildWorkspace(notifier));
+    await tester.pumpWidget(
+      _buildWorkspace(
+        notifier,
+        rhythmTestAudioService: AudioService(testMode: true),
+      ),
+    );
     await _pumpWorkspaceReady(tester);
 
     final saveRect = tester.getRect(
@@ -752,12 +915,16 @@ void main() {
     );
     addTearDown(notifier.dispose);
 
-    await tester.pumpWidget(_buildWorkspace(notifier));
+    await tester.pumpWidget(
+      _buildWorkspace(
+        notifier,
+        rhythmTestAudioService: AudioService(testMode: true),
+      ),
+    );
     await _pumpWorkspaceReady(tester);
 
     await tester.tap(find.byKey(const ValueKey('workspace-mode-rhythm-test')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 100));
+    await _pumpWorkspaceReady(tester);
 
     expect(find.byKey(const ValueKey('workspace-top-bar')), findsOneWidget);
     expect(find.byKey(const ValueKey('rhythm-test-primary')), findsOneWidget);
@@ -784,7 +951,7 @@ void main() {
     expect(buttonRect.width, greaterThan(300));
 
     await tester.tap(find.byKey(const ValueKey('workspace-mode-compose')));
-    await tester.pump();
+    await _pumpWorkspaceReady(tester);
 
     expect(find.byKey(const ValueKey('compose-toolbar')), findsOneWidget);
     expect(find.byKey(const ValueKey('rhythm-test-primary')), findsNothing);
@@ -808,12 +975,16 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    await tester.pumpWidget(_buildWorkspace(notifier));
+    await tester.pumpWidget(
+      _buildWorkspace(
+        notifier,
+        rhythmTestAudioService: AudioService(testMode: true),
+      ),
+    );
     await _pumpWorkspaceReady(tester);
 
     await tester.tap(find.byKey(const ValueKey('workspace-mode-rhythm-test')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 100));
+    await _pumpWorkspaceReady(tester);
 
     final screenHeight = tester.view.physicalSize.height;
     expect(
@@ -843,12 +1014,16 @@ void main() {
     );
     addTearDown(notifier.dispose);
 
-    await tester.pumpWidget(_buildWorkspace(notifier));
+    await tester.pumpWidget(
+      _buildWorkspace(
+        notifier,
+        rhythmTestAudioService: AudioService(testMode: true),
+      ),
+    );
     await _pumpWorkspaceReady(tester);
 
     await tester.tap(find.byKey(const ValueKey('workspace-mode-rhythm-test')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 100));
+    await _pumpWorkspaceReady(tester);
 
     expect(
       find.byKey(const ValueKey('rhythm-test-tempo-value')),
@@ -1446,7 +1621,12 @@ void main() {
     );
     addTearDown(notifier.dispose);
 
-    await tester.pumpWidget(_buildWorkspace(notifier));
+    await tester.pumpWidget(
+      _buildWorkspace(
+        notifier,
+        rhythmTestAudioService: AudioService(testMode: true),
+      ),
+    );
     await _pumpWorkspaceReady(tester);
 
     await tester.sendKeyEvent(LogicalKeyboardKey.space);
@@ -1627,17 +1807,21 @@ void main() {
       );
       addTearDown(notifier.dispose);
 
-      await tester.pumpWidget(_buildWorkspace(notifier));
+      await tester.pumpWidget(
+        _buildWorkspace(
+          notifier,
+          rhythmTestAudioService: AudioService(testMode: true),
+        ),
+      );
       await _pumpWorkspaceReady(tester);
 
       await tester.tap(
         find.byKey(const ValueKey('workspace-mode-rhythm-test')),
       );
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 100));
+      await _pumpWorkspaceReady(tester);
 
       await tester.tap(find.byKey(const ValueKey('workspace-mode-compose')));
-      await tester.pump();
+      await _pumpWorkspaceReady(tester);
 
       notifier.selectNote(null);
       await tester.pump();
@@ -1809,7 +1993,37 @@ class _DelayedInitAudioService extends AudioService {
   final Future<bool> _initFuture;
 
   @override
-  Future<bool> init() => _initFuture;
+  Future<bool> init({Duration webTimeout = const Duration(seconds: 12)}) =>
+      _initFuture;
+
+  @override
+  void stopPlayback() {}
+
+  @override
+  void dispose() {}
+}
+
+class _SequencedInitAudioService extends AudioService {
+  _SequencedInitAudioService(this._results);
+
+  final List<Future<bool>> _results;
+  int initCalls = 0;
+
+  @override
+  String? get initializationError => 'Simulated Web Audio timeout.';
+
+  @override
+  Future<bool> init({Duration webTimeout = const Duration(seconds: 12)}) {
+    final index = initCalls < _results.length ? initCalls : _results.length - 1;
+    initCalls += 1;
+    return _results[index];
+  }
+
+  @override
+  Future<void> preloadRhythmTestNotes(
+    Iterable<int> melodyMidis, {
+    Duration webTimeout = const Duration(seconds: 12),
+  }) async {}
 
   @override
   void stopPlayback() {}

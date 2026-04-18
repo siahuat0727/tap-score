@@ -418,10 +418,14 @@ class _FakeAudioService extends AudioService {
   int preloadCalls = 0;
 
   @override
-  Future<bool> init() async => true;
+  Future<bool> init({
+    Duration webTimeout = const Duration(seconds: 12),
+  }) async => true;
 
   @override
-  Future<bool> preload() async {
+  Future<bool> preload({
+    Duration webTimeout = const Duration(seconds: 12),
+  }) async {
     preloadCalls += 1;
     return true;
   }

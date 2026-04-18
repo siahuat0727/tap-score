@@ -517,7 +517,9 @@ class _FakeAudioService extends AudioService {
   int _nextHandleId = 1;
 
   @override
-  Future<bool> init() async => true;
+  Future<bool> init({
+    Duration webTimeout = const Duration(seconds: 12),
+  }) async => true;
 
   @override
   Future<AudioNoteHandle?> startNote(

@@ -12,6 +12,11 @@ import '../services/playback_schedule.dart';
 
 enum RhythmTestPhase { idle, countIn, running, finished }
 
+enum RhythmTestPreparationPhase { initializingAudio, preloadingNotes }
+
+typedef RhythmTestPreparationProgressCallback =
+    void Function(RhythmTestPreparationPhase phase);
+
 class RhythmTestNotifier extends ChangeNotifier {
   static const Duration resultRevealLockDuration = Duration(seconds: 1);
   static const Duration _visualPlayheadUpdateInterval = Duration(
@@ -276,13 +281,25 @@ class RhythmTestNotifier extends ChangeNotifier {
 
   bool get primaryActionEnabled => isBusy || canStart;
 
-  Future<void> init() async {
-    if (_isInitialized || _errorMessage != null) {
+  Future<void> init({
+    RhythmTestPreparationProgressCallback? onPreparationPhaseChanged,
+    Duration audioTimeout = const Duration(seconds: 12),
+  }) async {
+    if (_isInitialized) {
       _emitChange();
       return;
     }
 
-    final initialized = await _audioService.init();
+    final hadError = _errorMessage != null;
+    _errorMessage = null;
+    if (hadError) {
+      _emitChange();
+    }
+
+    onPreparationPhaseChanged?.call(
+      RhythmTestPreparationPhase.initializingAudio,
+    );
+    final initialized = await _audioService.init(webTimeout: audioTimeout);
     if (!initialized) {
       _errorMessage =
           _audioService.initializationError ??
@@ -292,8 +309,12 @@ class RhythmTestNotifier extends ChangeNotifier {
     }
 
     try {
+      onPreparationPhaseChanged?.call(
+        RhythmTestPreparationPhase.preloadingNotes,
+      );
       await _audioService.preloadRhythmTestNotes(
         _timeline.playbackNotes.map((note) => note.midi),
+        webTimeout: audioTimeout,
       );
     } catch (error) {
       _errorMessage = 'Rhythm test audio preparation failed: $error';

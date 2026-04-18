@@ -4,10 +4,7 @@ import 'dart:js_interop';
 import 'dart:async';
 
 @JS('initWebAudio')
-external JSAny? _initWebAudio();
-
-@JS('isWebAudioReady')
-external JSBoolean _isWebAudioReady();
+external JSPromise<JSBoolean> _initWebAudio();
 
 @JS('getWebAudioInitError')
 external JSString _getWebAudioInitError();
@@ -21,26 +18,34 @@ external void _stopWebNote(int handleId);
 @JS('preloadWebNotes')
 external JSPromise<JSAny?> _preloadWebNotes(JSArray<JSNumber> midis);
 
-Future<bool> initWebAudio({
-  Duration timeout = const Duration(seconds: 10),
+Future<T> _awaitWithTimeout<T>(
+  Future<T> future, {
+  required Duration timeout,
+  required String timeoutMessage,
 }) async {
-  _initWebAudio();
+  try {
+    return await future.timeout(timeout);
+  } on TimeoutException {
+    throw TimeoutException(timeoutMessage);
+  }
+}
 
-  final deadline = DateTime.now().add(timeout);
-  while (DateTime.now().isBefore(deadline)) {
-    if (_isWebAudioReady().toDart) {
-      return true;
-    }
-
-    final error = _getWebAudioInitError().toDart;
-    if (error.isNotEmpty) {
-      throw StateError(error);
-    }
-
-    await Future<void>.delayed(const Duration(milliseconds: 50));
+Future<bool> initWebAudio({
+  Duration timeout = const Duration(seconds: 12),
+}) async {
+  final initialized = await _awaitWithTimeout(
+    _initWebAudio().toDart.then((result) => result.toDart),
+    timeout: timeout,
+    timeoutMessage: 'Timed out waiting for Web Audio initialization.',
+  );
+  if (initialized) {
+    return true;
   }
 
-  throw TimeoutException('Timed out waiting for Web Audio initialization.');
+  final error = _getWebAudioInitError().toDart;
+  throw StateError(
+    error.isNotEmpty ? error : 'Piano audio failed to initialize.',
+  );
 }
 
 int playWebNote(int midi, int velocity) {
@@ -51,7 +56,14 @@ void stopWebNote(int handleId) {
   _stopWebNote(handleId);
 }
 
-Future<void> preloadWebNotes(List<int> midis) async {
+Future<void> preloadWebNotes(
+  List<int> midis, {
+  Duration timeout = const Duration(seconds: 12),
+}) async {
   final jsMidis = midis.map((midi) => midi.toJS).toList(growable: false).toJS;
-  await _preloadWebNotes(jsMidis).toDart;
+  await _awaitWithTimeout(
+    _preloadWebNotes(jsMidis).toDart,
+    timeout: timeout,
+    timeoutMessage: 'Timed out waiting for rhythm test audio preload.',
+  );
 }

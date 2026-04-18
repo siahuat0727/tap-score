@@ -59,16 +59,21 @@ class AudioService {
   }
 
   /// Initialize by loading the bundled SoundFont.
-  Future<bool> init() async {
-    return _ensureInitialized();
+  Future<bool> init({Duration webTimeout = const Duration(seconds: 12)}) async {
+    return _ensureInitialized(webTimeout: webTimeout);
   }
 
-  Future<bool> preload() async {
-    return _ensureInitialized();
+  Future<bool> preload({
+    Duration webTimeout = const Duration(seconds: 12),
+  }) async {
+    return _ensureInitialized(webTimeout: webTimeout);
   }
 
-  Future<void> preloadRhythmTestNotes(Iterable<int> melodyMidis) async {
-    if (!await init()) {
+  Future<void> preloadRhythmTestNotes(
+    Iterable<int> melodyMidis, {
+    Duration webTimeout = const Duration(seconds: 12),
+  }) async {
+    if (!await init(webTimeout: webTimeout)) {
       throw StateError(
         initializationError ?? 'Rhythm test audio failed to initialize.',
       );
@@ -82,17 +87,18 @@ class AudioService {
       _accentedMetronomeMidi,
       _regularMetronomeMidi,
       for (final midi in melodyMidis) midi.clamp(0, 127).toInt(),
-    }.toList(growable: false)
-      ..sort();
+    }.toList(growable: false)..sort();
 
     if (midis.isEmpty) {
       return;
     }
 
-    await web_audio.preloadWebNotes(midis);
+    await web_audio.preloadWebNotes(midis, timeout: webTimeout);
   }
 
-  Future<bool> _ensureInitialized() async {
+  Future<bool> _ensureInitialized({
+    Duration webTimeout = const Duration(seconds: 12),
+  }) async {
     if (_initialized) return true;
     if (_testMode) {
       _initialized = true;
@@ -111,13 +117,13 @@ class AudioService {
 
     _setInitializationState(AudioInitializationState.loading);
 
-    _initializationFuture = _performInitialization();
+    _initializationFuture = _performInitialization(webTimeout: webTimeout);
     final initialized = await _initializationFuture!;
     _initializationFuture = null;
     return initialized;
   }
 
-  Future<bool> _performInitialization() async {
+  Future<bool> _performInitialization({required Duration webTimeout}) async {
     if (_initialized) {
       _setInitializationState(AudioInitializationState.ready);
       return true;
@@ -125,7 +131,7 @@ class AudioService {
 
     if (kIsWeb) {
       try {
-        _initialized = await web_audio.initWebAudio();
+        _initialized = await web_audio.initWebAudio(timeout: webTimeout);
         _setInitializationState(
           _initialized
               ? AudioInitializationState.ready

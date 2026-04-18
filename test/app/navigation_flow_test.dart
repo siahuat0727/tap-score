@@ -7,6 +7,7 @@ import 'package:tap_score/models/note.dart';
 import 'package:tap_score/models/score.dart';
 import 'package:tap_score/models/score_library.dart';
 import 'package:tap_score/screens/workspace_screen.dart';
+import 'package:tap_score/services/audio_service.dart';
 import 'package:tap_score/services/preset_score_repository.dart';
 import 'package:tap_score/services/score_library_repository.dart';
 import 'package:tap_score/state/score_notifier.dart';
@@ -17,6 +18,10 @@ import '../helpers/fake_webview_platform.dart';
 void main() {
   setUpAll(() {
     WebViewPlatform.instance = FakeWebViewPlatform();
+  });
+
+  setUp(() {
+    FakeWebViewPlatform.reset();
   });
 
   testWidgets('create new score opens the unified workspace in compose', (
@@ -31,7 +36,10 @@ void main() {
 
     expect(find.byType(WorkspaceScreen), findsOneWidget);
     expect(find.byKey(const ValueKey('workspace-top-bar')), findsOneWidget);
-    expect(find.byKey(const ValueKey('workspace-mode-compose')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('workspace-mode-compose')),
+      findsOneWidget,
+    );
     expect(find.byKey(const ValueKey('workspace-home-button')), findsOneWidget);
 
     final context = tester.element(find.byType(WorkspaceScreen));
@@ -76,11 +84,10 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
     await tester.tap(find.byKey(const ValueKey('practice-preset-preset-1')));
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
+    await _pumpWorkspaceInteractive(tester);
 
     await tester.tap(find.byKey(const ValueKey('workspace-mode-compose')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 150));
+    await _pumpWorkspaceInteractive(tester);
 
     expect(find.byKey(const ValueKey('compose-toolbar')), findsOneWidget);
     expect(find.byKey(const ValueKey('rhythm-test-primary')), findsNothing);
@@ -91,12 +98,23 @@ void main() {
     expect(notifier.currentScoreLabel, 'Triplet Study');
 
     await tester.tap(find.byKey(const ValueKey('workspace-mode-rhythm-test')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 150));
+    await _pumpWorkspaceInteractive(tester);
 
     expect(find.byKey(const ValueKey('rhythm-test-primary')), findsOneWidget);
     expect(find.byKey(const ValueKey('compose-toolbar')), findsNothing);
   });
+}
+
+Future<void> _pumpWorkspaceInteractive(WidgetTester tester) async {
+  for (var i = 0; i < 40; i++) {
+    await tester.pump(const Duration(milliseconds: 50));
+    if (find
+        .byKey(const ValueKey('workspace-startup-card'))
+        .evaluate()
+        .isEmpty) {
+      return;
+    }
+  }
 }
 
 final _presets = [
@@ -118,6 +136,7 @@ TapScoreApp _buildTestApp({
   return TapScoreApp(
     presetScoreRepository: _AppPresetScoreRepository(presets),
     scoreLibraryRepository: _AppMemoryScoreLibraryRepository(snapshot),
+    rhythmTestAudioService: AudioService(testMode: true),
   );
 }
 

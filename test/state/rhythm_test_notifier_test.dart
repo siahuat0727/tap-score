@@ -221,6 +221,55 @@ void main() {
     ]);
   });
 
+  test('init reports audio preparation phases in order', () async {
+    final audioService = _FakeAudioService();
+    final notifier = RhythmTestNotifier(
+      score: Score(
+        bpm: 120,
+        notes: const [
+          Note(midi: 60, duration: NoteDuration.quarter),
+          Note(midi: 62, duration: NoteDuration.quarter),
+        ],
+      ),
+      audioService: audioService,
+      timelineBuilder: _FixedTimelineBuilder(
+        const RhythmTimeline(
+          expectedEvents: [
+            ExpectedRhythmEvent(id: 1, noteIndex: 0, timeSeconds: 0),
+            ExpectedRhythmEvent(id: 2, noteIndex: 1, timeSeconds: 0.1),
+          ],
+          playbackNotes: [
+            RhythmMelodyEvent(
+              noteIndex: 0,
+              midi: 60,
+              startSeconds: 0,
+              durationSeconds: 0.1,
+            ),
+            RhythmMelodyEvent(
+              noteIndex: 1,
+              midi: 62,
+              startSeconds: 0.1,
+              durationSeconds: 0.1,
+            ),
+          ],
+          measureBoundaryTimesSeconds: [0, 0.2],
+          totalDurationSeconds: 0.2,
+          pulseDurationSeconds: 0.1,
+          pulsesPerMeasure: 4,
+        ),
+      ),
+    );
+    addTearDown(notifier.dispose);
+
+    final phases = <RhythmTestPreparationPhase>[];
+    await notifier.init(onPreparationPhaseChanged: phases.add);
+
+    expect(phases, [
+      RhythmTestPreparationPhase.initializingAudio,
+      RhythmTestPreparationPhase.preloadingNotes,
+    ]);
+  });
+
   test('running retriggers repeated same-pitch notes in order', () async {
     final audioService = _FakeAudioService();
     final notifier = RhythmTestNotifier(
@@ -814,10 +863,15 @@ class _FakeAudioService extends AudioService {
   int _nextHandleId = 1;
 
   @override
-  Future<bool> init() async => true;
+  Future<bool> init({
+    Duration webTimeout = const Duration(seconds: 12),
+  }) async => true;
 
   @override
-  Future<void> preloadRhythmTestNotes(Iterable<int> melodyMidis) async {
+  Future<void> preloadRhythmTestNotes(
+    Iterable<int> melodyMidis, {
+    Duration webTimeout = const Duration(seconds: 12),
+  }) async {
     preloadRequests.add(melodyMidis.toList(growable: false));
   }
 
