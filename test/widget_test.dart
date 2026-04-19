@@ -102,12 +102,14 @@ TapScoreApp _buildTestApp({
   List<PresetScoreEntry> presets = const [],
   ScoreLibrarySnapshot? snapshot,
   ScoreTransferService? scoreTransferService,
+  RouteInformationProvider? routeInformationProvider,
 }) {
   return TapScoreApp(
     presetScoreRepository: _WidgetPresetScoreRepository(presets),
     scoreLibraryRepository: _WidgetMemoryScoreLibraryRepository(snapshot),
     scoreTransferService: scoreTransferService,
     rhythmTestAudioService: AudioService(testMode: true),
+    routeInformationProvider: routeInformationProvider,
   );
 }
 
@@ -301,6 +303,67 @@ void main() {
         findsNothing,
       );
       expect(find.byKey(const ValueKey('compose-toolbar')), findsOneWidget);
+      expect(find.byKey(const ValueKey('score-view-surface')), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'practice deep link mounts the workspace and clears startup overlay',
+    (WidgetTester tester) async {
+      FakeWebViewPlatform.autoDispatchReady = false;
+
+      await tester.pumpWidget(
+        _buildTestApp(
+          presets: [
+            PresetScoreEntry(
+              id: 'triplet_study',
+              name: 'Triplet Study',
+              assetPath: 'assets/presets/triplet_study.json',
+              score: Score(
+                notes: const [Note(midi: 67, duration: NoteDuration.quarter)],
+                bpm: 96,
+              ),
+            ),
+          ],
+          routeInformationProvider: PlatformRouteInformationProvider(
+            initialRouteInformation: RouteInformation(
+              uri: Uri.parse('/practice?preset=triplet_study'),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.byType(WorkspaceScreen), findsOneWidget);
+      expect(find.byKey(const ValueKey('workspace-top-bar')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('workspace-home-button')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('workspace-startup-card')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const ValueKey('score-view-surface')), findsOneWidget);
+      expect(find.byKey(const ValueKey('rhythm-test-primary')), findsOneWidget);
+
+      final context = tester.element(find.byType(WorkspaceScreen));
+      final notifier = Provider.of<ScoreNotifier>(context, listen: false);
+      expect(notifier.activePresetId, 'triplet_study');
+      expect(notifier.currentScoreLabel, 'Triplet Study');
+
+      FakeWebViewPlatform.dispatchPendingReadyMessages();
+      await _pumpWorkspaceReady(tester);
+
+      expect(
+        find.byKey(const ValueKey('workspace-startup-card')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('workspace-home-button')),
+        findsOneWidget,
+      );
       expect(find.byKey(const ValueKey('score-view-surface')), findsOneWidget);
     },
   );

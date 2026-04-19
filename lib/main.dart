@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'app/app_shell_ready_bridge.dart';
@@ -21,6 +22,7 @@ class TapScoreApp extends StatefulWidget {
     this.scoreTransferService,
     this.workspaceRepository,
     this.rhythmTestAudioService,
+    this.routeInformationProvider,
     super.key,
   });
 
@@ -29,6 +31,7 @@ class TapScoreApp extends StatefulWidget {
   final ScoreTransferService? scoreTransferService;
   final WorkspaceRepository? workspaceRepository;
   final AudioService? rhythmTestAudioService;
+  final RouteInformationProvider? routeInformationProvider;
 
   @override
   State<TapScoreApp> createState() => _TapScoreAppState();
@@ -44,13 +47,42 @@ class _TapScoreAppState extends State<TapScoreApp> {
   );
   final TapScoreRouteInformationParser _routeInformationParser =
       TapScoreRouteInformationParser();
+  PlatformRouteInformationProvider? _ownedRouteInformationProvider;
 
   @override
   void initState() {
     super.initState();
+    _syncRouteInformationProvider();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       notifyAppShellReady();
     });
+  }
+
+  @override
+  void didUpdateWidget(covariant TapScoreApp oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.routeInformationProvider != widget.routeInformationProvider) {
+      _syncRouteInformationProvider();
+    }
+  }
+
+  @override
+  void dispose() {
+    _ownedRouteInformationProvider?.dispose();
+    super.dispose();
+  }
+
+  void _syncRouteInformationProvider() {
+    _ownedRouteInformationProvider?.dispose();
+    _ownedRouteInformationProvider = null;
+
+    if (widget.routeInformationProvider != null || !kIsWeb) {
+      return;
+    }
+
+    _ownedRouteInformationProvider = PlatformRouteInformationProvider(
+      initialRouteInformation: RouteInformation(uri: Uri.base),
+    );
   }
 
   @override
@@ -61,6 +93,8 @@ class _TapScoreAppState extends State<TapScoreApp> {
       theme: AppTheme.lightTheme,
       routerDelegate: _routerDelegate,
       routeInformationParser: _routeInformationParser,
+      routeInformationProvider:
+          widget.routeInformationProvider ?? _ownedRouteInformationProvider,
     );
   }
 }

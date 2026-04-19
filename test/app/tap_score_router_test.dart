@@ -105,7 +105,7 @@ void main() {
   });
 
   test(
-    'router delegate notifies when a direct workspace route is applied',
+    'router delegate notifies when a direct practice route is applied',
     () async {
       final delegate = TapScoreRouterDelegate();
       var notifications = 0;
@@ -114,14 +114,23 @@ void main() {
       });
 
       await delegate.setNewRoutePath(
-        const TapScoreWorkspaceRouteState(
-          launchConfig: WorkspaceLaunchConfig.blank(),
-          routeLocation: '/editor?mode=blank',
+        TapScoreWorkspaceRouteState(
+          launchConfig: WorkspaceLaunchConfig.preset(
+            'triplet_study',
+            initialMode: WorkspaceMode.rhythmTest,
+          ),
+          routeLocation: '/practice?preset=triplet_study',
         ),
       );
 
       expect(notifications, 1);
       expect(delegate.currentConfiguration, isA<TapScoreWorkspaceRouteState>());
+      expect(
+        (delegate.currentConfiguration as TapScoreWorkspaceRouteState)
+            .launchConfig
+            .initialMode,
+        WorkspaceMode.rhythmTest,
+      );
     },
   );
 }
