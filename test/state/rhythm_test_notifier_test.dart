@@ -19,6 +19,7 @@ void main() {
           bpm: 120,
           notes: [const Note(midi: 60, duration: NoteDuration.quarter)],
         ),
+        referenceBpm: 120,
         audioService: _FakeAudioService(),
         timelineBuilder: _FixedTimelineBuilder(
           const RhythmTimeline(
@@ -78,6 +79,7 @@ void main() {
           bpm: 120,
           notes: [const Note(midi: 60, duration: NoteDuration.quarter)],
         ),
+        referenceBpm: 120,
         audioService: _FakeAudioService(),
         timelineBuilder: _FixedTimelineBuilder(
           const RhythmTimeline(
@@ -127,6 +129,7 @@ void main() {
           Note(midi: 62, duration: NoteDuration.quarter),
         ],
       ),
+      referenceBpm: 120,
       audioService: audioService,
       timelineBuilder: _FixedTimelineBuilder(
         const RhythmTimeline(
@@ -183,6 +186,7 @@ void main() {
           Note(midi: 62, duration: NoteDuration.quarter),
         ],
       ),
+      referenceBpm: 120,
       audioService: audioService,
       timelineBuilder: _FixedTimelineBuilder(
         const RhythmTimeline(
@@ -231,6 +235,7 @@ void main() {
           Note(midi: 62, duration: NoteDuration.quarter),
         ],
       ),
+      referenceBpm: 120,
       audioService: audioService,
       timelineBuilder: _FixedTimelineBuilder(
         const RhythmTimeline(
@@ -280,6 +285,7 @@ void main() {
           Note(midi: 60, duration: NoteDuration.quarter),
         ],
       ),
+      referenceBpm: 120,
       audioService: audioService,
       timelineBuilder: _FixedTimelineBuilder(
         const RhythmTimeline(
@@ -332,6 +338,7 @@ void main() {
         bpm: 120,
         notes: const [Note(midi: 60, duration: NoteDuration.quarter)],
       ),
+      referenceBpm: 120,
       audioService: _FakeAudioService(),
       timelineBuilder: _FixedTimelineBuilder(
         const RhythmTimeline(
@@ -387,6 +394,7 @@ void main() {
           bpm: 120,
           notes: const [Note(midi: 60, duration: NoteDuration.quarter)],
         ),
+        referenceBpm: 120,
         audioService: _FakeAudioService(),
         timelineBuilder: _FixedTimelineBuilder(
           const RhythmTimeline(
@@ -452,6 +460,7 @@ void main() {
         bpm: 120,
         notes: const [Note(midi: 60, duration: NoteDuration.quarter)],
       ),
+      referenceBpm: 120,
       audioService: _FakeAudioService(),
       timelineBuilder: _FixedTimelineBuilder(
         const RhythmTimeline(
@@ -512,6 +521,7 @@ void main() {
           bpm: 120,
           notes: const [Note(midi: 60, duration: NoteDuration.quarter)],
         ),
+        referenceBpm: 120,
         audioService: _FakeAudioService(),
         timelineBuilder: _FixedTimelineBuilder(
           const RhythmTimeline(
@@ -550,7 +560,7 @@ void main() {
       expect(notifier.suggestedRetryBpm, 102);
       expect(
         notifier.resultRecommendationLabel,
-        'Retry slower at 102 BPM and tap only note starts.',
+        "Not perfect yet. Lower BPM to 102 and try again. You'll lock it in more cleanly.",
       );
       expect(notifier.overlayRenderData.phase, RhythmOverlayRenderPhase.result);
       expect(notifier.overlayRenderData.errorLabelThresholdBeats, 0.05);
@@ -568,6 +578,7 @@ void main() {
           bpm: 120,
           notes: const [Note(midi: 60, duration: NoteDuration.quarter)],
         ),
+        referenceBpm: 120,
         audioService: _FakeAudioService(),
         timelineBuilder: _FixedTimelineBuilder(
           const RhythmTimeline(
@@ -655,6 +666,7 @@ void main() {
           bpm: 120,
           notes: const [Note(midi: 60, duration: NoteDuration.quarter)],
         ),
+        referenceBpm: 120,
         audioService: _FakeAudioService(),
         timelineBuilder: _FixedTimelineBuilder(
           const RhythmTimeline(
@@ -706,7 +718,7 @@ void main() {
       expect(notifier.resultMaxErrorBeats, closeTo(0.12, 0.001));
       expect(
         notifier.resultRecommendationLabel,
-        'Keep BPM and tighten alignment.',
+        "Not perfect yet. Lower BPM to 102 and try again. You'll lock it in more cleanly.",
       );
       expect(notifier.overlayRenderData.largeErrorThresholdBeats, 0.1);
 
@@ -717,20 +729,21 @@ void main() {
       expect(notifier.resultStatusLabel, 'Perfect');
       expect(
         notifier.resultRecommendationLabel,
-        'Raise BPM by 5–10 and retry.',
+        "Perfect at the original tempo. You've got this pattern down.",
       );
       expect(notifier.overlayRenderData.largeErrorThresholdBeats, 0.15);
     },
   );
 
   test(
-    'clean but loose recommendation identifies consistent late taps',
+    'clean but loose recommendation ignores shift direction and recommends slowing down',
     () async {
       final notifier = RhythmTestNotifier(
         score: Score(
           bpm: 120,
           notes: const [Note(midi: 60, duration: NoteDuration.quarter)],
         ),
+        referenceBpm: 120,
         audioService: _FakeAudioService(),
         timelineBuilder: _FixedTimelineBuilder(
           const RhythmTimeline(
@@ -781,7 +794,130 @@ void main() {
       expect(notifier.resultShiftBeats, closeTo(0.06, 0.001));
       expect(
         notifier.resultRecommendationLabel,
-        "You're consistently late. Keep BPM and tap slightly earlier.",
+        "Not perfect yet. Lower BPM to 102 and try again. You'll lock it in more cleanly.",
+      );
+    },
+  );
+
+  test('perfect below the reference BPM recommends raising tempo', () async {
+    final notifier = RhythmTestNotifier(
+      score: Score(
+        bpm: 100,
+        notes: const [Note(midi: 60, duration: NoteDuration.quarter)],
+      ),
+      referenceBpm: 120,
+      audioService: _FakeAudioService(),
+      timelineBuilder: _FixedTimelineBuilder(
+        const RhythmTimeline(
+          expectedEvents: [
+            ExpectedRhythmEvent(id: 1, noteIndex: 0, timeSeconds: 0),
+          ],
+          playbackNotes: [
+            RhythmMelodyEvent(
+              noteIndex: 0,
+              midi: 60,
+              startSeconds: 0,
+              durationSeconds: 0.2,
+            ),
+          ],
+          measureBoundaryTimesSeconds: [0, 0.2],
+          totalDurationSeconds: 0.2,
+          pulseDurationSeconds: 0.1,
+          pulsesPerMeasure: 4,
+        ),
+      ),
+      matcher: _FixedMatcher(
+        const RhythmTestResult(
+          matchedPairs: [
+            MatchedRhythmPair(
+              expected: ExpectedRhythmEvent(
+                id: 1,
+                noteIndex: 0,
+                timeSeconds: 0,
+              ),
+              tap: TapInputEvent(id: 1, timeSeconds: 0.002),
+              errorSeconds: 0.002,
+            ),
+          ],
+          unmatchedExpectedEvents: [],
+          unmatchedTapEvents: [],
+          matchingWindowSeconds: 0.1,
+          appliedShiftSeconds: 0,
+        ),
+      ),
+    );
+
+    addTearDown(notifier.dispose);
+
+    await notifier.start();
+    await Future<void>.delayed(const Duration(milliseconds: 820));
+
+    expect(notifier.resultStatusLabel, 'Perfect');
+    expect(
+      notifier.resultRecommendationLabel,
+      'Perfect at this speed. Raise BPM a bit and work toward 120 BPM.',
+    );
+  });
+
+  test(
+    'perfect above the reference BPM still shows the mastery message',
+    () async {
+      final notifier = RhythmTestNotifier(
+        score: Score(
+          bpm: 132,
+          notes: const [Note(midi: 60, duration: NoteDuration.quarter)],
+        ),
+        referenceBpm: 120,
+        audioService: _FakeAudioService(),
+        timelineBuilder: _FixedTimelineBuilder(
+          const RhythmTimeline(
+            expectedEvents: [
+              ExpectedRhythmEvent(id: 1, noteIndex: 0, timeSeconds: 0),
+            ],
+            playbackNotes: [
+              RhythmMelodyEvent(
+                noteIndex: 0,
+                midi: 60,
+                startSeconds: 0,
+                durationSeconds: 0.2,
+              ),
+            ],
+            measureBoundaryTimesSeconds: [0, 0.2],
+            totalDurationSeconds: 0.2,
+            pulseDurationSeconds: 0.1,
+            pulsesPerMeasure: 4,
+          ),
+        ),
+        matcher: _FixedMatcher(
+          const RhythmTestResult(
+            matchedPairs: [
+              MatchedRhythmPair(
+                expected: ExpectedRhythmEvent(
+                  id: 1,
+                  noteIndex: 0,
+                  timeSeconds: 0,
+                ),
+                tap: TapInputEvent(id: 1, timeSeconds: 0.002),
+                errorSeconds: 0.002,
+              ),
+            ],
+            unmatchedExpectedEvents: [],
+            unmatchedTapEvents: [],
+            matchingWindowSeconds: 0.1,
+            appliedShiftSeconds: 0,
+          ),
+        ),
+      );
+
+      addTearDown(notifier.dispose);
+
+      await notifier.start();
+      await Future<void>.delayed(const Duration(milliseconds: 820));
+
+      expect(notifier.resultStatusLabel, 'Perfect');
+      expect(
+        notifier.resultRecommendationLabel,
+        "Perfect at the original tempo. You've got this pattern down.",
       );
     },
   );
@@ -794,6 +930,7 @@ void main() {
           bpm: 120,
           notes: const [Note(midi: 60, duration: NoteDuration.quarter)],
         ),
+        referenceBpm: 120,
         audioService: _FakeAudioService(),
         timelineBuilder: _FixedTimelineBuilder(
           const RhythmTimeline(

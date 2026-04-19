@@ -25,6 +25,7 @@ class RhythmTestNotifier extends ChangeNotifier {
 
   RhythmTestNotifier({
     required Score score,
+    required this.referenceBpm,
     AudioService? audioService,
     RhythmTimelineBuilder? timelineBuilder,
     RhythmMatcher? matcher,
@@ -43,6 +44,7 @@ class RhythmTestNotifier extends ChangeNotifier {
   }
 
   final Score _score;
+  final double referenceBpm;
   final AudioService _audioService;
   final RhythmTimelineBuilder _timelineBuilder;
   final RhythmMatcher _matcher;
@@ -258,21 +260,15 @@ class RhythmTestNotifier extends ChangeNotifier {
       return '';
     }
 
-    if (resultErrorCount > 0) {
-      return 'Retry slower at $suggestedRetryBpm BPM and tap only note starts.';
+    if (resultStatusLabel != 'Perfect') {
+      return "Not perfect yet. Lower BPM to $suggestedRetryBpm and try again. You'll lock it in more cleanly.";
     }
 
-    if (resultLargeErrorCount > 0) {
-      final shiftBeats = resultShiftBeats;
-      if (shiftBeats != null && shiftBeats.abs() >= 0.05) {
-        final direction = shiftBeats > 0 ? 'late' : 'early';
-        final correction = shiftBeats > 0 ? 'earlier' : 'later';
-        return "You're consistently $direction. Keep BPM and tap slightly $correction.";
-      }
-      return 'Keep BPM and tighten alignment.';
+    if (_score.bpm < referenceBpm) {
+      return 'Perfect at this speed. Raise BPM a bit and work toward ${referenceBpm.round()} BPM.';
     }
 
-    return 'Raise BPM by 5–10 and retry.';
+    return "Perfect at the original tempo. You've got this pattern down.";
   }
 
   String get primaryActionLabel => isBusy ? 'Tap' : 'Start';

@@ -110,88 +110,89 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets(
-    'primary button becomes Tap during play and result card appears',
-    (WidgetTester tester) async {
-      final notifier = _buildNotifier();
-      addTearDown(notifier.dispose);
-      await notifier.init();
+  testWidgets('primary button becomes Tap during play and result card appears', (
+    WidgetTester tester,
+  ) async {
+    final notifier = _buildNotifier();
+    addTearDown(notifier.dispose);
+    await notifier.init();
 
-      await tester.pumpWidget(_wrap(notifier, platform: TargetPlatform.macOS));
-      await tester.pump();
+    await tester.pumpWidget(_wrap(notifier, platform: TargetPlatform.macOS));
+    await tester.pump();
 
-      await tester.runAsync(() async {
-        await notifier.performPrimaryAction();
-        await Future<void>.delayed(const Duration(milliseconds: 20));
-      });
-      await tester.pump();
+    await tester.runAsync(() async {
+      await notifier.performPrimaryAction();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    });
+    await tester.pump();
 
-      expect(find.textContaining('Tap'), findsOneWidget);
-      expect(find.textContaining('Space'), findsOneWidget);
-      expect(find.textContaining('Enter'), findsNothing);
-      expect(
-        tester
-            .widget<ScoreViewWidget>(find.byType(ScoreViewWidget))
-            .blockRendererPointerInput,
-        isFalse,
-      );
+    expect(find.textContaining('Tap'), findsOneWidget);
+    expect(find.textContaining('Space'), findsOneWidget);
+    expect(find.textContaining('Enter'), findsNothing);
+    expect(
+      tester
+          .widget<ScoreViewWidget>(find.byType(ScoreViewWidget))
+          .blockRendererPointerInput,
+      isFalse,
+    );
 
-      await tester.runAsync(() async {
-        await Future<void>.delayed(const Duration(milliseconds: 900));
-      });
-      await tester.pump();
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 900));
+    });
+    await tester.pump();
 
-      expect(
-        find.byKey(const ValueKey('rhythm-test-result-card')),
-        findsOneWidget,
-      );
-      expect(find.text('Perfect'), findsNothing);
-      expect(find.text('Failed'), findsOneWidget);
-      expect(find.text('Mistakes'), findsOneWidget);
-      expect(find.text('Max abs error'), findsOneWidget);
-      expect(find.text('Large offsets'), findsOneWidget);
-      expect(find.text('Matched'), findsNothing);
-      expect(
-        find.textContaining('Large-offset threshold 0.10 beat'),
-        findsOneWidget,
-      );
-      expect(find.textContaining('Shift +0.00 beat'), findsOneWidget);
-      expect(
-        find.byKey(const ValueKey('rhythm-test-result-recommendation')),
-        findsOneWidget,
-      );
-      expect(
-        find.text('Retry slower at 102 BPM and tap only note starts.'),
-        findsOneWidget,
-      );
+    expect(
+      find.byKey(const ValueKey('rhythm-test-result-card')),
+      findsOneWidget,
+    );
+    expect(find.text('Perfect'), findsNothing);
+    expect(find.text('Failed'), findsOneWidget);
+    expect(find.text('Mistakes'), findsOneWidget);
+    expect(find.text('Max abs error'), findsOneWidget);
+    expect(find.text('Large offsets'), findsOneWidget);
+    expect(find.text('Matched'), findsNothing);
+    expect(
+      find.textContaining('Large-offset threshold 0.10 beat'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('Shift +0.00 beat'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('rhythm-test-result-recommendation')),
+      findsOneWidget,
+    );
+    expect(
+      find.text(
+        "Not perfect yet. Lower BPM to 102 and try again. You'll lock it in more cleanly.",
+      ),
+      findsOneWidget,
+    );
 
-      final workspaceRect = tester.getRect(find.byType(RhythmTestWorkspace));
-      final resultRect = tester.getRect(
-        find.byKey(const ValueKey('rhythm-test-result-card')),
-      );
-      expect(resultRect.center.dy, greaterThan(workspaceRect.height * 0.24));
-      expect(
-        tester
-            .widget<ScoreViewWidget>(find.byType(ScoreViewWidget))
-            .blockRendererPointerInput,
-        isTrue,
-      );
+    final workspaceRect = tester.getRect(find.byType(RhythmTestWorkspace));
+    final resultRect = tester.getRect(
+      find.byKey(const ValueKey('rhythm-test-result-card')),
+    );
+    expect(resultRect.center.dy, greaterThan(workspaceRect.height * 0.24));
+    expect(
+      tester
+          .widget<ScoreViewWidget>(find.byType(ScoreViewWidget))
+          .blockRendererPointerInput,
+      isTrue,
+    );
 
-      await tester.runAsync(() async {
-        await Future<void>.delayed(
-          RhythmTestNotifier.resultRevealLockDuration +
-              const Duration(milliseconds: 80),
-        );
-      });
-      await tester.pump();
-
-      expect(find.text('Start'), findsOneWidget);
-      expect(
-        find.byKey(const ValueKey('rhythm-test-result-card')),
-        findsOneWidget,
+    await tester.runAsync(() async {
+      await Future<void>.delayed(
+        RhythmTestNotifier.resultRevealLockDuration +
+            const Duration(milliseconds: 80),
       );
-    },
-  );
+    });
+    await tester.pump();
+
+    expect(find.text('Start'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('rhythm-test-result-card')),
+      findsOneWidget,
+    );
+  });
 
   testWidgets('primary action hides keyboard hint on touch-first profile', (
     WidgetTester tester,
@@ -399,12 +400,14 @@ void main() {
 
     expect(find.text('Clean, but loose'), findsOneWidget);
     expect(
-      find.text("You're consistently late. Keep BPM and tap slightly earlier."),
+      find.text(
+        "Not perfect yet. Lower BPM to 102 and try again. You'll lock it in more cleanly.",
+      ),
       findsOneWidget,
     );
   });
 
-  testWidgets('result card shows perfect recommendation', (
+  testWidgets('result card shows perfect mastery recommendation', (
     WidgetTester tester,
   ) async {
     final notifier = _buildNotifier(
@@ -450,8 +453,68 @@ void main() {
     await tester.pump();
 
     expect(find.text('Perfect'), findsOneWidget);
-    expect(find.text('Raise BPM by 5–10 and retry.'), findsOneWidget);
+    expect(
+      find.text("Perfect at the original tempo. You've got this pattern down."),
+      findsOneWidget,
+    );
   });
+
+  testWidgets(
+    'result card shows raise-BPM recommendation below reference tempo',
+    (WidgetTester tester) async {
+      final notifier = _buildNotifier(
+        bpm: 100,
+        referenceBpm: 120,
+        matcher: _FixedMatcher(
+          const RhythmTestResult(
+            matchedPairs: [
+              MatchedRhythmPair(
+                expected: ExpectedRhythmEvent(
+                  id: 1,
+                  noteIndex: 0,
+                  timeSeconds: 0,
+                ),
+                tap: TapInputEvent(id: 1, timeSeconds: 0.002),
+                errorSeconds: 0.002,
+              ),
+              MatchedRhythmPair(
+                expected: ExpectedRhythmEvent(
+                  id: 2,
+                  noteIndex: 1,
+                  timeSeconds: 0.1,
+                ),
+                tap: TapInputEvent(id: 2, timeSeconds: 0.102),
+                errorSeconds: 0.002,
+              ),
+            ],
+            unmatchedExpectedEvents: [],
+            unmatchedTapEvents: [],
+            matchingWindowSeconds: 0.1,
+            appliedShiftSeconds: 0,
+          ),
+        ),
+      );
+      addTearDown(notifier.dispose);
+      await notifier.init();
+
+      await tester.pumpWidget(_wrap(notifier, platform: TargetPlatform.macOS));
+      await tester.pump();
+
+      await tester.runAsync(() async {
+        await notifier.performPrimaryAction();
+        await Future<void>.delayed(const Duration(milliseconds: 900));
+      });
+      await tester.pump();
+
+      expect(find.text('Perfect'), findsOneWidget);
+      expect(
+        find.text(
+          'Perfect at this speed. Raise BPM a bit and work toward 120 BPM.',
+        ),
+        findsOneWidget,
+      );
+    },
+  );
 }
 
 ThemeData? _themeForPlatform(TargetPlatform? platform) {
@@ -485,15 +548,18 @@ bool _ignoreRendererKeyDown(String? key, String? code, bool repeat) => false;
 RhythmTestNotifier _buildNotifier({
   RhythmMatcher? matcher,
   Future<void> Function()? waitBeforeScoring,
+  double bpm = 120,
+  double referenceBpm = 120,
 }) {
   return RhythmTestNotifier(
     score: Score(
-      bpm: 120,
+      bpm: bpm,
       notes: const [
         Note(midi: 60, duration: NoteDuration.quarter),
         Note(midi: 62, duration: NoteDuration.quarter),
       ],
     ),
+    referenceBpm: referenceBpm,
     matcher: matcher,
     waitBeforeScoring: waitBeforeScoring,
     audioService: _FakeAudioService(),

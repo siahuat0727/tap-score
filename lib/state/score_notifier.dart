@@ -147,6 +147,8 @@ class ScoreNotifier extends ChangeNotifier {
 
   String get currentScoreLabel => _workspaceSession?.document.name ?? 'Draft';
 
+  double get referenceBpm => _workspaceSession?.document.score.bpm ?? score.bpm;
+
   bool _hasUnsavedChanges = false;
   bool get hasUnsavedChanges => _hasUnsavedChanges;
 

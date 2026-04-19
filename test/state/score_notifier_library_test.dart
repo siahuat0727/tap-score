@@ -91,6 +91,44 @@ void main() {
     },
   );
 
+  test('referenceBpm stays pinned to the baseline document tempo', () async {
+    final repository = _MemoryScoreLibraryRepository(
+      ScoreLibrarySnapshot(
+        draft: Score(
+          notes: const [Note(midi: 65, duration: NoteDuration.half)],
+          bpm: 88,
+        ),
+        savedScores: [
+          SavedScoreEntry(
+            id: 'saved-1',
+            name: 'Warmup',
+            updatedAt: DateTime.utc(2026, 3, 22, 9, 0, 0),
+            score: Score(
+              notes: const [Note(midi: 65, duration: NoteDuration.half)],
+              bpm: 88,
+            ),
+          ),
+        ],
+        activeScoreId: 'saved-1',
+      ),
+    );
+    final notifier = ScoreNotifier(
+      audioService: _FakeAudioService(),
+      scoreLibraryRepository: repository,
+      presetScoreRepository: _MemoryPresetScoreRepository(),
+    );
+    addTearDown(notifier.dispose);
+
+    await notifier.init();
+
+    expect(notifier.referenceBpm, 88);
+
+    notifier.setTempo(120);
+
+    expect(notifier.score.bpm, 120);
+    expect(notifier.referenceBpm, 88);
+  });
+
   test(
     'delete clears the active saved reference when removing the current score',
     () async {

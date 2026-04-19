@@ -290,6 +290,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     final previousNotifier = _rhythmTestNotifier;
     _rhythmTestNotifier = RhythmTestNotifier(
       score: scoreNotifier.score,
+      referenceBpm: scoreNotifier.referenceBpm,
       audioService: widget.rhythmTestAudioService,
     );
     previousNotifier?.dispose();
