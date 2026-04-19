@@ -31,6 +31,19 @@ flutter run -d android
 flutter run -d ios
 ```
 
+## Local Development
+
+### Android emulator on this machine
+
+Verified on this macOS setup:
+
+- Available AVD: `Pixel_9_Pro_XL_API_36`
+- Start emulator: `flutter emulators --launch Pixel_9_Pro_XL_API_36`
+- Confirm device: `flutter devices`
+- Run app on emulator: `flutter run -d emulator-5554`
+
+If the emulator has just been launched, wait until `flutter devices` shows `emulator-5554` as an Android device before running the app.
+
 ## Deploy To Cloudflare Pages
 
 This project can be deployed on Cloudflare's free Pages plan as a static Flutter Web site.
