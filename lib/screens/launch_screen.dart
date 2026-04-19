@@ -85,121 +85,126 @@ class LaunchScreen extends StatelessWidget {
           child: LayoutBuilder(
             builder: (context, viewport) {
               return SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
                 child: ConstrainedBox(
                   constraints: BoxConstraints(
-                    minHeight: viewport.maxHeight - 64,
+                    minHeight: viewport.maxHeight,
                   ),
-                  child: Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 1040),
-                      child: LayoutBuilder(
-                        builder: (context, constraints) {
-                          final stacked = constraints.maxWidth < 760;
-                          final practiceHeight = constraints.maxHeight < 720
-                              ? 276.0
-                              : 332.0;
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 24,
+                      vertical: 32,
+                    ),
+                    child: Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 1040),
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            final stacked = constraints.maxWidth < 760;
+                            final practiceHeight = constraints.maxHeight < 720
+                                ? 276.0
+                                : 332.0;
 
-                          final practiceCard = _LaunchCard(
-                            key: const ValueKey('launch-practice-card'),
-                            title: 'Practice',
-                            subtitle:
-                                'Open a preset or saved score in rhythm test',
-                            icon: Icons.library_music_outlined,
-                            accentColor: AppColors.accentAmber,
-                            onTap: () {
-                              _showPracticePicker(context);
-                            },
-                          );
-                          final blankCard = _LaunchCard(
-                            key: const ValueKey('launch-new-blank-card'),
-                            title: 'Create',
-                            subtitle: 'Start from a blank score',
-                            icon: Icons.add_box_outlined,
-                            onTap: onStartBlank,
-                          );
-                          final importCard = _LaunchCard(
-                            key: const ValueKey('launch-import-card'),
-                            title: 'Import',
-                            subtitle: 'Bring in a score file and edit it',
-                            icon: Icons.upload_file_outlined,
-                            onTap: () {
-                              _importScore(context);
-                            },
-                          );
+                            final practiceCard = _LaunchCard(
+                              key: const ValueKey('launch-practice-card'),
+                              title: 'Practice',
+                              subtitle:
+                                  'Open a preset or saved score in rhythm test',
+                              icon: Icons.library_music_outlined,
+                              accentColor: AppColors.accentAmber,
+                              onTap: () {
+                                _showPracticePicker(context);
+                              },
+                            );
+                            final blankCard = _LaunchCard(
+                              key: const ValueKey('launch-new-blank-card'),
+                              title: 'Create',
+                              subtitle: 'Start from a blank score',
+                              icon: Icons.add_box_outlined,
+                              onTap: onStartBlank,
+                            );
+                            final importCard = _LaunchCard(
+                              key: const ValueKey('launch-import-card'),
+                              title: 'Import',
+                              subtitle: 'Bring in a score file and edit it',
+                              icon: Icons.upload_file_outlined,
+                              onTap: () {
+                                _importScore(context);
+                              },
+                            );
 
-                          return Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const Text(
-                                'Tap Score',
-                                style: TextStyle(
-                                  fontSize: 22,
-                                  fontWeight: FontWeight.w800,
-                                  color: AppColors.textDark,
-                                  letterSpacing: 0.2,
+                            return Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Text(
+                                  'Tap Score',
+                                  style: TextStyle(
+                                    fontSize: 22,
+                                    fontWeight: FontWeight.w800,
+                                    color: AppColors.textDark,
+                                    letterSpacing: 0.2,
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(height: 12),
-                              const Text(
-                                'Practice is the main path. Create or import when you need to edit.',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w500,
-                                  color: AppColors.textMuted,
+                                const SizedBox(height: 12),
+                                const Text(
+                                  'Practice is the main path. Create or import when you need to edit.',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w500,
+                                    color: AppColors.textMuted,
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(height: 32),
-                              if (stacked)
-                                Column(
-                                  children: [
-                                    SizedBox(
-                                      height: practiceHeight,
-                                      child: practiceCard,
-                                    ),
-                                    const SizedBox(height: 16),
-                                    Row(
-                                      children: [
-                                        Expanded(
-                                          child: SizedBox(
-                                            height: 156,
-                                            child: blankCard,
+                                const SizedBox(height: 32),
+                                if (stacked)
+                                  Column(
+                                    children: [
+                                      SizedBox(
+                                        height: practiceHeight,
+                                        child: practiceCard,
+                                      ),
+                                      const SizedBox(height: 16),
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: SizedBox(
+                                              height: 156,
+                                              child: blankCard,
+                                            ),
                                           ),
-                                        ),
-                                        const SizedBox(width: 16),
+                                          const SizedBox(width: 16),
+                                          Expanded(
+                                            child: SizedBox(
+                                              height: 156,
+                                              child: importCard,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  )
+                                else
+                                  SizedBox(
+                                    height: practiceHeight,
+                                    child: Row(
+                                      children: [
+                                        Expanded(child: practiceCard),
+                                        const SizedBox(width: 20),
                                         Expanded(
-                                          child: SizedBox(
-                                            height: 156,
-                                            child: importCard,
+                                          child: Column(
+                                            children: [
+                                              Expanded(child: blankCard),
+                                              const SizedBox(height: 18),
+                                              Expanded(child: importCard),
+                                            ],
                                           ),
                                         ),
                                       ],
                                     ),
-                                  ],
-                                )
-                              else
-                                SizedBox(
-                                  height: practiceHeight,
-                                  child: Row(
-                                    children: [
-                                      Expanded(child: practiceCard),
-                                      const SizedBox(width: 20),
-                                      Expanded(
-                                        child: Column(
-                                          children: [
-                                            Expanded(child: blankCard),
-                                            const SizedBox(height: 18),
-                                            Expanded(child: importCard),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
                                   ),
-                                ),
-                            ],
-                          );
-                        },
+                              ],
+                            );
+                          },
+                        ),
                       ),
                     ),
                   ),
