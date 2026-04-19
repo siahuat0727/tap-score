@@ -2386,13 +2386,18 @@
       switch (data.type) {
         case 'renderScoreStatic':
           renderScoreStatic(data);
-          return;
+          break;
         case 'updateRhythmOverlay':
           updateRhythmOverlay(data.rhythmTest || null);
-          return;
+          break;
         case 'updatePlaybackIndex':
           _syncPlaybackIndex(data.playbackIndex);
+          break;
+        default:
           return;
+      }
+      if (Number.isInteger(data.commandId)) {
+        _sendMessage({ type: 'commandApplied', commandId: data.commandId });
       }
     }
 

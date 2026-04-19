@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -26,6 +27,7 @@ class ScoreViewWidget extends StatefulWidget {
     this.onRendererReady,
     this.rhythmOverlay,
     this.playbackIndex,
+    this.rendererCommandTimeout = const Duration(seconds: 2),
     super.key,
   });
 
@@ -36,6 +38,7 @@ class ScoreViewWidget extends StatefulWidget {
   final VoidCallback? onRendererReady;
   final RhythmOverlayRenderData? rhythmOverlay;
   final int? playbackIndex;
+  final Duration rendererCommandTimeout;
 
   @override
   State<ScoreViewWidget> createState() => _ScoreViewWidgetState();
@@ -45,6 +48,7 @@ class ScoreRendererCommandController {
   String? _lastStaticSignature;
   bool _hadRhythmOverlay = false;
   int? _lastPlaybackIndex;
+  int _nextCommandId = 1;
 
   void reset() {
     _lastStaticSignature = null;
@@ -69,7 +73,11 @@ class ScoreRendererCommandController {
         staticSignature != null && staticSignature != _lastStaticSignature;
 
     if (needsStaticRender) {
-      commands.add({'type': 'renderScoreStatic', ...staticPayload!});
+      commands.add({
+        'type': 'renderScoreStatic',
+        'commandId': _nextCommandId++,
+        ...staticPayload!,
+      });
       _lastStaticSignature = staticSignature;
     }
 
@@ -79,6 +87,7 @@ class ScoreRendererCommandController {
         hasRhythmOverlay != _hadRhythmOverlay) {
       commands.add({
         'type': 'updateRhythmOverlay',
+        'commandId': _nextCommandId++,
         'rhythmTest': rhythmOverlayPayload,
       });
       _hadRhythmOverlay = hasRhythmOverlay;
@@ -89,6 +98,7 @@ class ScoreRendererCommandController {
         playbackIndex != _lastPlaybackIndex) {
       commands.add({
         'type': 'updatePlaybackIndex',
+        'commandId': _nextCommandId++,
         'playbackIndex': playbackIndex,
       });
       _lastPlaybackIndex = playbackIndex;
@@ -98,12 +108,19 @@ class ScoreRendererCommandController {
   }
 }
 
+enum _RendererHealth { loading, ready, reloading, unhealthy }
+
 class _ScoreViewWidgetState extends State<ScoreViewWidget> {
   /// Function provided by the platform renderer once it's ready.
   void Function(Map<String, dynamic> payload)? _sendCommand;
   final ScoreRendererCommandController _commandController =
       ScoreRendererCommandController();
   ScoreNotifier? _notifier;
+  Timer? _rendererAckTimer;
+  int? _pendingStaticCommandId;
+  int _rendererGeneration = 0;
+  int _rendererReloadAttempt = 0;
+  _RendererHealth _rendererHealth = _RendererHealth.loading;
 
   // ---------------------------------------------------------------------------
   // JS → Dart message handler
@@ -114,6 +131,11 @@ class _ScoreViewWidgetState extends State<ScoreViewWidget> {
     switch (type) {
       case 'ready':
         _flushRendererCommands(forceStatic: true);
+      case 'commandApplied':
+        final commandId = data['commandId'] as int?;
+        if (commandId != null) {
+          _handleCommandApplied(commandId);
+        }
       case 'noteTap':
         if (!widget.interactive) return;
         final index = data['index'] as int?;
@@ -252,6 +274,68 @@ class _ScoreViewWidgetState extends State<ScoreViewWidget> {
     for (final command in commands) {
       send(command);
     }
+    final staticCommand = commands.where(
+      (command) => command['type'] == 'renderScoreStatic',
+    );
+    if (staticCommand.isNotEmpty) {
+      _awaitStaticCommand(staticCommand.first['commandId'] as int);
+    }
+  }
+
+  void _awaitStaticCommand(int commandId) {
+    _rendererAckTimer?.cancel();
+    _pendingStaticCommandId = commandId;
+    _rendererAckTimer = Timer(widget.rendererCommandTimeout, () {
+      if (_pendingStaticCommandId != commandId) {
+        return;
+      }
+      _pendingStaticCommandId = null;
+      if (_rendererReloadAttempt == 0) {
+        _rendererReloadAttempt = 1;
+        _reloadRenderer();
+        return;
+      }
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _rendererHealth = _RendererHealth.unhealthy;
+      });
+    });
+  }
+
+  void _handleCommandApplied(int commandId) {
+    if (_pendingStaticCommandId != commandId) {
+      return;
+    }
+    _rendererAckTimer?.cancel();
+    _pendingStaticCommandId = null;
+    _rendererReloadAttempt = 0;
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _rendererHealth = _RendererHealth.ready;
+    });
+  }
+
+  void _reloadRenderer() {
+    _rendererAckTimer?.cancel();
+    _pendingStaticCommandId = null;
+    _sendCommand = null;
+    _commandController.reset();
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _rendererHealth = _RendererHealth.reloading;
+      _rendererGeneration += 1;
+    });
+  }
+
+  void _retryRenderer() {
+    _rendererReloadAttempt = 1;
+    _reloadRenderer();
   }
 
   void _handleScoreNotifierChanged() {
@@ -306,6 +390,7 @@ class _ScoreViewWidgetState extends State<ScoreViewWidget> {
 
   @override
   void dispose() {
+    _rendererAckTimer?.cancel();
     _notifier?.removeListener(_handleScoreNotifierChanged);
     super.dispose();
   }
@@ -334,16 +419,107 @@ class _ScoreViewWidgetState extends State<ScoreViewWidget> {
       clipBehavior: Clip.hardEdge,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(12),
-        child: buildScoreRenderer(
-          interactive: widget.interactive,
-          pointerInputEnabled: pointerInputEnabled,
-          onMessage: _onJsMessage,
-          onReady: (sendCommand) {
-            _sendCommand = sendCommand;
-            _commandController.reset();
-            widget.onRendererReady?.call();
-            _flushRendererCommands(forceStatic: true);
-          },
+        child: Stack(
+          children: [
+            KeyedSubtree(
+              key: ValueKey('score-renderer-$_rendererGeneration'),
+              child: buildScoreRenderer(
+                interactive: widget.interactive,
+                pointerInputEnabled: pointerInputEnabled,
+                onMessage: _onJsMessage,
+                onReady: (sendCommand) {
+                  _sendCommand = sendCommand;
+                  _commandController.reset();
+                  setState(() {
+                    _rendererHealth = _rendererReloadAttempt > 0
+                        ? _RendererHealth.reloading
+                        : _RendererHealth.loading;
+                  });
+                  widget.onRendererReady?.call();
+                  _flushRendererCommands(forceStatic: true);
+                },
+              ),
+            ),
+            if (_rendererHealth == _RendererHealth.reloading)
+              const _RendererStatusOverlay(
+                message: 'Reloading score renderer…',
+                showProgress: true,
+              ),
+            if (_rendererHealth == _RendererHealth.unhealthy)
+              _RendererStatusOverlay(
+                message: 'Score renderer stopped responding.',
+                actionLabel: 'Retry',
+                onAction: _retryRenderer,
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _RendererStatusOverlay extends StatelessWidget {
+  const _RendererStatusOverlay({
+    required this.message,
+    this.showProgress = false,
+    this.actionLabel,
+    this.onAction,
+  });
+
+  final String message;
+  final bool showProgress;
+  final String? actionLabel;
+  final VoidCallback? onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned.fill(
+      child: ColoredBox(
+        color: AppColors.surfaceContainer.withAlpha(180),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 320),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: AppColors.surfaceContainerHigh.withAlpha(246),
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: AppColors.surfaceBorder),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (showProgress) ...[
+                      const SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(strokeWidth: 2.4),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+                    Text(
+                      message,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: AppColors.textBody,
+                        fontWeight: FontWeight.w800,
+                        height: 1.35,
+                      ),
+                    ),
+                    if (actionLabel != null && onAction != null) ...[
+                      const SizedBox(height: 14),
+                      FilledButton(
+                        key: const ValueKey('score-renderer-retry'),
+                        onPressed: onAction,
+                        child: Text(actionLabel!),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ),
         ),
       ),
     );

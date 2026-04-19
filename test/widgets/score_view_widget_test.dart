@@ -1,7 +1,23 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:provider/provider.dart';
+import 'package:tap_score/models/note.dart';
+import 'package:tap_score/models/score.dart';
+import 'package:tap_score/state/score_notifier.dart';
 import 'package:tap_score/widgets/score_view_widget.dart';
+import 'package:webview_flutter_platform_interface/webview_flutter_platform_interface.dart';
+
+import '../helpers/fake_webview_platform.dart';
 
 void main() {
+  setUpAll(() {
+    WebViewPlatform.instance = FakeWebViewPlatform();
+  });
+
+  setUp(() {
+    FakeWebViewPlatform.reset();
+  });
+
   test('first flush sends static, rhythm overlay, and playback commands', () {
     final controller = ScoreRendererCommandController();
 
@@ -18,6 +34,7 @@ void main() {
       'updateRhythmOverlay',
       'updatePlaybackIndex',
     ]);
+    expect(commands.map((command) => command['commandId']).toList(), [1, 2, 3]);
   });
 
   test('rhythm overlay changes do not require a static render', () {
@@ -39,6 +56,7 @@ void main() {
 
     expect(commands, hasLength(1));
     expect(commands.single['type'], 'updateRhythmOverlay');
+    expect(commands.single['commandId'], 4);
   });
 
   test('playback changes do not require a static render', () {
@@ -61,6 +79,7 @@ void main() {
     expect(commands, hasLength(1));
     expect(commands.single['type'], 'updatePlaybackIndex');
     expect(commands.single['playbackIndex'], 2);
+    expect(commands.single['commandId'], 4);
   });
 
   test('static payload changes resend the static render path', () {
@@ -85,6 +104,52 @@ void main() {
       'updateRhythmOverlay',
       'updatePlaybackIndex',
     ]);
+    expect(commands.map((command) => command['commandId']).toList(), [4, 5, 6]);
+  });
+
+  testWidgets('missing renderer acknowledgement shows retry overlay', (
+    WidgetTester tester,
+  ) async {
+    FakeWebViewPlatform.autoDispatchCommandApplied = false;
+
+    await tester.pumpWidget(
+      _buildScoreViewHarness(
+        notifier: ScoreNotifier(),
+        rendererCommandTimeout: const Duration(milliseconds: 10),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 20));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 20));
+
+    expect(find.byKey(const ValueKey('score-renderer-retry')), findsOneWidget);
+    expect(find.text('Score renderer stopped responding.'), findsOneWidget);
+  });
+
+  testWidgets('renderer retry overlay clears after acknowledgement resumes', (
+    WidgetTester tester,
+  ) async {
+    FakeWebViewPlatform.autoDispatchCommandApplied = false;
+
+    await tester.pumpWidget(
+      _buildScoreViewHarness(
+        notifier: ScoreNotifier(),
+        rendererCommandTimeout: const Duration(milliseconds: 10),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 20));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 20));
+
+    FakeWebViewPlatform.autoDispatchCommandApplied = true;
+    await tester.tap(find.byKey(const ValueKey('score-renderer-retry')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 20));
+
+    expect(find.byKey(const ValueKey('score-renderer-retry')), findsNothing);
+    expect(find.text('Score renderer stopped responding.'), findsNothing);
   });
 }
 
@@ -115,6 +180,20 @@ Map<String, dynamic> _staticPayload({required int selectedIndex}) {
     'title': '',
     'bpm': 120,
   };
+}
+
+Widget _buildScoreViewHarness({
+  required ScoreNotifier notifier,
+  required Duration rendererCommandTimeout,
+}) {
+  return ChangeNotifierProvider.value(
+    value: notifier,
+    child: MaterialApp(
+      home: Scaffold(
+        body: ScoreViewWidget(rendererCommandTimeout: rendererCommandTimeout),
+      ),
+    ),
+  );
 }
 
 Map<String, dynamic> _rhythmOverlayPayload({

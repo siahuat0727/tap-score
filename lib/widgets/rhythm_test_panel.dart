@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../state/rhythm_test_notifier.dart';
 import '../theme/app_colors.dart';
+import '../workspace/workspace_layout_profile.dart';
 import 'input_affordance.dart';
 
 typedef _RhythmTestPanelLayoutState = ({
@@ -20,8 +21,13 @@ typedef _RhythmTestActionState = ({
 });
 
 class RhythmTestPanel extends StatelessWidget {
-  const RhythmTestPanel({required this.onTempoChanged, super.key});
+  const RhythmTestPanel({
+    required this.layoutProfile,
+    required this.onTempoChanged,
+    super.key,
+  });
 
+  final WorkspaceLayoutProfile layoutProfile;
   final ValueChanged<double> onTempoChanged;
 
   @override
@@ -50,8 +56,7 @@ class RhythmTestPanel extends StatelessWidget {
             constraints: const BoxConstraints(maxWidth: 960),
             child: LayoutBuilder(
               builder: (context, constraints) {
-                final compact =
-                    constraints.maxWidth < 420 || constraints.maxHeight < 190;
+                final compact = layoutProfile.rhythmPanelCompact;
                 final wide = constraints.maxWidth >= 700;
                 final affordanceProfile = resolveInputAffordanceProfile(
                   context,
@@ -59,6 +64,7 @@ class RhythmTestPanel extends StatelessWidget {
                 );
 
                 final parameters = _ParameterColumn(
+                  singleColumn: layoutProfile.rhythmPanelSingleColumn,
                   bpm: state.bpm,
                   largeErrorThresholdBeats: state.largeErrorThresholdBeats,
                   enabled: !state.isBusy,
@@ -169,6 +175,7 @@ class _InfoBanner extends StatelessWidget {
 
 class _ParameterColumn extends StatelessWidget {
   const _ParameterColumn({
+    required this.singleColumn,
     required this.bpm,
     required this.largeErrorThresholdBeats,
     required this.enabled,
@@ -176,6 +183,7 @@ class _ParameterColumn extends StatelessWidget {
     required this.onTempoChanged,
   });
 
+  final bool singleColumn;
   final double bpm;
   final double largeErrorThresholdBeats;
   final bool enabled;
@@ -197,6 +205,7 @@ class _ParameterColumn extends StatelessWidget {
           max: 240,
           divisions: 200,
           compact: effectiveCompact,
+          vertical: singleColumn,
           enabled: enabled,
           onChanged: onTempoChanged,
         );
@@ -210,9 +219,17 @@ class _ParameterColumn extends StatelessWidget {
           max: 0.50,
           divisions: 45,
           compact: effectiveCompact,
+          vertical: singleColumn,
           enabled: enabled,
           onChanged: context.read<RhythmTestNotifier>().setLargeErrorThreshold,
         );
+
+        if (singleColumn) {
+          return Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [tempoStrip, const SizedBox(height: 10), thresholdStrip],
+          );
+        }
 
         if (effectiveCompact) {
           return Row(
@@ -248,6 +265,7 @@ class _ParameterStrip extends StatelessWidget {
     required this.max,
     required this.divisions,
     required this.compact,
+    required this.vertical,
     required this.enabled,
     required this.onChanged,
   });
@@ -260,6 +278,7 @@ class _ParameterStrip extends StatelessWidget {
   final double max;
   final int divisions;
   final bool compact;
+  final bool vertical;
   final bool enabled;
   final ValueChanged<double> onChanged;
 
@@ -275,43 +294,12 @@ class _ParameterStrip extends StatelessWidget {
       child: Padding(
         padding: EdgeInsets.symmetric(
           horizontal: 14,
-          vertical: compact ? 4 : 8,
+          vertical: vertical ? 10 : (compact ? 4 : 8),
         ),
         child: LayoutBuilder(
           builder: (context, constraints) {
-            final ultraCompact = compact && constraints.maxWidth < 170;
-            final labelBlock = SizedBox(
-              width: ultraCompact ? 44 : (compact ? 98 : 112),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (!ultraCompact)
-                    Text(
-                      label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: AppColors.textTertiary,
-                        fontSize: compact ? 11 : 12,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  if (!ultraCompact) const SizedBox(height: 2),
-                  Text(
-                    valueLabel,
-                    key: ValueKey('$controlKeyPrefix-value'),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: AppColors.textDark,
-                      fontSize: ultraCompact ? 11 : (compact ? 13 : 14),
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ],
-              ),
-            );
+            final ultraCompact =
+                compact && !vertical && constraints.maxWidth < 170;
             final decrementButton = _AdjustButton(
               icon: Icons.remove_rounded,
               enabled: enabled,
@@ -351,6 +339,84 @@ class _ParameterStrip extends StatelessWidget {
               ),
             );
 
+            if (vertical) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: AppColors.textTertiary,
+                            fontSize: compact ? 11 : 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Text(
+                        valueLabel,
+                        key: ValueKey('$controlKeyPrefix-value'),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: AppColors.textDark,
+                          fontSize: compact ? 13 : 14,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      decrementButton,
+                      const SizedBox(width: 8),
+                      slider,
+                      const SizedBox(width: 8),
+                      incrementButton,
+                    ],
+                  ),
+                ],
+              );
+            }
+
+            final labelBlock = SizedBox(
+              width: ultraCompact ? 44 : (compact ? 98 : 112),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (!ultraCompact)
+                    Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: AppColors.textTertiary,
+                        fontSize: compact ? 11 : 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  if (!ultraCompact) const SizedBox(height: 2),
+                  Text(
+                    valueLabel,
+                    key: ValueKey('$controlKeyPrefix-value'),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: AppColors.textDark,
+                      fontSize: ultraCompact ? 11 : (compact ? 13 : 14),
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+            );
             return Row(
               children: [labelBlock, decrementButton, slider, incrementButton],
             );

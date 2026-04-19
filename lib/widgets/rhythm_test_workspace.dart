@@ -4,17 +4,20 @@ import 'package:provider/provider.dart';
 import '../rhythm_test/rhythm_test_models.dart';
 import '../state/rhythm_test_notifier.dart';
 import '../theme/app_colors.dart';
+import '../workspace/workspace_layout_profile.dart';
 import 'rhythm_test_panel.dart';
 import 'score_view_widget.dart';
 
 class RhythmTestWorkspace extends StatelessWidget {
   const RhythmTestWorkspace({
+    required this.layoutProfile,
     required this.onTempoChanged,
     required this.onRendererKeyDown,
     this.onRendererReady,
     super.key,
   });
 
+  final WorkspaceLayoutProfile layoutProfile;
   final ValueChanged<double> onTempoChanged;
   final bool Function(String? key, String? code, bool repeat)?
   onRendererKeyDown;
@@ -24,13 +27,14 @@ class RhythmTestWorkspace extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final baseControlBarHeight = constraints.maxWidth < 700 ? 208.0 : 176.0;
         final errorMessage = context.select<RhythmTestNotifier, String?>(
           (notifier) => notifier.errorMessage,
         );
-        final controlBarHeight = errorMessage == null
-            ? baseControlBarHeight
-            : baseControlBarHeight + 84;
+        final controlBarHeight =
+            layoutProfile.rhythmControlBarBaseHeight +
+            (errorMessage == null
+                ? 0
+                : layoutProfile.rhythmControlBarErrorExtraHeight);
 
         return Column(
           children: [
@@ -43,14 +47,21 @@ class RhythmTestWorkspace extends StatelessWidget {
                       onRendererReady: onRendererReady,
                     ),
                   ),
-                  const Positioned.fill(child: _RhythmTestResultOverlay()),
+                  Positioned.fill(
+                    child: _RhythmTestResultOverlay(
+                      layoutProfile: layoutProfile,
+                    ),
+                  ),
                 ],
               ),
             ),
             Container(height: 1, color: AppColors.surfaceDivider),
             SizedBox(
               height: controlBarHeight,
-              child: RhythmTestPanel(onTempoChanged: onTempoChanged),
+              child: RhythmTestPanel(
+                layoutProfile: layoutProfile,
+                onTempoChanged: onTempoChanged,
+              ),
             ),
           ],
         );
@@ -94,7 +105,9 @@ class _RhythmTestScoreSurface extends StatelessWidget {
 }
 
 class _RhythmTestResultOverlay extends StatelessWidget {
-  const _RhythmTestResultOverlay();
+  const _RhythmTestResultOverlay({required this.layoutProfile});
+
+  final WorkspaceLayoutProfile layoutProfile;
 
   @override
   Widget build(BuildContext context) {
@@ -103,9 +116,9 @@ class _RhythmTestResultOverlay extends StatelessWidget {
     );
 
     return Align(
-      alignment: const Alignment(0, 0.72),
+      alignment: layoutProfile.rhythmResultOverlayAlignment,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 32, 20, 28),
+        padding: layoutProfile.rhythmResultOverlayPadding,
         child: AnimatedSwitcher(
           duration: const Duration(milliseconds: 180),
           child: showCenteredResult

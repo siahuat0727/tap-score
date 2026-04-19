@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -14,8 +13,8 @@ import '../services/score_transfer_service.dart';
 import '../state/rhythm_test_notifier.dart';
 import '../state/score_notifier.dart';
 import '../theme/app_colors.dart';
+import '../workspace/workspace_layout_profile.dart';
 import '../widgets/duration_selector.dart';
-import '../widgets/input_affordance.dart';
 import '../widgets/piano_keyboard.dart';
 import '../widgets/playback_controls.dart';
 import '../widgets/rhythm_test_workspace.dart';
@@ -714,49 +713,67 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
         onPointerDown: (_) => _focusNode.requestFocus(),
         child: Scaffold(
           body: SafeArea(
-            child: Stack(
-              children: [
-                Consumer<ScoreNotifier>(
-                  builder: (context, notifier, _) {
-                    return Column(
-                      children: [
-                        WorkspaceTopBar(
-                          key: const ValueKey('workspace-top-bar'),
-                          mode: _mode,
-                          showsEditorActions:
-                              _startupReady && _mode == WorkspaceMode.compose,
-                          isInteractive: _startupReady,
-                          hasUnsavedChanges: notifier.hasUnsavedChanges,
-                          onGoHome: widget.onGoHome ?? () {},
-                          onSelectMode: _switchMode,
-                          onSave: _showSaveDialog,
-                          onExport: _exportCurrentScore,
-                        ),
-                        Expanded(child: _buildWorkspaceBody(notifier)),
-                      ],
-                    );
-                  },
-                ),
-                if (_showsStartupOverlay)
-                  Positioned.fill(
-                    child: _WorkspaceStartupView(
-                      title: _startupTitle,
-                      detail: _startupDetail,
-                      workspaceLabel: _workspaceStepLabel,
-                      workspaceState: _workspaceStepState,
-                      rendererLabel: _rendererStepLabel,
-                      rendererState: _rendererStepState,
-                      audioLabel: _requiresAudioStep ? _audioStepLabel : null,
-                      audioState: _requiresAudioStep ? _audioStepState : null,
-                      errorMessage: _startupErrorMessage,
-                      onRetry: _startupFailed ? _retryStartup : null,
-                      onGoHome: _startupFailed && widget.onGoHome != null
-                          ? widget.onGoHome
-                          : null,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final layoutProfile = WorkspaceLayoutProfile.fromSize(
+                  constraints.biggest,
+                );
+                return Stack(
+                  children: [
+                    Consumer<ScoreNotifier>(
+                      builder: (context, notifier, _) {
+                        return Column(
+                          children: [
+                            WorkspaceTopBar(
+                              key: const ValueKey('workspace-top-bar'),
+                              mode: _mode,
+                              layoutProfile: layoutProfile,
+                              showsEditorActions:
+                                  _startupReady &&
+                                  _mode == WorkspaceMode.compose,
+                              isInteractive: _startupReady,
+                              hasUnsavedChanges: notifier.hasUnsavedChanges,
+                              onGoHome: widget.onGoHome ?? () {},
+                              onSelectMode: _switchMode,
+                              onSave: _showSaveDialog,
+                              onExport: _exportCurrentScore,
+                            ),
+                            Expanded(
+                              child: _buildWorkspaceBody(
+                                notifier,
+                                layoutProfile,
+                              ),
+                            ),
+                          ],
+                        );
+                      },
                     ),
-                  ),
-                const _LibraryToastLayer(),
-              ],
+                    if (_showsStartupOverlay)
+                      Positioned.fill(
+                        child: _WorkspaceStartupView(
+                          title: _startupTitle,
+                          detail: _startupDetail,
+                          workspaceLabel: _workspaceStepLabel,
+                          workspaceState: _workspaceStepState,
+                          rendererLabel: _rendererStepLabel,
+                          rendererState: _rendererStepState,
+                          audioLabel: _requiresAudioStep
+                              ? _audioStepLabel
+                              : null,
+                          audioState: _requiresAudioStep
+                              ? _audioStepState
+                              : null,
+                          errorMessage: _startupErrorMessage,
+                          onRetry: _startupFailed ? _retryStartup : null,
+                          onGoHome: _startupFailed && widget.onGoHome != null
+                              ? widget.onGoHome
+                              : null,
+                        ),
+                      ),
+                    const _LibraryToastLayer(),
+                  ],
+                );
+              },
             ),
           ),
         ),
@@ -764,33 +781,48 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     );
   }
 
-  Widget _buildWorkspaceBody(ScoreNotifier notifier) {
+  Widget _buildWorkspaceBody(
+    ScoreNotifier notifier,
+    WorkspaceLayoutProfile layoutProfile,
+  ) {
     if (!_workspacePrepared) {
       return const SizedBox.expand();
     }
 
     if (_mode == WorkspaceMode.compose) {
-      return _buildComposeBody(notifier);
+      return _buildComposeBody(notifier, layoutProfile);
     }
 
-    return _buildRhythmTestBody(notifier);
+    return _buildRhythmTestBody(notifier, layoutProfile);
   }
 
-  Widget _buildComposeBody(ScoreNotifier notifier) {
+  Widget _buildComposeBody(
+    ScoreNotifier notifier,
+    WorkspaceLayoutProfile layoutProfile,
+  ) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final metrics = _ComposeViewportMetrics.fromSize(constraints.biggest);
+        final metrics = layoutProfile.composeMetrics;
         final bodyLayout = metrics.resolveBodyLayout(constraints.maxHeight);
 
         return Column(
           children: [
             SizedBox(
               height: bodyLayout.scoreHeight,
-              child: ScoreViewWidget(
-                key: ValueKey('compose-score-view-$_rendererSession'),
-                interactive: true,
-                onRendererKeyDown: _handleRendererKeyDown,
-                onRendererReady: () => _handleRendererReady(_rendererSession),
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: ScoreViewWidget(
+                      key: ValueKey('compose-score-view-$_rendererSession'),
+                      interactive: true,
+                      onRendererKeyDown: _handleRendererKeyDown,
+                      onRendererReady: () =>
+                          _handleRendererReady(_rendererSession),
+                    ),
+                  ),
+                  if (notifier.score.notes.isEmpty)
+                    const Positioned.fill(child: _ComposeEmptySurfaceOverlay()),
+                ],
               ),
             ),
             Container(height: 1, color: AppColors.surfaceDivider),
@@ -805,7 +837,10 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     );
   }
 
-  Widget _buildRhythmTestBody(ScoreNotifier notifier) {
+  Widget _buildRhythmTestBody(
+    ScoreNotifier notifier,
+    WorkspaceLayoutProfile layoutProfile,
+  ) {
     final rhythmTestNotifier = _rhythmTestNotifier;
     if (rhythmTestNotifier == null || notifier.score.notes.isEmpty) {
       return _WorkspaceBodyMessage(
@@ -819,6 +854,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     return ChangeNotifierProvider.value(
       value: rhythmTestNotifier,
       child: RhythmTestWorkspace(
+        layoutProfile: layoutProfile,
         onTempoChanged: _handleRhythmTempoChanged,
         onRendererKeyDown: _handleRendererKeyDown,
         onRendererReady: () => _handleRendererReady(_rendererSession),
@@ -831,7 +867,7 @@ class _ComposeDock extends StatelessWidget {
   const _ComposeDock({required this.notifier, required this.metrics});
 
   final ScoreNotifier notifier;
-  final _ComposeViewportMetrics metrics;
+  final WorkspaceComposeMetrics metrics;
 
   @override
   Widget build(BuildContext context) {
@@ -853,116 +889,11 @@ class _ComposeDock extends StatelessWidget {
   }
 }
 
-class _ComposeViewportMetrics {
-  const _ComposeViewportMetrics({
-    required this.preferredScoreMinHeight,
-    required this.minimumVisibleScoreHeight,
-    required this.preferredToolbarHeight,
-    required this.minimumComposeDockViewportHeight,
-    required this.toolbarPadding,
-    required this.toolbarSectionPadding,
-    required this.toolbarSectionGap,
-    required this.infoChipSpacing,
-    required this.infoChipRunSpacing,
-    required this.keyboardLayout,
-  });
-
-  static const regular = _ComposeViewportMetrics(
-    preferredScoreMinHeight: 280,
-    minimumVisibleScoreHeight: 168,
-    preferredToolbarHeight: 132,
-    minimumComposeDockViewportHeight: 132,
-    toolbarPadding: EdgeInsets.fromLTRB(12, 10, 12, 8),
-    toolbarSectionPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-    toolbarSectionGap: 10,
-    infoChipSpacing: 10,
-    infoChipRunSpacing: 8,
-    keyboardLayout: PianoKeyboardLayout.regular,
-  );
-
-  static const compact = _ComposeViewportMetrics(
-    preferredScoreMinHeight: 264,
-    minimumVisibleScoreHeight: 148,
-    preferredToolbarHeight: 108,
-    minimumComposeDockViewportHeight: 108,
-    toolbarPadding: EdgeInsets.fromLTRB(10, 8, 10, 6),
-    toolbarSectionPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-    toolbarSectionGap: 8,
-    infoChipSpacing: 8,
-    infoChipRunSpacing: 6,
-    keyboardLayout: PianoKeyboardLayout.compact,
-  );
-
-  final double preferredScoreMinHeight;
-  final double minimumVisibleScoreHeight;
-  final double preferredToolbarHeight;
-  final double minimumComposeDockViewportHeight;
-  final EdgeInsets toolbarPadding;
-  final EdgeInsets toolbarSectionPadding;
-  final double toolbarSectionGap;
-  final double infoChipSpacing;
-  final double infoChipRunSpacing;
-  final PianoKeyboardLayout keyboardLayout;
-
-  double get preferredComposeDockHeight =>
-      preferredToolbarHeight + keyboardLayout.height;
-
-  _ComposeBodyLayout resolveBodyLayout(double availableHeight) {
-    final contentHeight = math.max(availableHeight, 0.0);
-    if (contentHeight <= 0) {
-      return const _ComposeBodyLayout(scoreHeight: 0, composeDockHeight: 0);
-    }
-
-    final dividerHeight = contentHeight > 1 ? 1.0 : 0.0;
-    final minDockViewportHeight = math.min(
-      minimumComposeDockViewportHeight,
-      math.max(contentHeight - dividerHeight, 0.0),
-    );
-    final maxScoreHeight = math.max(
-      contentHeight - minDockViewportHeight - dividerHeight,
-      0.0,
-    );
-    final minScoreHeight = math.min(minimumVisibleScoreHeight, maxScoreHeight);
-    final preferredScoreHeight = math.max(
-      preferredScoreMinHeight,
-      contentHeight - preferredComposeDockHeight - dividerHeight,
-    );
-    final scoreHeight = preferredScoreHeight.clamp(
-      minScoreHeight,
-      maxScoreHeight,
-    );
-    final composeDockHeight = math.max(
-      contentHeight - scoreHeight - dividerHeight,
-      0.0,
-    );
-
-    return _ComposeBodyLayout(
-      scoreHeight: scoreHeight,
-      composeDockHeight: composeDockHeight,
-    );
-  }
-
-  static _ComposeViewportMetrics fromSize(Size size) {
-    final isCompact = size.width < 900 || size.height < 640;
-    return isCompact ? compact : regular;
-  }
-}
-
-class _ComposeBodyLayout {
-  const _ComposeBodyLayout({
-    required this.scoreHeight,
-    required this.composeDockHeight,
-  });
-
-  final double scoreHeight;
-  final double composeDockHeight;
-}
-
 class _ComposeToolbarLayout extends StatelessWidget {
   const _ComposeToolbarLayout({required this.notifier, required this.metrics});
 
   final ScoreNotifier notifier;
-  final _ComposeViewportMetrics metrics;
+  final WorkspaceComposeMetrics metrics;
 
   @override
   Widget build(BuildContext context) {
@@ -991,23 +922,18 @@ class _ComposeToolbarLayout extends StatelessWidget {
           spacing: metrics.infoChipSpacing,
           runSpacing: metrics.infoChipRunSpacing,
         );
-        final affordanceProfile = resolveInputAffordanceProfile(
-          context,
-          compact: metrics.keyboardLayout.isCompact,
-        );
-
         final toolbarControls = ToolbarEditStrip(
           compact: metrics.keyboardLayout.isCompact,
           padding: EdgeInsets.zero,
         );
-        final isCompact = constraints.maxWidth < 1100;
+        final usesCompactHeader = metrics.toolbarUsesCompactHeader;
 
         return Padding(
           padding: metrics.toolbarPadding,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (isCompact)
+              if (usesCompactHeader)
                 _ToolbarSection(
                   padding: metrics.toolbarSectionPadding,
                   child: Row(
@@ -1036,18 +962,6 @@ class _ComposeToolbarLayout extends StatelessWidget {
                     ),
                   ],
                 ),
-              if (notifier.score.notes.isEmpty) ...[
-                SizedBox(height: metrics.toolbarSectionGap),
-                _ToolbarSection(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: metrics.keyboardLayout.isCompact ? 10 : 12,
-                    vertical: metrics.keyboardLayout.isCompact ? 6 : 8,
-                  ),
-                  child: _ComposeGuidanceStrip(
-                    message: affordanceProfile.composeEmptyStateGuidance,
-                  ),
-                ),
-              ],
               SizedBox(height: metrics.toolbarSectionGap),
               _ToolbarSection(
                 padding: metrics.toolbarSectionPadding,
@@ -1064,30 +978,117 @@ class _ComposeToolbarLayout extends StatelessWidget {
   }
 }
 
-class _ComposeGuidanceStrip extends StatelessWidget {
-  const _ComposeGuidanceStrip({required this.message});
+class _ComposeEmptySurfaceOverlay extends StatelessWidget {
+  const _ComposeEmptySurfaceOverlay();
 
-  final String message;
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxHeight < 180;
+
+        return IgnorePointer(
+          ignoring: true,
+          child: Align(
+            alignment: const Alignment(0, 0.6),
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(
+                compact ? 16 : 32,
+                compact ? 8 : 16,
+                compact ? 16 : 32,
+                compact ? 12 : 36,
+              ),
+              child: ConstrainedBox(
+                key: const ValueKey('compose-empty-overlay'),
+                constraints: const BoxConstraints(maxWidth: 420),
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: AppColors.surfaceContainerHigh.withAlpha(232),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: AppColors.surfaceBorder),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withAlpha(18),
+                        blurRadius: 16,
+                        offset: const Offset(0, 6),
+                      ),
+                    ],
+                  ),
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(
+                      compact ? 14 : 18,
+                      compact ? 12 : 16,
+                      compact ? 14 : 18,
+                      compact ? 12 : 16,
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _ComposeEmptyStep(
+                          number: '1',
+                          title: 'Choose a duration',
+                          compact: compact,
+                        ),
+                        SizedBox(height: compact ? 8 : 10),
+                        _ComposeEmptyStep(
+                          number: '2',
+                          title: 'Tap the piano',
+                          compact: compact,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _ComposeEmptyStep extends StatelessWidget {
+  const _ComposeEmptyStep({
+    required this.number,
+    required this.title,
+    required this.compact,
+  });
+
+  final String number;
+  final String title;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
     return Row(
       children: [
-        const Icon(
-          Icons.info_outline_rounded,
-          size: 16,
-          color: AppColors.textMuted,
+        Container(
+          width: compact ? 20 : 24,
+          height: compact ? 20 : 24,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: AppColors.accentBlue.withAlpha(24),
+            borderRadius: BorderRadius.circular(999),
+          ),
+          child: Text(
+            number,
+            style: const TextStyle(
+              color: AppColors.accentBlue,
+              fontSize: 11,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
         ),
-        const SizedBox(width: 8),
+        SizedBox(width: compact ? 8 : 10),
         Expanded(
           child: Text(
-            message,
-            key: const ValueKey('compose-empty-guidance'),
-            style: const TextStyle(
-              color: AppColors.textMuted,
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-              height: 1.35,
+            title,
+            style: TextStyle(
+              color: AppColors.textBody,
+              fontSize: compact ? 13 : 15,
+              fontWeight: FontWeight.w800,
             ),
           ),
         ),

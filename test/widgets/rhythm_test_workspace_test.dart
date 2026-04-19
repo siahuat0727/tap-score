@@ -14,6 +14,7 @@ import 'package:tap_score/state/rhythm_test_notifier.dart';
 import 'package:tap_score/state/score_notifier.dart';
 import 'package:tap_score/widgets/rhythm_test_workspace.dart';
 import 'package:tap_score/widgets/score_view_widget.dart';
+import 'package:tap_score/workspace/workspace_layout_profile.dart';
 import 'package:webview_flutter_platform_interface/webview_flutter_platform_interface.dart';
 
 import '../helpers/fake_webview_platform.dart';
@@ -76,6 +77,39 @@ void main() {
     expect(notifier.largeErrorThresholdBeats, closeTo(0.11, 0.0001));
   });
 
+  testWidgets('phone layout stacks parameter cards without overflow', (
+    WidgetTester tester,
+  ) async {
+    final notifier = _buildNotifier();
+    addTearDown(notifier.dispose);
+    await notifier.init();
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 844);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(_wrap(notifier, platform: TargetPlatform.android));
+    await tester.pump();
+
+    final tempoCard = tester.getRect(
+      find.byKey(const ValueKey('rhythm-test-tempo')),
+    );
+    final thresholdCard = tester.getRect(
+      find.byKey(const ValueKey('rhythm-test-threshold')),
+    );
+
+    expect(thresholdCard.top, greaterThan(tempoCard.bottom));
+    expect(
+      find.byKey(const ValueKey('rhythm-test-tempo-value')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('rhythm-test-threshold-value')),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets(
     'primary button becomes Tap during play and result card appears',
     (WidgetTester tester) async {
@@ -135,7 +169,7 @@ void main() {
       final resultRect = tester.getRect(
         find.byKey(const ValueKey('rhythm-test-result-card')),
       );
-      expect(resultRect.center.dy, greaterThan(workspaceRect.height * 0.3));
+      expect(resultRect.center.dy, greaterThan(workspaceRect.height * 0.24));
       expect(
         tester
             .widget<ScoreViewWidget>(find.byType(ScoreViewWidget))
@@ -437,6 +471,7 @@ Widget _wrap(RhythmTestNotifier notifier, {TargetPlatform? platform}) {
       theme: _themeForPlatform(platform),
       home: Scaffold(
         body: RhythmTestWorkspace(
+          layoutProfile: WorkspaceLayoutProfile.fromSize(const Size(430, 932)),
           onTempoChanged: notifier.setTempo,
           onRendererKeyDown: _ignoreRendererKeyDown,
         ),

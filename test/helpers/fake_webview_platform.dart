@@ -3,10 +3,12 @@ import 'package:webview_flutter_platform_interface/webview_flutter_platform_inte
 
 class FakeWebViewPlatform extends WebViewPlatform {
   static bool autoDispatchReady = true;
+  static bool autoDispatchCommandApplied = true;
   static final List<void Function()> _pendingReadyCallbacks = [];
 
   static void reset() {
     autoDispatchReady = true;
+    autoDispatchCommandApplied = true;
     _pendingReadyCallbacks.clear();
   }
 
@@ -91,7 +93,27 @@ class _FakeWebViewController extends PlatformWebViewController {
   }
 
   @override
-  Future<void> runJavaScript(String javaScript) async {}
+  Future<void> runJavaScript(String javaScript) async {
+    if (!FakeWebViewPlatform.autoDispatchCommandApplied) {
+      return;
+    }
+    final channel = _channels['TapScore'];
+    if (channel == null) {
+      return;
+    }
+    final match = RegExp(r'"commandId"\s*:\s*(\d+)').firstMatch(javaScript);
+    final commandId = int.tryParse(match?.group(1) ?? '');
+    if (commandId == null) {
+      return;
+    }
+    Future<void>.microtask(() {
+      channel.onMessageReceived(
+        JavaScriptMessage(
+          message: '{"type":"commandApplied","commandId":$commandId}',
+        ),
+      );
+    });
+  }
 }
 
 class _FakeCookieManager extends PlatformWebViewCookieManager {

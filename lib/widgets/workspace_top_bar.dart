@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 
 import '../app/workspace_launch_config.dart';
 import '../theme/app_colors.dart';
+import '../workspace/workspace_layout_profile.dart';
 
 class WorkspaceTopBar extends StatelessWidget {
   const WorkspaceTopBar({
     required this.mode,
+    required this.layoutProfile,
     required this.showsEditorActions,
     required this.isInteractive,
     required this.hasUnsavedChanges,
@@ -17,6 +19,7 @@ class WorkspaceTopBar extends StatelessWidget {
   });
 
   final WorkspaceMode mode;
+  final WorkspaceLayoutProfile layoutProfile;
   final bool showsEditorActions;
   final bool isInteractive;
   final bool hasUnsavedChanges;
@@ -47,9 +50,6 @@ class WorkspaceTopBar extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
           child: LayoutBuilder(
             builder: (context, constraints) {
-              final compact = constraints.maxWidth < 1040;
-              final ultraCompact = constraints.maxWidth < 420;
-              final trailingWidth = compact ? 88.0 : 252.0;
               final homeButton = SizedBox(
                 width: 40,
                 child: _ToolbarIconButton(
@@ -61,8 +61,8 @@ class WorkspaceTopBar extends StatelessWidget {
               );
               final modeSwitch = _WorkspaceModeSwitch(
                 mode: mode,
-                compact: compact,
-                ultraCompact: ultraCompact,
+                compact: layoutProfile.isPhone,
+                maxWidth: layoutProfile.topBarModeSwitchMaxWidth,
                 isInteractive: isInteractive,
                 onSelectMode: onSelectMode,
               );
@@ -76,7 +76,7 @@ class WorkspaceTopBar extends StatelessWidget {
                             buttonKey: const ValueKey('save-score-button'),
                             icon: Icons.save_outlined,
                             label: 'Save',
-                            compact: compact,
+                            iconOnly: layoutProfile.topBarActionButtonsIconOnly,
                             highlighted: hasUnsavedChanges,
                             onTap: isInteractive ? onSave : null,
                           ),
@@ -85,7 +85,7 @@ class WorkspaceTopBar extends StatelessWidget {
                             buttonKey: const ValueKey('export-score-button'),
                             icon: Icons.file_download_outlined,
                             label: 'Export',
-                            compact: compact,
+                            iconOnly: layoutProfile.topBarActionButtonsIconOnly,
                             onTap: isInteractive
                                 ? () => onExport(context)
                                 : null,
@@ -95,7 +95,7 @@ class WorkspaceTopBar extends StatelessWidget {
                     : const SizedBox.shrink(),
               );
 
-              if (ultraCompact) {
+              if (layoutProfile.topBarUsesTwoRows) {
                 return Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -114,7 +114,10 @@ class WorkspaceTopBar extends StatelessWidget {
                   const SizedBox(width: 10),
                   Expanded(child: Center(child: modeSwitch)),
                   const SizedBox(width: 10),
-                  SizedBox(width: trailingWidth, child: trailingActions),
+                  SizedBox(
+                    width: layoutProfile.topBarActionButtonsIconOnly ? 88 : 252,
+                    child: trailingActions,
+                  ),
                 ],
               );
             },
@@ -129,23 +132,21 @@ class _WorkspaceModeSwitch extends StatelessWidget {
   const _WorkspaceModeSwitch({
     required this.mode,
     required this.compact,
-    required this.ultraCompact,
+    required this.maxWidth,
     required this.isInteractive,
     required this.onSelectMode,
   });
 
   final WorkspaceMode mode;
   final bool compact;
-  final bool ultraCompact;
+  final double maxWidth;
   final bool isInteractive;
   final ValueChanged<WorkspaceMode> onSelectMode;
 
   @override
   Widget build(BuildContext context) {
     return ConstrainedBox(
-      constraints: BoxConstraints(
-        maxWidth: ultraCompact ? 224 : (compact ? 280 : 340),
-      ),
+      constraints: BoxConstraints(maxWidth: maxWidth),
       child: DecoratedBox(
         decoration: BoxDecoration(
           color: AppColors.surface,
@@ -160,9 +161,9 @@ class _WorkspaceModeSwitch extends StatelessWidget {
                 child: _ModeButton(
                   key: const ValueKey('workspace-mode-compose'),
                   icon: Icons.edit_outlined,
-                  label: ultraCompact ? 'Edit' : 'Editor',
+                  label: compact ? 'Edit' : 'Editor',
                   selected: mode == WorkspaceMode.compose,
-                  compact: ultraCompact,
+                  compact: compact,
                   onTap: isInteractive
                       ? () => onSelectMode(WorkspaceMode.compose)
                       : null,
@@ -173,9 +174,9 @@ class _WorkspaceModeSwitch extends StatelessWidget {
                 child: _ModeButton(
                   key: const ValueKey('workspace-mode-rhythm-test'),
                   icon: Icons.timer_outlined,
-                  label: ultraCompact ? 'Test' : 'Rhythm Test',
+                  label: compact ? 'Test' : 'Rhythm Test',
                   selected: mode == WorkspaceMode.rhythmTest,
-                  compact: ultraCompact,
+                  compact: compact,
                   onTap: isInteractive
                       ? () => onSelectMode(WorkspaceMode.rhythmTest)
                       : null,
@@ -307,7 +308,7 @@ class _ToolbarActionButton extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.onTap,
-    required this.compact,
+    required this.iconOnly,
     this.highlighted = false,
   });
 
@@ -315,7 +316,7 @@ class _ToolbarActionButton extends StatelessWidget {
   final IconData icon;
   final String label;
   final VoidCallback? onTap;
-  final bool compact;
+  final bool iconOnly;
   final bool highlighted;
 
   @override
@@ -347,9 +348,9 @@ class _ToolbarActionButton extends StatelessWidget {
           onTap: onTap,
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 160),
-            width: compact ? 40 : null,
+            width: iconOnly ? 40 : null,
             height: 40,
-            padding: compact
+            padding: iconOnly
                 ? EdgeInsets.zero
                 : const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
             decoration: BoxDecoration(
@@ -357,7 +358,7 @@ class _ToolbarActionButton extends StatelessWidget {
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: borderColor),
             ),
-            child: compact
+            child: iconOnly
                 ? Icon(icon, size: 18, color: foregroundColor)
                 : Row(
                     mainAxisSize: MainAxisSize.min,

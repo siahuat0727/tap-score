@@ -245,7 +245,10 @@ void main() {
 
       expect(find.byType(WorkspaceScreen), findsOneWidget);
       expect(find.byKey(const ValueKey('workspace-top-bar')), findsOneWidget);
-      expect(find.text('Rhythm Test'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('workspace-mode-rhythm-test')),
+        findsOneWidget,
+      );
       expect(find.byKey(const ValueKey('rhythm-test-primary')), findsOneWidget);
       expect(find.text('Choose Another Preset'), findsNothing);
       expect(find.text('Open in Editor'), findsNothing);
@@ -702,7 +705,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('blank compose workspace shows desktop empty-state guidance', (
+  testWidgets('blank compose workspace shows in-surface empty overlay', (
     WidgetTester tester,
   ) async {
     final notifier = _buildInitializedWorkspaceNotifier(score: Score());
@@ -717,17 +720,12 @@ void main() {
     );
     await _pumpWorkspaceReady(tester);
 
-    expect(
-      find.byKey(const ValueKey('compose-empty-guidance')),
-      findsOneWidget,
-    );
-    expect(
-      find.text('Tap the piano or press A/S/D... to enter notes. Space plays.'),
-      findsOneWidget,
-    );
+    expect(find.byKey(const ValueKey('compose-empty-overlay')), findsOneWidget);
+    expect(find.text('Choose a duration'), findsOneWidget);
+    expect(find.text('Tap the piano'), findsOneWidget);
   });
 
-  testWidgets('blank compose workspace shows touch-first guidance copy', (
+  testWidgets('empty overlay stays inside the score surface', (
     WidgetTester tester,
   ) async {
     final notifier = _buildInitializedWorkspaceNotifier(score: Score());
@@ -738,17 +736,79 @@ void main() {
     );
     await _pumpWorkspaceReady(tester);
 
-    expect(
-      find.byKey(const ValueKey('compose-empty-guidance')),
-      findsOneWidget,
+    final overlayRect = tester.getRect(
+      find.byKey(const ValueKey('compose-empty-overlay')),
     );
-    expect(
-      find.text('Tap the piano to enter notes. Press Play to listen back.'),
-      findsOneWidget,
+    final scoreSurfaceRect = tester.getRect(
+      find.byKey(const ValueKey('score-view-surface')),
     );
+
+    expect(overlayRect.bottom, lessThanOrEqualTo(scoreSurfaceRect.bottom));
+    expect(overlayRect.center.dy, greaterThan(scoreSurfaceRect.center.dy));
   });
 
-  testWidgets('compose guidance disappears after the first inserted note', (
+  testWidgets(
+    'compose empty overlay disappears after the first inserted note',
+    (WidgetTester tester) async {
+      final notifier = _buildInitializedWorkspaceNotifier(score: Score());
+      addTearDown(notifier.dispose);
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1280, 960);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        _buildWorkspace(notifier, platform: TargetPlatform.macOS),
+      );
+      await _pumpWorkspaceReady(tester);
+
+      expect(
+        find.byKey(const ValueKey('compose-empty-overlay')),
+        findsOneWidget,
+      );
+
+      final emptyScoreHeight = tester
+          .getSize(find.byKey(const ValueKey('score-view-surface')))
+          .height;
+      notifier.insertPitchedNote(60);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      final populatedScoreHeight = tester
+          .getSize(find.byKey(const ValueKey('score-view-surface')))
+          .height;
+
+      expect(find.byKey(const ValueKey('compose-empty-overlay')), findsNothing);
+      expect(populatedScoreHeight, emptyScoreHeight);
+    },
+  );
+
+  testWidgets('phone workspace stacks top bar into two rows', (
+    WidgetTester tester,
+  ) async {
+    final notifier = _buildInitializedWorkspaceNotifier(score: Score());
+    addTearDown(notifier.dispose);
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 844);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      _buildWorkspace(notifier, platform: TargetPlatform.android),
+    );
+    await _pumpWorkspaceReady(tester);
+
+    final homeRect = tester.getRect(
+      find.byKey(const ValueKey('workspace-home-button')),
+    );
+    final composeRect = tester.getRect(
+      find.byKey(const ValueKey('workspace-mode-compose')),
+    );
+
+    expect(composeRect.top, greaterThan(homeRect.bottom));
+  });
+
+  testWidgets('wide workspace keeps top bar actions on one row', (
     WidgetTester tester,
   ) async {
     final notifier = _buildInitializedWorkspaceNotifier(score: Score());
@@ -763,16 +823,14 @@ void main() {
     );
     await _pumpWorkspaceReady(tester);
 
-    expect(
-      find.byKey(const ValueKey('compose-empty-guidance')),
-      findsOneWidget,
+    final homeRect = tester.getRect(
+      find.byKey(const ValueKey('workspace-home-button')),
+    );
+    final composeRect = tester.getRect(
+      find.byKey(const ValueKey('workspace-mode-compose')),
     );
 
-    notifier.insertPitchedNote(60);
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
-
-    expect(find.byKey(const ValueKey('compose-empty-guidance')), findsNothing);
+    expect((composeRect.top - homeRect.top).abs(), lessThan(12));
   });
 
   testWidgets('modifier tools use the same baseline-aligned glyph slot', (
