@@ -64,8 +64,9 @@ class _NativeScoreRendererState extends State<_NativeScoreRenderer> {
   }
 
   void _sendRender(Map<String, dynamic> payload) {
-    final jsonStr = jsonEncode(payload).replaceAll("'", "\\'");
-    _controller.runJavaScript("window.renderFromDart('$jsonStr')");
+    final jsonText = jsonEncode(payload);
+    final jsArg = jsonEncode(jsonText);
+    _controller.runJavaScript('window.renderFromDart($jsArg)');
   }
 
   @override

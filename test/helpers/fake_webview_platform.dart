@@ -4,11 +4,13 @@ import 'package:webview_flutter_platform_interface/webview_flutter_platform_inte
 class FakeWebViewPlatform extends WebViewPlatform {
   static bool autoDispatchReady = true;
   static bool autoDispatchCommandApplied = true;
+  static final List<String> runJavaScriptCalls = [];
   static final List<void Function()> _pendingReadyCallbacks = [];
 
   static void reset() {
     autoDispatchReady = true;
     autoDispatchCommandApplied = true;
+    runJavaScriptCalls.clear();
     _pendingReadyCallbacks.clear();
   }
 
@@ -94,6 +96,7 @@ class _FakeWebViewController extends PlatformWebViewController {
 
   @override
   Future<void> runJavaScript(String javaScript) async {
+    FakeWebViewPlatform.runJavaScriptCalls.add(javaScript);
     if (!FakeWebViewPlatform.autoDispatchCommandApplied) {
       return;
     }
