@@ -229,6 +229,50 @@ void main() {
     },
   );
 
+  test('web score renderer scopes iframe postMessage traffic', () {
+    final webRenderer = File(
+      'lib/widgets/score_renderer_web.dart',
+    ).readAsStringSync();
+    final html = File('assets/html/score_renderer.html').readAsStringSync();
+
+    expect(
+      webRenderer,
+      contains('final rendererWindow = _iframe?.contentWindow;'),
+    );
+    expect(
+      webRenderer,
+      contains(
+        'if (rendererWindow == null || msgEvent.source != rendererWindow) {',
+      ),
+    );
+    expect(
+      webRenderer,
+      contains('if (msgEvent.origin != web.window.location.origin) {'),
+    );
+    expect(
+      webRenderer,
+      contains('final targetOrigin = web.window.location.origin;'),
+    );
+    expect(
+      webRenderer,
+      contains(
+        '_iframe!.contentWindow?.postMessage(jsonStr.toJS, targetOrigin.toJS);',
+      ),
+    );
+    expect(webRenderer, isNot(contains("postMessage(jsonStr.toJS, '*'.toJS)")));
+
+    expect(
+      html,
+      contains('window.parent.postMessage(json, window.location.origin);'),
+    );
+    expect(html, contains('if (event.source !== window.parent) return;'));
+    expect(
+      html,
+      contains('if (event.origin !== window.location.origin) return;'),
+    );
+    expect(html, isNot(contains("window.parent.postMessage(json, '*');")));
+  });
+
   test('score renderer handles the inline rhythm overlay payload', () {
     final html = File('assets/html/score_renderer.html').readAsStringSync();
 
