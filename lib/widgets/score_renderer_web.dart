@@ -80,26 +80,31 @@ class _WebScoreRendererState extends State<_WebScoreRenderer> {
 
   void _onWindowMessage(web.Event event) {
     final msgEvent = event as web.MessageEvent;
-    try {
-      final raw = msgEvent.data;
-      if (raw == null) return;
-      if (!raw.typeofEquals('string')) return;
-      final jsonStr = (raw as JSString).toDart;
-      final data = jsonDecode(jsonStr) as Map<String, dynamic>;
-      if (data['type'] == 'ready' && !_ready) {
-        _ready = true;
-        widget.onReady(_sendRender);
-      }
-      widget.onMessage(data);
-    } catch (_) {
-      // Ignore messages from other sources.
+    final rendererWindow = _iframe?.contentWindow;
+    if (rendererWindow == null || msgEvent.source != rendererWindow) {
+      return;
     }
+    if (msgEvent.origin != web.window.location.origin) {
+      return;
+    }
+
+    final raw = msgEvent.data;
+    if (raw == null) return;
+    if (!raw.typeofEquals('string')) return;
+    final jsonStr = (raw as JSString).toDart;
+    final data = jsonDecode(jsonStr) as Map<String, dynamic>;
+    if (data['type'] == 'ready' && !_ready) {
+      _ready = true;
+      widget.onReady(_sendRender);
+    }
+    widget.onMessage(data);
   }
 
   void _sendRender(Map<String, dynamic> payload) {
     if (_iframe == null) return;
     final jsonStr = jsonEncode(payload);
-    _iframe!.contentWindow?.postMessage(jsonStr.toJS, '*'.toJS);
+    final targetOrigin = web.window.location.origin;
+    _iframe!.contentWindow?.postMessage(jsonStr.toJS, targetOrigin.toJS);
   }
 
   void _syncPointerInputState() {
