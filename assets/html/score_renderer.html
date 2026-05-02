@@ -2378,7 +2378,7 @@
         window.flutter_inappwebview.callHandler('TapScore', json);
       }
       if (window.parent && window.parent !== window) {
-        window.parent.postMessage(json, '*');
+        window.parent.postMessage(json, window.location.origin);
       }
     }
 
@@ -2402,6 +2402,9 @@
     }
 
     window.addEventListener('message', function(event) {
+      if (event.source !== window.parent) return;
+      if (event.origin !== window.location.origin) return;
+
       try {
         const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
         _dispatchRenderCommand(data);
