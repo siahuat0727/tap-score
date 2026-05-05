@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:webview_flutter_platform_interface/webview_flutter_platform_interface.dart';
 
@@ -104,8 +106,7 @@ class _FakeWebViewController extends PlatformWebViewController {
     if (channel == null) {
       return;
     }
-    final match = RegExp(r'"commandId"\s*:\s*(\d+)').firstMatch(javaScript);
-    final commandId = int.tryParse(match?.group(1) ?? '');
+    final commandId = _commandIdFromRenderCall(javaScript);
     if (commandId == null) {
       return;
     }
@@ -116,6 +117,26 @@ class _FakeWebViewController extends PlatformWebViewController {
         ),
       );
     });
+  }
+
+  int? _commandIdFromRenderCall(String javaScript) {
+    final match = RegExp(
+      r'^window\.renderFromDart\((.*)\)$',
+    ).firstMatch(javaScript);
+    if (match == null) {
+      throw StateError('Unexpected JavaScript call: $javaScript');
+    }
+
+    final payloadText = jsonDecode(match.group(1)!) as String;
+    final payload = jsonDecode(payloadText) as Map<String, dynamic>;
+    final commandId = payload['commandId'];
+    if (commandId == null) {
+      return null;
+    }
+    if (commandId is int) {
+      return commandId;
+    }
+    throw StateError('Renderer commandId is not an int: $payloadText');
   }
 }
 

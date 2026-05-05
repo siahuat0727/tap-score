@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
-import 'package:tap_score/models/note.dart';
-import 'package:tap_score/models/score.dart';
 import 'package:tap_score/state/score_notifier.dart';
 import 'package:tap_score/widgets/score_view_widget.dart';
 import 'package:webview_flutter_platform_interface/webview_flutter_platform_interface.dart';
