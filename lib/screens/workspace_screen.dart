@@ -5,35 +5,20 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../app/app_shell_ready_bridge.dart';
-import '../app/score_seed_config.dart';
 import '../app/workspace_launch_config.dart';
 import '../input/editor_shortcuts.dart';
 import '../services/audio_service.dart';
 import '../services/score_transfer_service.dart';
-import '../state/rhythm_test_notifier.dart';
 import '../state/score_notifier.dart';
 import '../theme/app_colors.dart';
 import '../workspace/workspace_layout_profile.dart';
+import '../workspace/workspace_startup_controller.dart';
 import '../widgets/duration_selector.dart';
 import '../widgets/piano_keyboard.dart';
 import '../widgets/playback_controls.dart';
 import '../widgets/rhythm_test_workspace.dart';
 import '../widgets/score_view_widget.dart';
 import '../widgets/workspace_top_bar.dart';
-
-typedef WorkspaceRouteSync =
-    void Function(WorkspaceMode mode, String? shareablePresetId);
-
-enum _WorkspaceStartupPhase {
-  preparingWorkspace,
-  preparingRenderer,
-  preparingRhythmTestAudio,
-  retryingRhythmTestAudio,
-  ready,
-  failed,
-}
-
-enum _WorkspaceStartupFailureKind { workspace, rhythmTestAudio }
 
 class WorkspaceScreen extends StatefulWidget {
   const WorkspaceScreen({
@@ -56,505 +41,122 @@ class WorkspaceScreen extends StatefulWidget {
 }
 
 class _WorkspaceScreenState extends State<WorkspaceScreen> {
-  static const Duration _webAudioTimeout = Duration(seconds: 12);
-
   final FocusNode _focusNode = FocusNode();
   late final ScoreTransferService _scoreTransferService =
       widget.scoreTransferService ?? PlatformScoreTransferService();
-  late WorkspaceMode _mode = widget.launchConfig.initialMode;
-  RhythmTestNotifier? _rhythmTestNotifier;
-  _WorkspaceStartupPhase _startupPhase =
-      _WorkspaceStartupPhase.preparingWorkspace;
-  _WorkspaceStartupFailureKind? _startupFailureKind;
-  String? _startupErrorMessage;
-  String _workspaceStepLabel = '';
-  String _rendererStepLabel = 'Loading score renderer';
-  String _audioStepLabel = 'Initializing Web Audio';
-  int _startupPass = 0;
-  int _rendererSession = 0;
-  bool _workspacePrepared = false;
-  bool _rendererReady = false;
-  bool _audioReady = false;
-
-  bool get _startupReady => _startupPhase == _WorkspaceStartupPhase.ready;
-  bool get _startupFailed => _startupPhase == _WorkspaceStartupPhase.failed;
-  bool get _showsStartupOverlay => !_startupReady;
+  late WorkspaceStartupController _startupController;
+  bool _hasStartupController = false;
 
   @override
   void initState() {
     super.initState();
-    _workspaceStepLabel = _workspaceLabelForLaunchConfig(widget.launchConfig);
-    _rendererStepLabel = _rendererLabelForMode(_mode);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) {
         return;
       }
-      unawaited(_startStartupFlow());
+      unawaited(_startupController.start());
     });
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_hasStartupController) {
+      return;
+    }
+    _startupController = WorkspaceStartupController(
+      scoreNotifier: context.read<ScoreNotifier>(),
+      launchConfig: widget.launchConfig,
+      requestFocus: _focusNode.requestFocus,
+      onRouteSync: widget.onRouteSync,
+      rhythmTestAudioService: widget.rhythmTestAudioService,
+    );
+    _startupController.addListener(_handleStartupChanged);
+    _hasStartupController = true;
+    _publishBrowserStartupState(_startupController.state);
+  }
+
+  @override
   void dispose() {
-    _rhythmTestNotifier?.dispose();
+    if (_hasStartupController) {
+      _startupController.removeListener(_handleStartupChanged);
+      _startupController.dispose();
+    }
     _focusNode.dispose();
     super.dispose();
   }
 
-  Future<void> _startStartupFlow() async {
-    final scoreNotifier = context.read<ScoreNotifier>();
-    final pass = ++_startupPass;
-
-    _disposeRhythmTestNotifier();
-    _rendererSession += 1;
-    setState(() {
-      _startupPhase = _WorkspaceStartupPhase.preparingWorkspace;
-      _startupFailureKind = null;
-      _startupErrorMessage = null;
-      _workspacePrepared = false;
-      _rendererReady = false;
-      _audioReady = _mode == WorkspaceMode.compose;
-      _workspaceStepLabel = _workspaceLabelForLaunchConfig(widget.launchConfig);
-      _rendererStepLabel = _rendererLabelForMode(_mode);
-      _audioStepLabel = 'Initializing Web Audio';
-    });
-    _publishBrowserStartupState();
-
-    await scoreNotifier.loadInitialWorkspace(
-      initialScoreConfig: widget.launchConfig.seedConfig,
-    );
-    if (!mounted || pass != _startupPass) {
+  void _handleStartupChanged() {
+    if (!mounted) {
       return;
     }
-
-    if (!scoreNotifier.initialWorkspaceLoadSucceeded) {
-      _failStartup(
-        kind: _WorkspaceStartupFailureKind.workspace,
-        message:
-            scoreNotifier.libraryMessage ?? 'Failed to load the workspace.',
-      );
-      return;
-    }
-
-    _configureBodyAfterWorkspaceLoad(scoreNotifier);
-    if (!mounted || pass != _startupPass) {
-      return;
-    }
-
-    _maybeCompleteStartup(scoreNotifier);
-    if (_startupReady) {
-      return;
-    }
-
-    if (_requiresRhythmTestAudioGate(scoreNotifier)) {
-      unawaited(_prepareRhythmTestAudio(pass: pass, attempt: 1));
-      return;
-    }
-
-    setState(() {
-      _startupPhase = _WorkspaceStartupPhase.preparingRenderer;
-    });
-    _publishBrowserStartupState();
+    _publishBrowserStartupState(_startupController.state);
+    setState(() {});
   }
 
-  Future<void> _switchMode(WorkspaceMode nextMode) async {
-    if (!_startupReady || nextMode == _mode) {
-      return;
-    }
-
-    if (nextMode == WorkspaceMode.compose) {
-      final scoreNotifier = context.read<ScoreNotifier>();
-      _rendererSession += 1;
-      setState(() {
-        _mode = WorkspaceMode.compose;
-        _rendererReady = false;
-        _audioReady = true;
-        _rendererStepLabel = _rendererLabelForMode(WorkspaceMode.compose);
-      });
-      _disposeRhythmTestNotifier();
-      _beginBlockingStartup(
-        phase: _WorkspaceStartupPhase.preparingRenderer,
-        workspaceLabel: 'Current workspace ready',
-      );
-      _maybeCompleteStartup(scoreNotifier);
-      _syncRoute();
-      return;
-    }
-
-    final scoreNotifier = context.read<ScoreNotifier>();
-    scoreNotifier.stop();
-    _rendererSession += 1;
-    setState(() {
-      _mode = WorkspaceMode.rhythmTest;
-      _rendererReady = false;
-      _audioReady = false;
-      _rendererStepLabel = _rendererLabelForMode(WorkspaceMode.rhythmTest);
-      _audioStepLabel = 'Initializing Web Audio';
-    });
-    _configureRhythmTestBody(scoreNotifier);
-    _beginBlockingStartup(
-      phase: _requiresRhythmTestAudioGate(scoreNotifier)
-          ? _WorkspaceStartupPhase.preparingRhythmTestAudio
-          : _WorkspaceStartupPhase.preparingRenderer,
-      workspaceLabel: 'Current workspace ready',
-    );
-    _maybeCompleteStartup(scoreNotifier);
-    if (!_startupReady && _requiresRhythmTestAudioGate(scoreNotifier)) {
-      unawaited(_prepareRhythmTestAudio(pass: ++_startupPass, attempt: 1));
-    }
-    _syncRoute();
-  }
-
-  String? _shareablePresetId(ScoreNotifier notifier) {
-    if (notifier.hasUnsavedChanges) {
-      return null;
-    }
-    return notifier.activePresetId;
-  }
-
-  void _syncRoute() {
-    final onRouteSync = widget.onRouteSync;
-    if (onRouteSync == null) {
-      return;
-    }
-    onRouteSync(_mode, _shareablePresetId(context.read<ScoreNotifier>()));
-  }
-
-  void _disposeRhythmTestNotifier() {
-    final previousNotifier = _rhythmTestNotifier;
-    _rhythmTestNotifier = null;
-    previousNotifier?.dispose();
-  }
-
-  String _workspaceLabelForLaunchConfig(WorkspaceLaunchConfig launchConfig) {
-    return switch (launchConfig.seedConfig.kind) {
-      ScoreSeedKind.restore => 'Restoring last workspace',
-      ScoreSeedKind.blank => 'Creating empty workspace',
-      ScoreSeedKind.preset => 'Loading preset',
-      ScoreSeedKind.saved => 'Loading saved score',
-      ScoreSeedKind.imported => 'Importing score',
-    };
-  }
-
-  String _rendererLabelForMode(WorkspaceMode mode) {
-    return switch (mode) {
-      WorkspaceMode.compose => 'Loading editor surface',
-      WorkspaceMode.rhythmTest => 'Loading rhythm test surface',
-    };
-  }
-
-  String _audioLabelForPhase(
-    RhythmTestPreparationPhase phase, {
-    required bool retrying,
-  }) {
-    return switch (phase) {
-      RhythmTestPreparationPhase.initializingAudio =>
-        retrying
-            ? 'Retrying Web Audio initialization'
-            : 'Initializing Web Audio',
-      RhythmTestPreparationPhase.preloadingNotes =>
-        retrying
-            ? 'Retrying rhythm test note preload'
-            : 'Preloading rhythm test notes',
-    };
-  }
-
-  void _configureBodyAfterWorkspaceLoad(ScoreNotifier notifier) {
-    _configureRhythmTestBody(notifier);
-    final requiresRenderer = _requiresRendererGate(notifier);
-    final requiresAudio = _requiresRhythmTestAudioGate(notifier);
-    setState(() {
-      _workspacePrepared = true;
-      _rendererReady = !requiresRenderer;
-      _audioReady = !requiresAudio;
-      _startupPhase = requiresAudio
-          ? _WorkspaceStartupPhase.preparingRhythmTestAudio
-          : requiresRenderer
-          ? _WorkspaceStartupPhase.preparingRenderer
-          : _WorkspaceStartupPhase.ready;
-    });
-    _publishBrowserStartupState();
-  }
-
-  void _configureRhythmTestBody(ScoreNotifier scoreNotifier) {
-    if (_mode != WorkspaceMode.rhythmTest) {
-      _disposeRhythmTestNotifier();
-      return;
-    }
-
-    scoreNotifier.stop();
-    if (scoreNotifier.score.notes.isEmpty) {
-      _disposeRhythmTestNotifier();
-      return;
-    }
-
-    final previousNotifier = _rhythmTestNotifier;
-    _rhythmTestNotifier = RhythmTestNotifier(
-      score: scoreNotifier.score,
-      referenceBpm: scoreNotifier.referenceBpm,
-      audioService: widget.rhythmTestAudioService,
-    );
-    previousNotifier?.dispose();
-  }
-
-  bool _requiresRendererGate(ScoreNotifier notifier) {
-    if (_mode == WorkspaceMode.compose) {
-      return true;
-    }
-    return _rhythmTestNotifier != null && notifier.score.notes.isNotEmpty;
-  }
-
-  bool _requiresRhythmTestAudioGate(ScoreNotifier notifier) {
-    if (_mode != WorkspaceMode.rhythmTest) {
-      return false;
-    }
-    return _rhythmTestNotifier != null && notifier.score.notes.isNotEmpty;
-  }
-
-  void _beginBlockingStartup({
-    required _WorkspaceStartupPhase phase,
-    required String workspaceLabel,
-  }) {
-    setState(() {
-      _startupPass += 1;
-      _startupPhase = phase;
-      _startupFailureKind = null;
-      _startupErrorMessage = null;
-      _workspacePrepared = true;
-      _workspaceStepLabel = workspaceLabel;
-    });
-    _publishBrowserStartupState();
-  }
-
-  Future<void> _prepareRhythmTestAudio({
-    required int pass,
-    required int attempt,
-  }) async {
-    final notifier = _rhythmTestNotifier;
-    if (notifier == null) {
-      _audioReady = true;
-      _maybeCompleteStartup(context.read<ScoreNotifier>());
-      return;
-    }
-
-    final retrying = attempt > 1;
-    setState(() {
-      _startupPhase = retrying
-          ? _WorkspaceStartupPhase.retryingRhythmTestAudio
-          : _WorkspaceStartupPhase.preparingRhythmTestAudio;
-      _startupFailureKind = null;
-      _startupErrorMessage = null;
-      _audioStepLabel = _audioLabelForPhase(
-        RhythmTestPreparationPhase.initializingAudio,
-        retrying: retrying,
-      );
-    });
-    _publishBrowserStartupState();
-
-    await notifier.init(
-      audioTimeout: _webAudioTimeout,
-      onPreparationPhaseChanged: (phase) {
-        if (!mounted || pass != _startupPass) {
-          return;
-        }
-        setState(() {
-          _audioStepLabel = _audioLabelForPhase(phase, retrying: retrying);
-        });
-        _publishBrowserStartupState();
-      },
-    );
-    if (!mounted || pass != _startupPass) {
-      return;
-    }
-
-    if (notifier.isInitialized) {
-      setState(() {
-        _audioReady = true;
-      });
-      _maybeCompleteStartup(context.read<ScoreNotifier>());
-      return;
-    }
-
-    if (attempt == 1) {
-      final retryPass = ++_startupPass;
-      setState(() {
-        _startupPhase = _WorkspaceStartupPhase.retryingRhythmTestAudio;
-        _audioStepLabel = 'The first audio attempt timed out. Retrying once.';
-      });
-      _publishBrowserStartupState();
-      await _prepareRhythmTestAudio(pass: retryPass, attempt: 2);
-      return;
-    }
-
-    _failStartup(
-      kind: _WorkspaceStartupFailureKind.rhythmTestAudio,
-      message:
-          notifier.errorMessage ?? 'Rhythm test audio failed to initialize.',
-    );
+  Future<void> _switchMode(WorkspaceMode nextMode) {
+    return _startupController.switchMode(nextMode);
   }
 
   void _handleRendererReady(int rendererSession) {
-    if (!mounted || rendererSession != _rendererSession || _rendererReady) {
-      return;
-    }
-    setState(() {
-      _rendererReady = true;
-    });
-    _maybeCompleteStartup(context.read<ScoreNotifier>());
+    _startupController.markRendererReady(rendererSession);
   }
 
-  void _maybeCompleteStartup(ScoreNotifier notifier) {
-    final rendererReady = !_requiresRendererGate(notifier) || _rendererReady;
-    final audioReady = !_requiresRhythmTestAudioGate(notifier) || _audioReady;
-    if (!_workspacePrepared || !rendererReady || !audioReady) {
-      _publishBrowserStartupState();
-      return;
-    }
-
-    _syncRoute();
-    _focusNode.requestFocus();
-    setState(() {
-      _startupPhase = _WorkspaceStartupPhase.ready;
-      _startupFailureKind = null;
-      _startupErrorMessage = null;
-    });
-    _publishBrowserStartupState();
+  Future<void> _retryStartup() {
+    return _startupController.retry();
   }
 
-  void _failStartup({
-    required _WorkspaceStartupFailureKind kind,
-    required String message,
-  }) {
-    setState(() {
-      _startupPhase = _WorkspaceStartupPhase.failed;
-      _startupFailureKind = kind;
-      _startupErrorMessage = message;
-    });
-    _publishBrowserStartupState();
-  }
-
-  void _publishBrowserStartupState() {
-    if (_startupReady) {
+  void _publishBrowserStartupState(WorkspaceStartupState startupState) {
+    if (startupState.ready) {
       publishWorkspaceStartupState(
         title: 'Tap Score is ready',
         detail: 'Workspace setup finished.',
-        workspaceLabel: _workspaceStepLabel,
-        rendererLabel: _rendererStepLabel,
+        workspaceLabel: startupState.workspaceLabel,
+        rendererLabel: startupState.rendererLabel,
         workspaceState: 'complete',
         rendererState: 'complete',
-        audioLabel: _requiresAudioStep ? _audioStepLabel : null,
-        audioState: _requiresAudioStep ? 'complete' : null,
+        audioLabel: startupState.requiresAudioStep
+            ? startupState.audioLabel
+            : null,
+        audioState: startupState.requiresAudioStep ? 'complete' : null,
         dismissBootstrap: true,
       );
       return;
     }
 
-    if (_startupFailed) {
+    if (startupState.failed) {
       publishWorkspaceStartupState(
         title: 'Tap Score needs attention',
-        detail: _startupErrorMessage ?? 'Workspace setup failed.',
-        workspaceLabel: _workspaceStepLabel,
-        rendererLabel: _rendererStepLabel,
-        workspaceState: _workspaceStepState.name,
-        rendererState: _rendererStepState.name,
-        audioLabel: _requiresAudioStep ? _audioStepLabel : null,
-        audioState: _requiresAudioStep ? _audioStepState.name : null,
+        detail: startupState.errorMessage ?? 'Workspace setup failed.',
+        workspaceLabel: startupState.workspaceLabel,
+        rendererLabel: startupState.rendererLabel,
+        workspaceState: startupState.workspaceStepState.name,
+        rendererState: startupState.rendererStepState.name,
+        audioLabel: startupState.requiresAudioStep
+            ? startupState.audioLabel
+            : null,
+        audioState: startupState.requiresAudioStep
+            ? startupState.audioStepState.name
+            : null,
         yieldToFlutter: true,
       );
       return;
     }
 
     publishWorkspaceStartupState(
-      title: _startupTitle,
-      detail: _startupDetail,
-      workspaceLabel: _workspaceStepLabel,
-      rendererLabel: _rendererStepLabel,
-      workspaceState: _workspaceStepState.name,
-      rendererState: _rendererStepState.name,
-      audioLabel: _requiresAudioStep ? _audioStepLabel : null,
-      audioState: _requiresAudioStep ? _audioStepState.name : null,
+      title: startupState.title,
+      detail: startupState.detail,
+      workspaceLabel: startupState.workspaceLabel,
+      rendererLabel: startupState.rendererLabel,
+      workspaceState: startupState.workspaceStepState.name,
+      rendererState: startupState.rendererStepState.name,
+      audioLabel: startupState.requiresAudioStep
+          ? startupState.audioLabel
+          : null,
+      audioState: startupState.requiresAudioStep
+          ? startupState.audioStepState.name
+          : null,
     );
-  }
-
-  bool get _requiresAudioStep => _mode == WorkspaceMode.rhythmTest;
-
-  String get _startupTitle => switch (_startupPhase) {
-    _WorkspaceStartupPhase.preparingWorkspace => 'Preparing workspace',
-    _WorkspaceStartupPhase.preparingRenderer =>
-      _mode == WorkspaceMode.compose
-          ? 'Preparing editor'
-          : 'Preparing rhythm test',
-    _WorkspaceStartupPhase.preparingRhythmTestAudio => 'Preparing rhythm test',
-    _WorkspaceStartupPhase.retryingRhythmTestAudio =>
-      'Retrying rhythm test audio',
-    _WorkspaceStartupPhase.ready => 'Tap Score is ready',
-    _WorkspaceStartupPhase.failed =>
-      _startupFailureKind == _WorkspaceStartupFailureKind.rhythmTestAudio
-          ? 'Rhythm test unavailable'
-          : 'Workspace unavailable',
-  };
-
-  String get _startupDetail => switch (_startupPhase) {
-    _WorkspaceStartupPhase.preparingWorkspace => _workspaceStepLabel,
-    _WorkspaceStartupPhase.preparingRenderer =>
-      _mode == WorkspaceMode.compose
-          ? 'Loading the score renderer before opening the editor.'
-          : 'Loading the rhythm test surface before entering the page.',
-    _WorkspaceStartupPhase.preparingRhythmTestAudio => _audioStepLabel,
-    _WorkspaceStartupPhase.retryingRhythmTestAudio => _audioStepLabel,
-    _WorkspaceStartupPhase.ready => 'Workspace setup finished.',
-    _WorkspaceStartupPhase.failed =>
-      _startupErrorMessage ?? 'Workspace setup failed.',
-  };
-
-  _StartupStepState get _workspaceStepState {
-    if (_startupFailed &&
-        _startupFailureKind == _WorkspaceStartupFailureKind.workspace) {
-      return _StartupStepState.error;
-    }
-    if (!_workspacePrepared) {
-      return _StartupStepState.active;
-    }
-    return _StartupStepState.complete;
-  }
-
-  _StartupStepState get _rendererStepState {
-    if (!_workspacePrepared) {
-      return _StartupStepState.pending;
-    }
-    if (_rendererReady) {
-      return _StartupStepState.complete;
-    }
-    if (_startupPhase == _WorkspaceStartupPhase.failed &&
-        _startupFailureKind == _WorkspaceStartupFailureKind.workspace) {
-      return _StartupStepState.pending;
-    }
-    return _StartupStepState.active;
-  }
-
-  _StartupStepState get _audioStepState {
-    if (!_requiresAudioStep || !_workspacePrepared) {
-      return _StartupStepState.pending;
-    }
-    if (_startupFailed &&
-        _startupFailureKind == _WorkspaceStartupFailureKind.rhythmTestAudio) {
-      return _StartupStepState.error;
-    }
-    if (_audioReady) {
-      return _StartupStepState.complete;
-    }
-    return _StartupStepState.active;
-  }
-
-  Future<void> _retryStartup() async {
-    if (_startupFailureKind == _WorkspaceStartupFailureKind.rhythmTestAudio) {
-      final notifier = context.read<ScoreNotifier>();
-      if (_requiresRhythmTestAudioGate(notifier)) {
-        unawaited(_prepareRhythmTestAudio(pass: ++_startupPass, attempt: 1));
-        return;
-      }
-    }
-
-    await _startStartupFlow();
   }
 
   Future<void> _showSaveDialog() async {
@@ -568,7 +170,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   void _handleRhythmTempoChanged(double bpm) {
     final scoreNotifier = context.read<ScoreNotifier>();
     scoreNotifier.setTempo(bpm);
-    _rhythmTestNotifier?.setTempo(bpm);
+    _startupController.rhythmTestNotifier?.setTempo(bpm);
   }
 
   Future<void> _exportCurrentScore(BuildContext buttonContext) async {
@@ -614,11 +216,12 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   }
 
   bool _handleRendererKeyDown(String? key, String? code, bool repeat) {
-    if (!_startupReady) {
+    final startupState = _startupController.state;
+    if (!startupState.ready) {
       return false;
     }
 
-    if (_mode == WorkspaceMode.compose) {
+    if (startupState.mode == WorkspaceMode.compose) {
       if (key == ' ' || code == 'Space') {
         final notifier = context.read<ScoreNotifier>();
         if (notifier.isPlaying) {
@@ -632,7 +235,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     }
 
     if (!repeat && (key == ' ' || code == 'Space')) {
-      _rhythmTestNotifier?.performPrimaryAction();
+      _startupController.rhythmTestNotifier?.performPrimaryAction();
       return true;
     }
 
@@ -640,15 +243,16 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   }
 
   KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
-    if (!_startupReady) {
+    final startupState = _startupController.state;
+    if (!startupState.ready) {
       return KeyEventResult.ignored;
     }
 
-    if (_mode == WorkspaceMode.rhythmTest) {
+    if (startupState.mode == WorkspaceMode.rhythmTest) {
       if (event is KeyDownEvent) {
         final key = event.logicalKey;
         if (key == LogicalKeyboardKey.space) {
-          _rhythmTestNotifier?.performPrimaryAction();
+          _startupController.rhythmTestNotifier?.performPrimaryAction();
           return KeyEventResult.handled;
         }
       }
@@ -705,6 +309,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final startupState = _startupController.state;
     return Focus(
       focusNode: _focusNode,
       autofocus: true,
@@ -727,12 +332,12 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                           children: [
                             WorkspaceTopBar(
                               key: const ValueKey('workspace-top-bar'),
-                              mode: _mode,
+                              mode: startupState.mode,
                               layoutProfile: layoutProfile,
                               showsEditorActions:
-                                  _startupReady &&
-                                  _mode == WorkspaceMode.compose,
-                              isInteractive: _startupReady,
+                                  startupState.ready &&
+                                  startupState.mode == WorkspaceMode.compose,
+                              isInteractive: startupState.ready,
                               hasUnsavedChanges: notifier.hasUnsavedChanges,
                               onGoHome: widget.onGoHome ?? () {},
                               onSelectMode: _switchMode,
@@ -743,30 +348,32 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                               child: _buildWorkspaceBody(
                                 notifier,
                                 layoutProfile,
+                                startupState,
                               ),
                             ),
                           ],
                         );
                       },
                     ),
-                    if (_showsStartupOverlay)
+                    if (startupState.showsOverlay)
                       Positioned.fill(
                         child: _WorkspaceStartupView(
-                          title: _startupTitle,
-                          detail: _startupDetail,
-                          workspaceLabel: _workspaceStepLabel,
-                          workspaceState: _workspaceStepState,
-                          rendererLabel: _rendererStepLabel,
-                          rendererState: _rendererStepState,
-                          audioLabel: _requiresAudioStep
-                              ? _audioStepLabel
+                          title: startupState.title,
+                          detail: startupState.detail,
+                          workspaceLabel: startupState.workspaceLabel,
+                          workspaceState: startupState.workspaceStepState,
+                          rendererLabel: startupState.rendererLabel,
+                          rendererState: startupState.rendererStepState,
+                          audioLabel: startupState.requiresAudioStep
+                              ? startupState.audioLabel
                               : null,
-                          audioState: _requiresAudioStep
-                              ? _audioStepState
+                          audioState: startupState.requiresAudioStep
+                              ? startupState.audioStepState
                               : null,
-                          errorMessage: _startupErrorMessage,
-                          onRetry: _startupFailed ? _retryStartup : null,
-                          onGoHome: _startupFailed && widget.onGoHome != null
+                          errorMessage: startupState.errorMessage,
+                          onRetry: startupState.failed ? _retryStartup : null,
+                          onGoHome:
+                              startupState.failed && widget.onGoHome != null
                               ? widget.onGoHome
                               : null,
                         ),
@@ -785,21 +392,23 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   Widget _buildWorkspaceBody(
     ScoreNotifier notifier,
     WorkspaceLayoutProfile layoutProfile,
+    WorkspaceStartupState startupState,
   ) {
-    if (!_workspacePrepared) {
+    if (!startupState.workspacePrepared) {
       return const SizedBox.expand();
     }
 
-    if (_mode == WorkspaceMode.compose) {
-      return _buildComposeBody(notifier, layoutProfile);
+    if (startupState.mode == WorkspaceMode.compose) {
+      return _buildComposeBody(notifier, layoutProfile, startupState);
     }
 
-    return _buildRhythmTestBody(notifier, layoutProfile);
+    return _buildRhythmTestBody(notifier, layoutProfile, startupState);
   }
 
   Widget _buildComposeBody(
     ScoreNotifier notifier,
     WorkspaceLayoutProfile layoutProfile,
+    WorkspaceStartupState startupState,
   ) {
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -814,11 +423,13 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                 children: [
                   Positioned.fill(
                     child: ScoreViewWidget(
-                      key: ValueKey('compose-score-view-$_rendererSession'),
+                      key: ValueKey(
+                        'compose-score-view-${startupState.rendererSession}',
+                      ),
                       interactive: true,
                       onRendererKeyDown: _handleRendererKeyDown,
                       onRendererReady: () =>
-                          _handleRendererReady(_rendererSession),
+                          _handleRendererReady(startupState.rendererSession),
                     ),
                   ),
                   if (notifier.score.notes.isEmpty)
@@ -841,8 +452,9 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   Widget _buildRhythmTestBody(
     ScoreNotifier notifier,
     WorkspaceLayoutProfile layoutProfile,
+    WorkspaceStartupState startupState,
   ) {
-    final rhythmTestNotifier = _rhythmTestNotifier;
+    final rhythmTestNotifier = _startupController.rhythmTestNotifier;
     if (rhythmTestNotifier == null || notifier.score.notes.isEmpty) {
       return _WorkspaceBodyMessage(
         title: 'Rhythm test unavailable',
@@ -858,7 +470,8 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
         layoutProfile: layoutProfile,
         onTempoChanged: _handleRhythmTempoChanged,
         onRendererKeyDown: _handleRendererKeyDown,
-        onRendererReady: () => _handleRendererReady(_rendererSession),
+        onRendererReady: () =>
+            _handleRendererReady(startupState.rendererSession),
       ),
     );
   }
@@ -1320,8 +933,6 @@ class _FloatingToast extends StatelessWidget {
   }
 }
 
-enum _StartupStepState { pending, active, complete, error }
-
 class _WorkspaceStartupView extends StatelessWidget {
   const _WorkspaceStartupView({
     required this.title,
@@ -1340,11 +951,11 @@ class _WorkspaceStartupView extends StatelessWidget {
   final String title;
   final String detail;
   final String workspaceLabel;
-  final _StartupStepState workspaceState;
+  final WorkspaceStartupStepState workspaceState;
   final String rendererLabel;
-  final _StartupStepState rendererState;
+  final WorkspaceStartupStepState rendererState;
   final String? audioLabel;
-  final _StartupStepState? audioState;
+  final WorkspaceStartupStepState? audioState;
   final String? errorMessage;
   final VoidCallback? onRetry;
   final VoidCallback? onGoHome;
@@ -1464,15 +1075,15 @@ class _StartupStep extends StatelessWidget {
   const _StartupStep({required this.label, required this.state, super.key});
 
   final String label;
-  final _StartupStepState state;
+  final WorkspaceStartupStepState state;
 
   @override
   Widget build(BuildContext context) {
     final accentColor = switch (state) {
-      _StartupStepState.pending => AppColors.textMuted,
-      _StartupStepState.active => AppColors.accentBlue,
-      _StartupStepState.complete => AppColors.statusSuccess,
-      _StartupStepState.error => AppColors.statusError,
+      WorkspaceStartupStepState.pending => AppColors.textMuted,
+      WorkspaceStartupStepState.active => AppColors.accentBlue,
+      WorkspaceStartupStepState.complete => AppColors.statusSuccess,
+      WorkspaceStartupStepState.error => AppColors.statusError,
     };
 
     return Row(
@@ -1480,24 +1091,24 @@ class _StartupStep extends StatelessWidget {
         SizedBox.square(
           dimension: 18,
           child: switch (state) {
-            _StartupStepState.pending => DecoratedBox(
+            WorkspaceStartupStepState.pending => DecoratedBox(
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(999),
                 border: Border.all(color: AppColors.surfaceBorder, width: 2),
               ),
             ),
-            _StartupStepState.active => CircularProgressIndicator(
+            WorkspaceStartupStepState.active => CircularProgressIndicator(
               strokeWidth: 2.2,
               color: accentColor,
             ),
-            _StartupStepState.complete => DecoratedBox(
+            WorkspaceStartupStepState.complete => DecoratedBox(
               decoration: BoxDecoration(
                 color: accentColor,
                 borderRadius: BorderRadius.circular(999),
               ),
               child: const Icon(Icons.check, size: 12, color: Colors.white),
             ),
-            _StartupStepState.error => DecoratedBox(
+            WorkspaceStartupStepState.error => DecoratedBox(
               decoration: BoxDecoration(
                 color: accentColor,
                 borderRadius: BorderRadius.circular(999),
@@ -1513,7 +1124,7 @@ class _StartupStep extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              color: state == _StartupStepState.pending
+              color: state == WorkspaceStartupStepState.pending
                   ? AppColors.textMuted
                   : AppColors.textBody,
               fontWeight: FontWeight.w700,
