@@ -12,7 +12,7 @@ import 'package:tap_score/state/score_notifier.dart';
 
 void main() {
   test(
-    'init restores the persisted draft and active score reference',
+    'loadInitialWorkspace restores the persisted draft and active score reference',
     () async {
       final repository = _MemoryScoreLibraryRepository(
         ScoreLibrarySnapshot(
@@ -41,7 +41,7 @@ void main() {
       );
       addTearDown(notifier.dispose);
 
-      await notifier.init();
+      await notifier.loadInitialWorkspace();
 
       expect(notifier.score.notes.single.midi, 65);
       expect(notifier.score.bpm, 88);
@@ -62,7 +62,7 @@ void main() {
       );
       addTearDown(notifier.dispose);
 
-      await notifier.init();
+      await notifier.loadInitialWorkspace();
 
       notifier.insertPitchedNote(60);
       await notifier.saveCurrentScore('First');
@@ -119,7 +119,7 @@ void main() {
     );
     addTearDown(notifier.dispose);
 
-    await notifier.init();
+    await notifier.loadInitialWorkspace();
 
     expect(notifier.referenceBpm, 88);
 
@@ -140,7 +140,7 @@ void main() {
       );
       addTearDown(notifier.dispose);
 
-      await notifier.init();
+      await notifier.loadInitialWorkspace();
 
       notifier.insertPitchedNote(72);
       await notifier.saveCurrentScore('Solo');
@@ -155,7 +155,7 @@ void main() {
     },
   );
 
-  test('init loads presets alongside saved scores', () async {
+  test('loadInitialWorkspace loads presets alongside saved scores', () async {
     final notifier = ScoreNotifier(
       audioService: _FakeAudioService(),
       scoreLibraryRepository: _MemoryScoreLibraryRepository(),
@@ -172,7 +172,7 @@ void main() {
     );
     addTearDown(notifier.dispose);
 
-    await notifier.init();
+    await notifier.loadInitialWorkspace();
 
     expect(notifier.presetScores, hasLength(1));
     expect(notifier.presetScores.single.name, 'Warmup');
@@ -189,7 +189,7 @@ void main() {
       );
       addTearDown(notifier.dispose);
 
-      await notifier.init();
+      await notifier.loadInitialWorkspace();
       await notifier.importScoreDocument(
         PortableScoreDocument(
           version: PortableScoreDocument.currentVersion,
@@ -228,7 +228,7 @@ void main() {
     );
     addTearDown(notifier.dispose);
 
-    await notifier.init();
+    await notifier.loadInitialWorkspace();
     await notifier.loadPresetScore('preset-1');
 
     expect(notifier.activeScoreId, isNull);
@@ -266,7 +266,9 @@ void main() {
       );
       addTearDown(notifier.dispose);
 
-      await notifier.init(initialScoreConfig: const ScoreSeedConfig.blank());
+      await notifier.loadInitialWorkspace(
+        initialScoreConfig: const ScoreSeedConfig.blank(),
+      );
 
       expect(notifier.score.notes, isEmpty);
       expect(notifier.activeScoreId, isNull);
@@ -297,7 +299,9 @@ void main() {
       );
       addTearDown(notifier.dispose);
 
-      await notifier.init(initialScoreConfig: const ScoreSeedConfig.blank());
+      await notifier.loadInitialWorkspace(
+        initialScoreConfig: const ScoreSeedConfig.blank(),
+      );
       await Future<void>.delayed(Duration.zero);
 
       expect(notifier.score.notes, isEmpty);
@@ -339,7 +343,7 @@ void main() {
       );
       addTearDown(notifier.dispose);
 
-      await notifier.init();
+      await notifier.loadInitialWorkspace();
 
       expect(notifier.score.notes.single.midi, 65);
       expect(notifier.activeScoreId, 'saved-1');
@@ -390,7 +394,7 @@ void main() {
       );
       addTearDown(notifier.dispose);
 
-      await notifier.init(
+      await notifier.loadInitialWorkspace(
         initialScoreConfig: const ScoreSeedConfig.preset('preset-1'),
       );
 
@@ -404,6 +408,48 @@ void main() {
       expect(repository.snapshot?.draft.notes.single.midi, 67);
     },
   );
+
+  test(
+    'loadInitialWorkspace retries after an initial repository failure',
+    () async {
+      final repository = _SequencedScoreLibraryRepository([
+        Future<ScoreLibrarySnapshot?>.error(
+          const ScoreLibraryStorageException('First load failed.'),
+        ),
+        Future<ScoreLibrarySnapshot?>.value(
+          ScoreLibrarySnapshot(
+            draft: Score(
+              notes: const [Note(midi: 69, duration: NoteDuration.quarter)],
+            ),
+            savedScores: const [],
+          ),
+        ),
+      ]);
+      final notifier = ScoreNotifier(
+        audioService: _FakeAudioService(),
+        scoreLibraryRepository: repository,
+        presetScoreRepository: _MemoryPresetScoreRepository(),
+      );
+      addTearDown(notifier.dispose);
+
+      await notifier.loadInitialWorkspace();
+
+      expect(repository.loadCalls, 1);
+      expect(notifier.initialWorkspaceLoadComplete, isTrue);
+      expect(notifier.initialWorkspaceLoadSucceeded, isFalse);
+      expect(notifier.libraryMessage, 'First load failed.');
+      expect(notifier.libraryMessageIsError, isTrue);
+
+      await notifier.loadInitialWorkspace();
+
+      expect(repository.loadCalls, 2);
+      expect(notifier.initialWorkspaceLoadComplete, isTrue);
+      expect(notifier.initialWorkspaceLoadSucceeded, isTrue);
+      expect(notifier.score.notes.single.midi, 69);
+      expect(notifier.libraryMessage, isNull);
+      expect(notifier.libraryMessageIsError, isFalse);
+    },
+  );
 }
 
 class _MemoryScoreLibraryRepository implements ScoreLibraryRepository {
@@ -413,6 +459,26 @@ class _MemoryScoreLibraryRepository implements ScoreLibraryRepository {
 
   @override
   Future<ScoreLibrarySnapshot?> loadSnapshot() async => snapshot;
+
+  @override
+  Future<void> saveSnapshot(ScoreLibrarySnapshot nextSnapshot) async {
+    snapshot = nextSnapshot;
+  }
+}
+
+class _SequencedScoreLibraryRepository implements ScoreLibraryRepository {
+  _SequencedScoreLibraryRepository(this._loadResults);
+
+  final List<Future<ScoreLibrarySnapshot?>> _loadResults;
+  int loadCalls = 0;
+  ScoreLibrarySnapshot? snapshot;
+
+  @override
+  Future<ScoreLibrarySnapshot?> loadSnapshot() {
+    final result = _loadResults[loadCalls];
+    loadCalls += 1;
+    return result;
+  }
 
   @override
   Future<void> saveSnapshot(ScoreLibrarySnapshot nextSnapshot) async {

@@ -53,7 +53,6 @@ class ScoreNotifier extends ChangeNotifier {
   final AudioService _audioService;
   final WorkspaceRepository _workspaceRepository;
 
-  Future<void>? _initFuture;
   Timer? _draftSaveTimer;
   WorkspaceSession? _workspaceSession;
   bool _initialWorkspaceLoadComplete = false;
@@ -247,14 +246,17 @@ class ScoreNotifier extends ChangeNotifier {
   bool get initialWorkspaceLoadComplete => _initialWorkspaceLoadComplete;
   bool get initialWorkspaceLoadSucceeded => _initialWorkspaceLoadSucceeded;
 
-  /// Initialize local storage and the editor entry state.
-  Future<void> init({ScoreSeedConfig? initialScoreConfig}) {
-    return _initFuture ??= _initInternal(
-      initialScoreConfig: initialScoreConfig,
-    );
-  }
+  /// Load local storage and the editor entry state.
+  Future<void> loadInitialWorkspace({
+    ScoreSeedConfig? initialScoreConfig,
+  }) async {
+    _initialWorkspaceLoadComplete = false;
+    _initialWorkspaceLoadSucceeded = false;
+    _libraryMessageTimer?.cancel();
+    _libraryMessage = null;
+    _libraryMessageIsError = false;
+    notifyListeners();
 
-  Future<void> _initInternal({ScoreSeedConfig? initialScoreConfig}) async {
     try {
       final result = await _workspaceRepository.loadWorkspace(
         initialScoreConfig: initialScoreConfig,
@@ -1383,7 +1385,7 @@ class ScoreNotifier extends ChangeNotifier {
   }
 
   void _scheduleDraftSave() {
-    if (_initFuture == null) {
+    if (!_initialWorkspaceLoadComplete || !_initialWorkspaceLoadSucceeded) {
       return;
     }
     _draftSaveTimer?.cancel();

@@ -119,7 +119,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     });
     _publishBrowserStartupState();
 
-    await scoreNotifier.init(
+    await scoreNotifier.loadInitialWorkspace(
       initialScoreConfig: widget.launchConfig.seedConfig,
     );
     if (!mounted || pass != _startupPass) {
