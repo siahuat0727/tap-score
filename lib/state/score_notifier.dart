@@ -55,6 +55,7 @@ class ScoreNotifier extends ChangeNotifier {
 
   Timer? _draftSaveTimer;
   WorkspaceSession? _workspaceSession;
+  int _initialWorkspaceLoadGeneration = 0;
   bool _initialWorkspaceLoadComplete = false;
   bool _initialWorkspaceLoadSucceeded = false;
 
@@ -250,6 +251,9 @@ class ScoreNotifier extends ChangeNotifier {
   Future<void> loadInitialWorkspace({
     ScoreSeedConfig? initialScoreConfig,
   }) async {
+    final loadGeneration = ++_initialWorkspaceLoadGeneration;
+    _draftSaveTimer?.cancel();
+    _draftSaveTimer = null;
     _initialWorkspaceLoadComplete = false;
     _initialWorkspaceLoadSucceeded = false;
     _libraryMessageTimer?.cancel();
@@ -261,21 +265,41 @@ class ScoreNotifier extends ChangeNotifier {
       final result = await _workspaceRepository.loadWorkspace(
         initialScoreConfig: initialScoreConfig,
       );
+      if (loadGeneration != _initialWorkspaceLoadGeneration) {
+        return;
+      }
       _applyWorkspaceLoadResult(result, replaceScore: true);
       _initialWorkspaceLoadSucceeded = true;
       if (initialScoreConfig != null && !initialScoreConfig.isRestore) {
-        unawaited(_persistInitializedWorkspace(result.workspace));
+        unawaited(
+          _persistInitializedWorkspace(
+            result.workspace,
+            loadGeneration: loadGeneration,
+          ),
+        );
       }
     } on WorkspaceRepositoryException catch (error) {
+      if (loadGeneration != _initialWorkspaceLoadGeneration) {
+        return;
+      }
       _initialWorkspaceLoadSucceeded = false;
       _setLibraryMessage(error.message, isError: true);
     } on PresetScoreException catch (error) {
+      if (loadGeneration != _initialWorkspaceLoadGeneration) {
+        return;
+      }
       _initialWorkspaceLoadSucceeded = false;
       _setLibraryMessage(error.message, isError: true);
     } on ScoreLibraryStorageException catch (error) {
+      if (loadGeneration != _initialWorkspaceLoadGeneration) {
+        return;
+      }
       _initialWorkspaceLoadSucceeded = false;
       _setLibraryMessage(error.message, isError: true);
     } catch (error) {
+      if (loadGeneration != _initialWorkspaceLoadGeneration) {
+        return;
+      }
       _initialWorkspaceLoadSucceeded = false;
       _setLibraryMessage('Failed to load the workspace.', isError: true);
       debugPrint('Workspace load failed: $error');
@@ -317,13 +341,19 @@ class ScoreNotifier extends ChangeNotifier {
     _hasUnsavedChanges = _computeHasUnsavedChanges(score);
   }
 
-  Future<void> _persistInitializedWorkspace(WorkspaceSession workspace) async {
+  Future<void> _persistInitializedWorkspace(
+    WorkspaceSession workspace, {
+    required int loadGeneration,
+  }) async {
     try {
       await _workspaceRepository.persistDraft(
         workspace: workspace,
         editedScore: workspace.editorScore,
       );
     } on ScoreLibraryStorageException catch (error) {
+      if (loadGeneration != _initialWorkspaceLoadGeneration) {
+        return;
+      }
       _setLibraryMessage(error.message, isError: true);
       notifyListeners();
     }

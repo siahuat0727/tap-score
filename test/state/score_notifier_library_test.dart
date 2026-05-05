@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tap_score/app/score_seed_config.dart';
 import 'package:tap_score/models/enums.dart';
@@ -450,6 +452,60 @@ void main() {
       expect(notifier.libraryMessageIsError, isFalse);
     },
   );
+
+  test('loadInitialWorkspace cancels pending draft saves', () async {
+    final repository = _CountingSaveScoreLibraryRepository();
+    final notifier = ScoreNotifier(
+      audioService: _FakeAudioService(),
+      scoreLibraryRepository: repository,
+      presetScoreRepository: _MemoryPresetScoreRepository(),
+    );
+    addTearDown(notifier.dispose);
+
+    await notifier.loadInitialWorkspace();
+
+    notifier.insertPitchedNote(60);
+    await notifier.loadInitialWorkspace();
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+
+    expect(repository.saveCalls, 0);
+  });
+
+  test(
+    'stale initial persist failure does not replace newer load message',
+    () async {
+      final repository = _ControlledSaveScoreLibraryRepository([
+        () => Future<ScoreLibrarySnapshot?>.value(
+          ScoreLibrarySnapshot(draft: Score(), savedScores: const []),
+        ),
+        () => Future<ScoreLibrarySnapshot?>.error(
+          const ScoreLibraryStorageException('Second load failed.'),
+        ),
+      ]);
+      final notifier = ScoreNotifier(
+        audioService: _FakeAudioService(),
+        scoreLibraryRepository: repository,
+        presetScoreRepository: _MemoryPresetScoreRepository(),
+      );
+      addTearDown(notifier.dispose);
+
+      await notifier.loadInitialWorkspace(
+        initialScoreConfig: const ScoreSeedConfig.blank(),
+      );
+      expect(repository.pendingSave, isNotNull);
+
+      await notifier.loadInitialWorkspace();
+      expect(notifier.libraryMessage, 'Second load failed.');
+
+      repository.pendingSave!.completeError(
+        const ScoreLibraryStorageException('Stale write failed.'),
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(notifier.libraryMessage, 'Second load failed.');
+      expect(notifier.libraryMessageIsError, isTrue);
+    },
+  );
 }
 
 class _MemoryScoreLibraryRepository implements ScoreLibraryRepository {
@@ -483,6 +539,38 @@ class _SequencedScoreLibraryRepository implements ScoreLibraryRepository {
   @override
   Future<void> saveSnapshot(ScoreLibrarySnapshot nextSnapshot) async {
     snapshot = nextSnapshot;
+  }
+}
+
+class _CountingSaveScoreLibraryRepository
+    extends _MemoryScoreLibraryRepository {
+  int saveCalls = 0;
+
+  @override
+  Future<void> saveSnapshot(ScoreLibrarySnapshot nextSnapshot) async {
+    saveCalls += 1;
+    await super.saveSnapshot(nextSnapshot);
+  }
+}
+
+class _ControlledSaveScoreLibraryRepository implements ScoreLibraryRepository {
+  _ControlledSaveScoreLibraryRepository(this._loadResults);
+
+  final List<Future<ScoreLibrarySnapshot?> Function()> _loadResults;
+  int loadCalls = 0;
+  Completer<void>? pendingSave;
+
+  @override
+  Future<ScoreLibrarySnapshot?> loadSnapshot() {
+    final result = _loadResults[loadCalls]();
+    loadCalls += 1;
+    return result;
+  }
+
+  @override
+  Future<void> saveSnapshot(ScoreLibrarySnapshot nextSnapshot) {
+    pendingSave = Completer<void>();
+    return pendingSave!.future;
   }
 }
 
