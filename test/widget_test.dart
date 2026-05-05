@@ -354,6 +354,14 @@ void main() {
     expect(repository.loadCalls, 2);
     expect(find.byKey(const ValueKey('compose-toolbar')), findsOneWidget);
     expect(find.byKey(const ValueKey('score-view-surface')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('workspace-startup-card')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('workspace-startup-step-renderer')),
+      findsOneWidget,
+    );
 
     FakeWebViewPlatform.dispatchPendingReadyMessages();
     await _pumpWorkspaceReady(tester);
