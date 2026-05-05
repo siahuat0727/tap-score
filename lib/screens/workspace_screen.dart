@@ -109,8 +109,8 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   void _publishBrowserStartupState(WorkspaceStartupState startupState) {
     if (startupState.ready) {
       publishWorkspaceStartupState(
-        title: 'Tap Score is ready',
-        detail: 'Workspace setup finished.',
+        title: startupState.title,
+        detail: startupState.detail,
         workspaceLabel: startupState.workspaceLabel,
         rendererLabel: startupState.rendererLabel,
         workspaceState: 'complete',
@@ -126,8 +126,8 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
 
     if (startupState.failed) {
       publishWorkspaceStartupState(
-        title: 'Tap Score needs attention',
-        detail: startupState.errorMessage ?? 'Workspace setup failed.',
+        title: startupState.title,
+        detail: startupState.detail,
         workspaceLabel: startupState.workspaceLabel,
         rendererLabel: startupState.rendererLabel,
         workspaceState: startupState.workspaceStepState.name,
