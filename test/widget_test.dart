@@ -2241,13 +2241,13 @@ class _ImmediateWorkspaceRepository extends _DelayedWorkspaceRepository {
 }
 
 class _DelayedInitAudioService extends AudioService {
-  _DelayedInitAudioService(this._initFuture);
+  _DelayedInitAudioService(this._initResult);
 
-  final Future<bool> _initFuture;
+  final Future<bool> _initResult;
 
   @override
   Future<bool> init({Duration webTimeout = const Duration(seconds: 12)}) =>
-      _initFuture;
+      _initResult;
 
   @override
   void stopPlayback() {}
