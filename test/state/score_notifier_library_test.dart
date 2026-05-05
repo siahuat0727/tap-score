@@ -489,10 +489,10 @@ void main() {
       );
       addTearDown(notifier.dispose);
 
-      await notifier.loadInitialWorkspace(
+      final firstLoad = notifier.loadInitialWorkspace(
         initialScoreConfig: const ScoreSeedConfig.blank(),
       );
-      expect(repository.pendingSave, isNotNull);
+      await repository.waitForPendingSave();
 
       await notifier.loadInitialWorkspace();
       expect(notifier.libraryMessage, 'Second load failed.');
@@ -501,9 +501,56 @@ void main() {
         const ScoreLibraryStorageException('Stale write failed.'),
       );
       await Future<void>.delayed(Duration.zero);
+      await firstLoad;
 
       expect(notifier.libraryMessage, 'Second load failed.');
       expect(notifier.libraryMessageIsError, isTrue);
+    },
+  );
+
+  test(
+    'newer initial persist cannot be overwritten by stale initial persist',
+    () async {
+      final repository = _QueuedSaveScoreLibraryRepository();
+      final notifier = ScoreNotifier(
+        audioService: _FakeAudioService(),
+        scoreLibraryRepository: repository,
+        presetScoreRepository: _MemoryPresetScoreRepository(
+          presets: [
+            PresetScoreEntry(
+              id: 'preset-1',
+              name: 'Triplet Study',
+              assetPath: 'assets/presets/triplet_study.json',
+              score: Score(
+                notes: const [Note(midi: 67, duration: NoteDuration.quarter)],
+              ),
+            ),
+          ],
+        ),
+      );
+      addTearDown(notifier.dispose);
+
+      final firstLoad = notifier.loadInitialWorkspace(
+        initialScoreConfig: const ScoreSeedConfig.blank(),
+      );
+      await repository.waitForPendingSaveCount(1);
+
+      final secondLoad = notifier.loadInitialWorkspace(
+        initialScoreConfig: const ScoreSeedConfig.preset('preset-1'),
+      );
+
+      await Future<void>.delayed(Duration.zero);
+      expect(repository.pendingSaves, hasLength(1));
+
+      repository.completeSave(0);
+      await repository.waitForPendingSaveCount(2);
+      repository.completeSave(1);
+
+      await secondLoad;
+      await firstLoad;
+
+      expect(repository.snapshot?.activePresetId, 'preset-1');
+      expect(repository.snapshot?.draft.notes.single.midi, 67);
     },
   );
 }
@@ -559,6 +606,7 @@ class _ControlledSaveScoreLibraryRepository implements ScoreLibraryRepository {
   final List<Future<ScoreLibrarySnapshot?> Function()> _loadResults;
   int loadCalls = 0;
   Completer<void>? pendingSave;
+  final List<Completer<void>> _pendingSaveWaiters = [];
 
   @override
   Future<ScoreLibrarySnapshot?> loadSnapshot() {
@@ -570,8 +618,65 @@ class _ControlledSaveScoreLibraryRepository implements ScoreLibraryRepository {
   @override
   Future<void> saveSnapshot(ScoreLibrarySnapshot nextSnapshot) {
     pendingSave = Completer<void>();
+    for (final waiter in List<Completer<void>>.from(_pendingSaveWaiters)) {
+      if (!waiter.isCompleted) {
+        waiter.complete();
+      }
+    }
+    _pendingSaveWaiters.clear();
     return pendingSave!.future;
   }
+
+  Future<void> waitForPendingSave() async {
+    while (pendingSave == null) {
+      final waiter = Completer<void>();
+      _pendingSaveWaiters.add(waiter);
+      await waiter.future;
+    }
+  }
+}
+
+class _QueuedSaveScoreLibraryRepository implements ScoreLibraryRepository {
+  ScoreLibrarySnapshot? snapshot;
+  final List<_PendingSave> pendingSaves = [];
+  final List<Completer<void>> _saveCountWaiters = [];
+
+  @override
+  Future<ScoreLibrarySnapshot?> loadSnapshot() async => snapshot;
+
+  @override
+  Future<void> saveSnapshot(ScoreLibrarySnapshot nextSnapshot) {
+    final pendingSave = _PendingSave(nextSnapshot);
+    pendingSaves.add(pendingSave);
+    for (final waiter in List<Completer<void>>.from(_saveCountWaiters)) {
+      if (!waiter.isCompleted) {
+        waiter.complete();
+      }
+    }
+    _saveCountWaiters.clear();
+    return pendingSave.completer.future;
+  }
+
+  Future<void> waitForPendingSaveCount(int count) async {
+    while (pendingSaves.length < count) {
+      final waiter = Completer<void>();
+      _saveCountWaiters.add(waiter);
+      await waiter.future;
+    }
+  }
+
+  void completeSave(int index) {
+    final pendingSave = pendingSaves[index];
+    snapshot = pendingSave.snapshot;
+    pendingSave.completer.complete();
+  }
+}
+
+class _PendingSave {
+  _PendingSave(this.snapshot);
+
+  final ScoreLibrarySnapshot snapshot;
+  final Completer<void> completer = Completer<void>();
 }
 
 class _MemoryPresetScoreRepository implements PresetScoreRepository {

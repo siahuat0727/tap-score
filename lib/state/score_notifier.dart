@@ -56,6 +56,7 @@ class ScoreNotifier extends ChangeNotifier {
   Timer? _draftSaveTimer;
   WorkspaceSession? _workspaceSession;
   int _initialWorkspaceLoadGeneration = 0;
+  Future<void> _initialWorkspacePersistence = Future<void>.value();
   bool _initialWorkspaceLoadComplete = false;
   bool _initialWorkspaceLoadSucceeded = false;
 
@@ -271,12 +272,15 @@ class ScoreNotifier extends ChangeNotifier {
       _applyWorkspaceLoadResult(result, replaceScore: true);
       _initialWorkspaceLoadSucceeded = true;
       if (initialScoreConfig != null && !initialScoreConfig.isRestore) {
-        unawaited(
-          _persistInitializedWorkspace(
-            result.workspace,
-            loadGeneration: loadGeneration,
-          ),
+        await _persistInitializedWorkspace(
+          result.workspace,
+          loadGeneration: loadGeneration,
         );
+      } else {
+        await _initialWorkspacePersistence;
+      }
+      if (loadGeneration != _initialWorkspaceLoadGeneration) {
+        return;
       }
     } on WorkspaceRepositoryException catch (error) {
       if (loadGeneration != _initialWorkspaceLoadGeneration) {
@@ -345,7 +349,14 @@ class ScoreNotifier extends ChangeNotifier {
     WorkspaceSession workspace, {
     required int loadGeneration,
   }) async {
+    final previousPersistence = _initialWorkspacePersistence;
+    final currentPersistence = Completer<void>();
+    _initialWorkspacePersistence = currentPersistence.future;
     try {
+      await previousPersistence;
+      if (loadGeneration != _initialWorkspaceLoadGeneration) {
+        return;
+      }
       await _workspaceRepository.persistDraft(
         workspace: workspace,
         editedScore: workspace.editorScore,
@@ -355,7 +366,8 @@ class ScoreNotifier extends ChangeNotifier {
         return;
       }
       _setLibraryMessage(error.message, isError: true);
-      notifyListeners();
+    } finally {
+      currentPersistence.complete();
     }
   }
 
