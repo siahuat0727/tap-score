@@ -310,6 +310,60 @@ void main() {
     },
   );
 
+  testWidgets('workspace retry reruns failed initial load and opens editor', (
+    WidgetTester tester,
+  ) async {
+    FakeWebViewPlatform.autoDispatchReady = false;
+    final repository = _SequencedWorkspaceRepository([
+      () => Future<WorkspaceLoadResult>.error(
+        const WorkspaceRepositoryException('Workspace storage is unavailable.'),
+      ),
+      () => Future<WorkspaceLoadResult>.value(
+        _workspaceLoadResult(
+          score: Score(
+            notes: const [Note(midi: 64, duration: NoteDuration.quarter)],
+          ),
+        ),
+      ),
+    ]);
+    final notifier = ScoreNotifier(workspaceRepository: repository);
+    addTearDown(notifier.dispose);
+
+    await tester.pumpWidget(
+      _buildWorkspace(
+        notifier,
+        launchConfig: const WorkspaceLaunchConfig.restore(
+          initialMode: WorkspaceMode.compose,
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(repository.loadCalls, 1);
+    expect(find.text('Workspace unavailable'), findsOneWidget);
+    expect(find.text('Workspace storage is unavailable.'), findsWidgets);
+    expect(
+      find.byKey(const ValueKey('workspace-startup-retry')),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.byKey(const ValueKey('workspace-startup-retry')));
+    await tester.pump();
+
+    expect(repository.loadCalls, 2);
+    expect(find.byKey(const ValueKey('compose-toolbar')), findsOneWidget);
+    expect(find.byKey(const ValueKey('score-view-surface')), findsOneWidget);
+
+    FakeWebViewPlatform.dispatchPendingReadyMessages();
+    await _pumpWorkspaceReady(tester);
+
+    expect(repository.loadCalls, 2);
+    expect(find.byKey(const ValueKey('workspace-startup-card')), findsNothing);
+    expect(find.byKey(const ValueKey('compose-toolbar')), findsOneWidget);
+    expect(find.byKey(const ValueKey('score-view-surface')), findsOneWidget);
+  });
+
   testWidgets(
     'practice deep link mounts the workspace and clears startup overlay',
     (WidgetTester tester) async {
@@ -2046,6 +2100,76 @@ class _DelayedWorkspaceRepository implements WorkspaceRepository {
     ScoreSeedConfig? initialScoreConfig,
   }) {
     return _loadResultFuture;
+  }
+
+  @override
+  Future<WorkspaceLoadResult> restoreDraft() {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<WorkspaceSession> saveCurrentScore({
+    required WorkspaceSession workspace,
+    required Score editedScore,
+    required String name,
+    bool createNew = false,
+  }) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<WorkspaceSession> loadSavedScore({
+    required WorkspaceSession workspace,
+    required String id,
+  }) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<WorkspaceSession> loadPresetScore({
+    required WorkspaceSession workspace,
+    required String id,
+  }) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<WorkspaceSession> importDocument({
+    required WorkspaceSession workspace,
+    required PortableScoreDocument document,
+  }) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<WorkspaceSession> deleteSavedScore({
+    required WorkspaceSession workspace,
+    required String id,
+    required Score currentScore,
+  }) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<void> persistDraft({
+    required WorkspaceSession workspace,
+    required Score editedScore,
+  }) async {}
+}
+
+class _SequencedWorkspaceRepository implements WorkspaceRepository {
+  _SequencedWorkspaceRepository(this._loadResults);
+
+  final List<Future<WorkspaceLoadResult> Function()> _loadResults;
+  int loadCalls = 0;
+
+  @override
+  Future<WorkspaceLoadResult> loadWorkspace({
+    ScoreSeedConfig? initialScoreConfig,
+  }) {
+    final result = _loadResults[loadCalls]();
+    loadCalls += 1;
+    return result;
   }
 
   @override
