@@ -33,7 +33,7 @@
 - Create: `lib/state/editable_score_session.dart`
 - Create: `test/state/editable_score_session_test.dart`
 
-- [ ] **Step 1: Write failing session tests**
+- [x] **Step 1: Write failing session tests**
 
 Create `test/state/editable_score_session_test.dart`:
 
@@ -130,7 +130,7 @@ void main() {
 }
 ```
 
-- [ ] **Step 2: Run failing tests**
+- [x] **Step 2: Run failing tests**
 
 Run:
 
@@ -140,7 +140,7 @@ flutter test test/state/editable_score_session_test.dart
 
 Expected: fails because `EditableScoreSession` does not exist.
 
-- [ ] **Step 3: Implement EditableScoreSession**
+- [x] **Step 3: Implement EditableScoreSession**
 
 Create `lib/state/editable_score_session.dart`:
 
@@ -262,7 +262,7 @@ class EditableScoreSession extends ChangeNotifier {
 }
 ```
 
-- [ ] **Step 4: Run session tests**
+- [x] **Step 4: Run session tests**
 
 Run:
 
@@ -272,7 +272,7 @@ flutter test test/state/editable_score_session_test.dart
 
 Expected: pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add lib/state/editable_score_session.dart test/state/editable_score_session_test.dart
