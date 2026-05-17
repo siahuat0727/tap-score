@@ -3,16 +3,67 @@ import 'package:tap_score/input/editor_shortcuts.dart';
 import 'package:tap_score/models/enums.dart';
 import 'package:tap_score/models/key_signature.dart';
 import 'package:tap_score/models/note.dart';
-import 'package:tap_score/services/audio_service.dart';
-import 'package:tap_score/state/score_notifier.dart';
+import 'package:tap_score/state/editable_score_session.dart';
+import 'package:tap_score/state/editor_controller.dart';
+import 'package:tap_score/state/playback_controller.dart';
+
+// ignore: library_private_types_in_public_api
+_EditorHarness buildEditorHarness() {
+  final session = EditableScoreSession();
+  final playback = _PreviewPlaybackController(session: session);
+  final editor = EditorController(session: session, notePreview: playback);
+  return _EditorHarness(session: session, playback: playback, editor: editor);
+}
+
+class _EditorHarness {
+  const _EditorHarness({
+    required this.session,
+    required this.playback,
+    required this.editor,
+  });
+
+  final EditableScoreSession session;
+  final _PreviewPlaybackController playback;
+  final EditorController editor;
+
+  void dispose() {
+    editor.dispose();
+    playback.dispose();
+    session.dispose();
+  }
+}
+
+class _PreviewPlaybackController extends PlaybackController {
+  _PreviewPlaybackController({required super.session});
+
+  final List<int> previewedMidis = [];
+
+  @override
+  void previewNote(
+    int midi, {
+    Duration duration = const Duration(milliseconds: 500),
+  }) {
+    previewedMidis.add(midi);
+  }
+}
 
 void main() {
   test('thirty-second note duration reports the expected beats', () {
     expect(NoteDuration.thirtySecond.beats, 0.125);
   });
 
+  test('selectNote throws for invalid note indexes', () {
+    final harness = buildEditorHarness();
+    addTearDown(harness.dispose);
+
+    expect(() => harness.editor.selectNote(0), throwsA(isA<RangeError>()));
+  });
+
   test('rest mode inserts a rest when duration is chosen', () {
-    final notifier = ScoreNotifier();
+    final harness = buildEditorHarness();
+    addTearDown(harness.dispose);
+    final notifier = harness.editor;
+    final score = harness.session.score;
 
     notifier.handleRestAction();
     expect(notifier.restMode, isTrue);
@@ -21,16 +72,19 @@ void main() {
 
     expect(notifier.restMode, isFalse);
     expect(notifier.currentDuration, NoteDuration.half);
-    expect(notifier.score.notes, hasLength(1));
-    expect(notifier.score.notes.single.isRest, isTrue);
-    expect(notifier.score.notes.single.duration, NoteDuration.half);
+    expect(score.notes, hasLength(1));
+    expect(score.notes.single.isRest, isTrue);
+    expect(score.notes.single.duration, NoteDuration.half);
     expect(notifier.cursorIndex, 1);
   });
 
   test('rest action converts selected note to a rest preserving timing', () {
-    final notifier = ScoreNotifier();
+    final harness = buildEditorHarness();
+    addTearDown(harness.dispose);
+    final notifier = harness.editor;
+    final score = harness.session.score;
 
-    notifier.score.addNote(
+    score.addNote(
       const Note(
         midi: 60,
         duration: NoteDuration.eighth,
@@ -42,7 +96,7 @@ void main() {
 
     notifier.handleRestAction();
 
-    final note = notifier.score.notes.single;
+    final note = score.notes.single;
     expect(note.isRest, isTrue);
     expect(note.duration, NoteDuration.eighth);
     expect(note.isDotted, isTrue);
@@ -53,67 +107,78 @@ void main() {
   test(
     'changing duration while a note is selected edits the selected note',
     () {
-      final notifier = ScoreNotifier();
+      final harness = buildEditorHarness();
+      addTearDown(harness.dispose);
+      final notifier = harness.editor;
+      final score = harness.session.score;
 
-      notifier.score.addNote(
-        const Note(midi: 60, duration: NoteDuration.quarter),
-      );
+      score.addNote(const Note(midi: 60, duration: NoteDuration.quarter));
       notifier.selectNote(0);
       notifier.setDuration(NoteDuration.half);
 
-      expect(notifier.score.notes.single.duration, NoteDuration.half);
+      expect(score.notes.single.duration, NoteDuration.half);
       expect(notifier.currentDuration, NoteDuration.half);
       expect(notifier.selectedIndex, 0);
     },
   );
 
   test('rest action toggles selected rest back to its stored pitch', () {
-    final notifier = ScoreNotifier();
+    final harness = buildEditorHarness();
+    addTearDown(harness.dispose);
+    final notifier = harness.editor;
+    final score = harness.session.score;
 
-    notifier.score.addNote(
-      const Note(midi: 64, duration: NoteDuration.quarter),
-    );
+    score.addNote(const Note(midi: 64, duration: NoteDuration.quarter));
     notifier.selectNote(0);
 
     notifier.handleRestAction();
-    expect(notifier.score.notes.single.isRest, isTrue);
-    expect(notifier.score.notes.single.sourceMidi, 64);
+    expect(score.notes.single.isRest, isTrue);
+    expect(score.notes.single.sourceMidi, 64);
 
     notifier.handleRestAction();
-    final restored = notifier.score.notes.single;
+    final restored = score.notes.single;
     expect(restored.isRest, isFalse);
     expect(restored.midi, 64);
     expect(restored.tripletGroupId, isNull);
   });
 
   test('rest without stored pitch restores to the active clef default', () {
-    final notifier = ScoreNotifier();
+    final harness = buildEditorHarness();
+    addTearDown(harness.dispose);
+    final notifier = harness.editor;
+    final score = harness.session.score;
 
-    notifier.score.addNote(const Note.rest(duration: NoteDuration.eighth));
+    score.addNote(const Note.rest(duration: NoteDuration.eighth));
     notifier.selectNote(0);
     notifier.handleRestAction();
 
-    final restored = notifier.score.notes.single;
+    final restored = score.notes.single;
     expect(restored.isRest, isFalse);
     expect(restored.midi, 60);
     expect(restored.duration, NoteDuration.eighth);
   });
 
   test('bass clef restores rests to C3 by default', () {
-    final notifier = ScoreNotifier();
+    final harness = buildEditorHarness();
+    addTearDown(harness.dispose);
+    final notifier = harness.editor;
+    final score = harness.session.score;
 
     notifier.setClef(Clef.bass);
-    notifier.score.addNote(const Note.rest(duration: NoteDuration.eighth));
+    score.addNote(const Note.rest(duration: NoteDuration.eighth));
     notifier.selectNote(0);
     notifier.handleRestAction();
 
-    expect(notifier.score.notes.single.midi, 48);
+    expect(score.notes.single.midi, 48);
   });
 
   test('toggle dotted mode edits the selected triplet group together', () {
-    final notifier = ScoreNotifier();
+    final harness = buildEditorHarness();
+    addTearDown(harness.dispose);
+    final notifier = harness.editor;
+    final score = harness.session.score;
 
-    notifier.score.notes.addAll([
+    score.notes.addAll([
       const Note(midi: 60, duration: NoteDuration.eighth, tripletGroupId: 4),
       const Note(midi: 62, duration: NoteDuration.eighth, tripletGroupId: 4),
       const Note(midi: 64, duration: NoteDuration.eighth, tripletGroupId: 4),
@@ -122,41 +187,47 @@ void main() {
 
     notifier.toggleDottedMode();
 
-    for (final note in notifier.score.notes) {
+    for (final note in score.notes) {
       expect(note.isDotted, isTrue);
       expect(note.tripletGroupId, 4);
     }
   });
 
   test('triplet input inserts three identical notes at once', () {
-    final notifier = ScoreNotifier();
+    final harness = buildEditorHarness();
+    addTearDown(harness.dispose);
+    final notifier = harness.editor;
+    final score = harness.session.score;
 
     notifier.toggleTripletMode();
     notifier.insertPitchedNote(60);
 
     expect(notifier.tripletMode, isFalse);
-    expect(notifier.score.notes, hasLength(3));
-    expect(notifier.score.notes.map((note) => note.midi), [60, 60, 60]);
-    expect(
-      notifier.score.notes.map((note) => note.tripletGroupId).toSet().length,
-      1,
-    );
-    expect(notifier.score.notes.first.tripletGroupId, isNotNull);
+    expect(score.notes, hasLength(3));
+    expect(score.notes.map((note) => note.midi), [60, 60, 60]);
+    expect(score.notes.map((note) => note.tripletGroupId).toSet().length, 1);
+    expect(score.notes.first.tripletGroupId, isNotNull);
   });
 
   test('key-signature-aware input applies the current key signature', () {
-    final notifier = ScoreNotifier();
+    final harness = buildEditorHarness();
+    addTearDown(harness.dispose);
+    final notifier = harness.editor;
+    final score = harness.session.score;
 
     notifier.setKeySignature(KeySignature.gMajor);
 
     expect(notifier.resolveInputMidi(65), 66);
 
     notifier.insertPitchedNote(notifier.resolveInputMidi(65));
-    expect(notifier.score.notes.single.midi, 66);
+    expect(score.notes.single.midi, 66);
   });
 
   test('chromatic input bypasses the current key signature', () {
-    final notifier = ScoreNotifier();
+    final harness = buildEditorHarness();
+    addTearDown(harness.dispose);
+    final notifier = harness.editor;
+    final score = harness.session.score;
 
     notifier.setKeySignature(KeySignature.gMajor);
     notifier.toggleKeyboardInputMode();
@@ -165,11 +236,13 @@ void main() {
     expect(notifier.resolveInputMidi(65), 65);
 
     notifier.insertPitchedNote(notifier.resolveInputMidi(65));
-    expect(notifier.score.notes.single.midi, 65);
+    expect(score.notes.single.midi, 65);
   });
 
   test('keyboard mapping shift clamps to the supported visible range', () {
-    final notifier = ScoreNotifier();
+    final harness = buildEditorHarness();
+    addTearDown(harness.dispose);
+    final notifier = harness.editor;
 
     notifier.shiftKeyboardMapping(-1);
     expect(notifier.keyboardOctaveShift, -1);
@@ -186,7 +259,9 @@ void main() {
   test(
     'bass clef allows two upward keyboard shifts within the visible range',
     () {
-      final notifier = ScoreNotifier();
+      final harness = buildEditorHarness();
+      addTearDown(harness.dispose);
+      final notifier = harness.editor;
 
       notifier.setClef(Clef.bass);
       expect(notifier.keyboardOctaveShift, 0);
@@ -207,7 +282,10 @@ void main() {
   );
 
   test('editor shortcuts route through shared keyboard input state', () {
-    final notifier = ScoreNotifier();
+    final harness = buildEditorHarness();
+    addTearDown(harness.dispose);
+    final notifier = harness.editor;
+    final score = harness.session.score;
 
     notifier.handleEditorShortcut(const EditorShortcutIntent.shiftDown());
     notifier.handleEditorShortcut(const EditorShortcutIntent.toggleInputMode());
@@ -215,24 +293,29 @@ void main() {
 
     expect(notifier.keyboardOctaveShift, -1);
     expect(notifier.keyboardInputMode, KeyboardInputMode.chromatic);
-    expect(notifier.score.notes.single.midi, 60);
+    expect(score.notes.single.midi, 60);
   });
 
   test('setClef updates score metadata without changing existing notes', () {
-    final notifier = ScoreNotifier();
-    notifier.score.notes.addAll([
+    final harness = buildEditorHarness();
+    addTearDown(harness.dispose);
+    final notifier = harness.editor;
+    final score = harness.session.score;
+    score.notes.addAll([
       const Note(midi: 60, duration: NoteDuration.quarter),
       const Note(midi: 43, duration: NoteDuration.half),
     ]);
 
     notifier.setClef(Clef.bass);
 
-    expect(notifier.score.clef, Clef.bass);
-    expect(notifier.score.notes.map((note) => note.midi).toList(), [60, 43]);
+    expect(score.clef, Clef.bass);
+    expect(score.notes.map((note) => note.midi).toList(), [60, 43]);
   });
 
   test('setClef clamps keyboard shift into the new clef range', () {
-    final notifier = ScoreNotifier();
+    final harness = buildEditorHarness();
+    addTearDown(harness.dispose);
+    final notifier = harness.editor;
 
     notifier.shiftKeyboardMapping(-1);
     expect(notifier.keyboardOctaveShift, -1);
@@ -250,50 +333,65 @@ void main() {
   test(
     'piano taps ignore keyboard octave shift and insert real white keys',
     () {
-      final notifier = ScoreNotifier();
+      final harness = buildEditorHarness();
+      addTearDown(harness.dispose);
+      final notifier = harness.editor;
+      final score = harness.session.score;
 
       notifier.shiftKeyboardMapping(-1);
       notifier.handlePianoTap(45);
 
       expect(notifier.keyboardOctaveShift, -1);
-      expect(notifier.score.notes.single.midi, 45);
+      expect(score.notes.single.midi, 45);
     },
   );
 
   test('key-signature-aware piano taps reject black keys', () {
-    final notifier = ScoreNotifier();
+    final harness = buildEditorHarness();
+    addTearDown(harness.dispose);
+    final notifier = harness.editor;
+    final score = harness.session.score;
 
     notifier.handlePianoTap(61);
 
-    expect(notifier.score.notes, isEmpty);
+    expect(score.notes, isEmpty);
   });
 
   test('key-signature-aware piano taps apply key signature to white keys', () {
-    final notifier = ScoreNotifier();
+    final harness = buildEditorHarness();
+    addTearDown(harness.dispose);
+    final notifier = harness.editor;
+    final score = harness.session.score;
 
     notifier.setKeySignature(KeySignature.gMajor);
     notifier.handlePianoTap(65);
 
-    expect(notifier.score.notes.single.midi, 66);
+    expect(score.notes.single.midi, 66);
   });
 
   test(
     'chromatic piano taps allow black keys without key-signature changes',
     () {
-      final notifier = ScoreNotifier();
+      final harness = buildEditorHarness();
+      addTearDown(harness.dispose);
+      final notifier = harness.editor;
+      final score = harness.session.score;
 
       notifier.setKeySignature(KeySignature.gMajor);
       notifier.toggleKeyboardInputMode();
       notifier.handlePianoTap(61);
 
-      expect(notifier.score.notes.single.midi, 61);
+      expect(score.notes.single.midi, 61);
     },
   );
 
   test('setKeySignature remaps all existing pitched notes', () {
-    final notifier = ScoreNotifier();
+    final harness = buildEditorHarness();
+    addTearDown(harness.dispose);
+    final notifier = harness.editor;
+    final score = harness.session.score;
 
-    notifier.score.notes.addAll([
+    score.notes.addAll([
       const Note(midi: 65, duration: NoteDuration.quarter),
       const Note(midi: 60, duration: NoteDuration.quarter),
       const Note.rest(duration: NoteDuration.quarter),
@@ -301,15 +399,18 @@ void main() {
 
     notifier.setKeySignature(KeySignature.dMajor);
 
-    expect(notifier.score.notes[0].midi, 66);
-    expect(notifier.score.notes[1].midi, 61);
-    expect(notifier.score.notes[2].isRest, isTrue);
+    expect(score.notes[0].midi, 66);
+    expect(score.notes[1].midi, 61);
+    expect(score.notes[2].isRest, isTrue);
   });
 
   test('setKeySignature remaps notes from the previous key intent', () {
-    final notifier = ScoreNotifier();
+    final harness = buildEditorHarness();
+    addTearDown(harness.dispose);
+    final notifier = harness.editor;
+    final score = harness.session.score;
 
-    notifier.score.notes.addAll([
+    score.notes.addAll([
       const Note(midi: 66, duration: NoteDuration.quarter),
       const Note(midi: 60, duration: NoteDuration.quarter),
     ]);
@@ -317,12 +418,15 @@ void main() {
 
     notifier.setKeySignature(KeySignature.dMajor);
 
-    expect(notifier.score.notes[0].midi, 66);
-    expect(notifier.score.notes[1].midi, 61);
+    expect(score.notes[0].midi, 66);
+    expect(score.notes[1].midi, 61);
   });
 
   test('triplet input inserts three identical rests at once', () {
-    final notifier = ScoreNotifier();
+    final harness = buildEditorHarness();
+    addTearDown(harness.dispose);
+    final notifier = harness.editor;
+    final score = harness.session.score;
 
     notifier.toggleTripletMode();
     notifier.handleRestAction();
@@ -330,40 +434,38 @@ void main() {
 
     expect(notifier.tripletMode, isFalse);
     expect(notifier.restMode, isFalse);
-    expect(notifier.score.notes, hasLength(3));
-    expect(notifier.score.notes.every((note) => note.isRest), isTrue);
-    expect(
-      notifier.score.notes.map((note) => note.tripletGroupId).toSet().length,
-      1,
-    );
+    expect(score.notes, hasLength(3));
+    expect(score.notes.every((note) => note.isRest), isTrue);
+    expect(score.notes.map((note) => note.tripletGroupId).toSet().length, 1);
   });
 
   test('triplet action clones the last selected note into a full triplet', () {
-    final notifier = ScoreNotifier();
+    final harness = buildEditorHarness();
+    addTearDown(harness.dispose);
+    final notifier = harness.editor;
+    final score = harness.session.score;
 
-    notifier.score.addNote(
-      const Note(midi: 67, duration: NoteDuration.quarter),
-    );
+    score.addNote(const Note(midi: 67, duration: NoteDuration.quarter));
     notifier.selectNote(0);
 
     expect(notifier.tripletButtonEnabled, isTrue);
 
     notifier.toggleTripletMode();
 
-    expect(notifier.score.notes, hasLength(3));
+    expect(score.notes, hasLength(3));
     expect(notifier.selectedIndex, 0);
     expect(notifier.toolbarTripletSelected, isTrue);
-    expect(notifier.score.notes.map((note) => note.midi), [67, 67, 67]);
-    expect(
-      notifier.score.notes.map((note) => note.tripletGroupId).toSet().length,
-      1,
-    );
+    expect(score.notes.map((note) => note.midi), [67, 67, 67]);
+    expect(score.notes.map((note) => note.tripletGroupId).toSet().length, 1);
   });
 
   test('triplet action converts and removes a valid three-note group', () {
-    final notifier = ScoreNotifier();
+    final harness = buildEditorHarness();
+    addTearDown(harness.dispose);
+    final notifier = harness.editor;
+    final score = harness.session.score;
 
-    notifier.score.notes.addAll([
+    score.notes.addAll([
       const Note(midi: 60, duration: NoteDuration.quarter),
       const Note(midi: 62, duration: NoteDuration.quarter),
       const Note(midi: 64, duration: NoteDuration.quarter),
@@ -373,24 +475,21 @@ void main() {
     expect(notifier.tripletButtonEnabled, isTrue);
     notifier.toggleTripletMode();
 
-    final groupId = notifier.score.notes.first.tripletGroupId;
+    final groupId = score.notes.first.tripletGroupId;
     expect(groupId, isNotNull);
-    expect(
-      notifier.score.notes.every((note) => note.tripletGroupId == groupId),
-      isTrue,
-    );
+    expect(score.notes.every((note) => note.tripletGroupId == groupId), isTrue);
 
     notifier.toggleTripletMode();
-    expect(
-      notifier.score.notes.every((note) => note.tripletGroupId == null),
-      isTrue,
-    );
+    expect(score.notes.every((note) => note.tripletGroupId == null), isTrue);
   });
 
   test('triplet action is disabled when next notes do not match timing', () {
-    final notifier = ScoreNotifier();
+    final harness = buildEditorHarness();
+    addTearDown(harness.dispose);
+    final notifier = harness.editor;
+    final score = harness.session.score;
 
-    notifier.score.notes.addAll([
+    score.notes.addAll([
       const Note(midi: 60, duration: NoteDuration.quarter),
       const Note(midi: 62, duration: NoteDuration.half),
       const Note(midi: 64, duration: NoteDuration.quarter),
@@ -400,19 +499,19 @@ void main() {
     expect(notifier.tripletButtonEnabled, isFalse);
     notifier.toggleTripletMode();
 
-    expect(
-      notifier.score.notes.every((note) => note.tripletGroupId == null),
-      isTrue,
-    );
+    expect(score.notes.every((note) => note.tripletGroupId == null), isTrue);
   });
 
   test(
     'triplet action is disabled when cloned triplet would overflow measure',
     () {
-      final notifier = ScoreNotifier();
+      final harness = buildEditorHarness();
+      addTearDown(harness.dispose);
+      final notifier = harness.editor;
+      final score = harness.session.score;
 
       notifier.setTimeSignature(3, 4);
-      notifier.score.notes.addAll([
+      score.notes.addAll([
         const Note(midi: 60, duration: NoteDuration.quarter),
         const Note(midi: 62, duration: NoteDuration.quarter),
         const Note(midi: 64, duration: NoteDuration.quarter),
@@ -422,16 +521,16 @@ void main() {
       expect(notifier.tripletButtonEnabled, isFalse);
       notifier.toggleTripletMode();
 
-      expect(notifier.score.notes, hasLength(3));
-      expect(
-        notifier.score.notes.every((note) => note.tripletGroupId == null),
-        isTrue,
-      );
+      expect(score.notes, hasLength(3));
+      expect(score.notes.every((note) => note.tripletGroupId == null), isTrue);
     },
   );
 
   test('slur input applies to the next pitched note and resets', () {
-    final notifier = ScoreNotifier();
+    final harness = buildEditorHarness();
+    addTearDown(harness.dispose);
+    final notifier = harness.editor;
+    final score = harness.session.score;
 
     notifier.toggleSlurMode();
     expect(notifier.slurMode, isTrue);
@@ -439,12 +538,15 @@ void main() {
     notifier.insertPitchedNote(60);
 
     expect(notifier.slurMode, isFalse);
-    expect(notifier.score.notes.single.slurToNext, isTrue);
+    expect(score.notes.single.slurToNext, isTrue);
   });
 
   test('selected pitched note toggles slur to next', () {
-    final notifier = ScoreNotifier();
-    notifier.score.notes.addAll([
+    final harness = buildEditorHarness();
+    addTearDown(harness.dispose);
+    final notifier = harness.editor;
+    final score = harness.session.score;
+    score.notes.addAll([
       const Note(midi: 60, duration: NoteDuration.quarter),
       const Note(midi: 62, duration: NoteDuration.quarter),
     ]);
@@ -452,15 +554,18 @@ void main() {
 
     expect(notifier.slurButtonEnabled, isTrue);
     notifier.toggleSlurMode();
-    expect(notifier.score.notes.first.slurToNext, isTrue);
+    expect(score.notes.first.slurToNext, isTrue);
 
     notifier.toggleSlurMode();
-    expect(notifier.score.notes.first.slurToNext, isFalse);
+    expect(score.notes.first.slurToNext, isFalse);
   });
 
   test('changing the last note of a triplet adds a tied continuation', () {
-    final notifier = ScoreNotifier();
-    notifier.score.notes.addAll([
+    final harness = buildEditorHarness();
+    addTearDown(harness.dispose);
+    final notifier = harness.editor;
+    final score = harness.session.score;
+    score.notes.addAll([
       const Note(midi: 60, duration: NoteDuration.eighth, tripletGroupId: 4),
       const Note(midi: 62, duration: NoteDuration.eighth, tripletGroupId: 4),
       const Note(midi: 64, duration: NoteDuration.eighth, tripletGroupId: 4),
@@ -469,26 +574,26 @@ void main() {
 
     notifier.setDuration(NoteDuration.quarter);
 
-    expect(notifier.score.notes, hasLength(4));
-    expect(
-      notifier.score.notes.take(3).map((note) => note.tripletGroupId).toSet(),
-      {4},
-    );
-    expect(notifier.score.notes.take(3).map((note) => note.duration).toList(), [
+    expect(score.notes, hasLength(4));
+    expect(score.notes.take(3).map((note) => note.tripletGroupId).toSet(), {4});
+    expect(score.notes.take(3).map((note) => note.duration).toList(), [
       NoteDuration.eighth,
       NoteDuration.eighth,
       NoteDuration.eighth,
     ]);
-    expect(notifier.score.notes[2].slurToNext, isTrue);
-    expect(notifier.score.notes[3].tripletGroupId, isNull);
-    expect(notifier.score.notes[3].midi, 64);
-    expect(notifier.score.notes[3].duration, NoteDuration.quarter);
+    expect(score.notes[2].slurToNext, isTrue);
+    expect(score.notes[3].tripletGroupId, isNull);
+    expect(score.notes[3].midi, 64);
+    expect(score.notes[3].duration, NoteDuration.quarter);
     expect(notifier.selectedIndex, 3);
   });
 
   test('changing a non-final triplet note duration is unsupported', () {
-    final notifier = ScoreNotifier();
-    notifier.score.notes.addAll([
+    final harness = buildEditorHarness();
+    addTearDown(harness.dispose);
+    final notifier = harness.editor;
+    final score = harness.session.score;
+    score.notes.addAll([
       const Note(midi: 60, duration: NoteDuration.eighth, tripletGroupId: 4),
       const Note(midi: 62, duration: NoteDuration.eighth, tripletGroupId: 4),
       const Note(midi: 64, duration: NoteDuration.eighth, tripletGroupId: 4),
@@ -498,8 +603,8 @@ void main() {
     expect(notifier.durationButtonsEnabled, isFalse);
     notifier.setDuration(NoteDuration.quarter);
 
-    expect(notifier.score.notes, hasLength(3));
-    expect(notifier.score.notes.map((note) => note.duration).toList(), [
+    expect(score.notes, hasLength(3));
+    expect(score.notes.map((note) => note.duration).toList(), [
       NoteDuration.eighth,
       NoteDuration.eighth,
       NoteDuration.eighth,
@@ -508,8 +613,11 @@ void main() {
   });
 
   test('rest cannot be marked with a slur', () {
-    final notifier = ScoreNotifier();
-    notifier.score.notes.addAll([
+    final harness = buildEditorHarness();
+    addTearDown(harness.dispose);
+    final notifier = harness.editor;
+    final score = harness.session.score;
+    score.notes.addAll([
       const Note.rest(duration: NoteDuration.quarter),
       const Note(midi: 62, duration: NoteDuration.quarter),
     ]);
@@ -518,12 +626,15 @@ void main() {
     expect(notifier.slurButtonEnabled, isFalse);
     notifier.toggleSlurMode();
 
-    expect(notifier.score.notes.first.slurToNext, isFalse);
+    expect(score.notes.first.slurToNext, isFalse);
   });
 
   test('delete removes the last note in end-input mode', () {
-    final notifier = ScoreNotifier();
-    notifier.score.notes.addAll([
+    final harness = buildEditorHarness();
+    addTearDown(harness.dispose);
+    final notifier = harness.editor;
+    final score = harness.session.score;
+    score.notes.addAll([
       const Note(midi: 60, duration: NoteDuration.quarter),
       const Note(midi: 62, duration: NoteDuration.quarter),
     ]);
@@ -532,15 +643,18 @@ void main() {
     expect(notifier.deleteButtonEnabled, isTrue);
     notifier.deleteSelected();
 
-    expect(notifier.score.notes, hasLength(1));
-    expect(notifier.score.notes.single.midi, 60);
+    expect(score.notes, hasLength(1));
+    expect(score.notes.single.midi, 60);
     expect(notifier.selectionKind, isNull);
     expect(notifier.cursorIndex, 1);
   });
 
   test('deleting a slurred target clears the previous slur', () {
-    final notifier = ScoreNotifier();
-    notifier.score.notes.addAll([
+    final harness = buildEditorHarness();
+    addTearDown(harness.dispose);
+    final notifier = harness.editor;
+    final score = harness.session.score;
+    score.notes.addAll([
       const Note(midi: 60, duration: NoteDuration.quarter, slurToNext: true),
       const Note(midi: 62, duration: NoteDuration.quarter),
     ]);
@@ -548,13 +662,16 @@ void main() {
 
     notifier.deleteSelected();
 
-    expect(notifier.score.notes, hasLength(1));
-    expect(notifier.score.notes.single.slurToNext, isFalse);
+    expect(score.notes, hasLength(1));
+    expect(score.notes.single.slurToNext, isFalse);
   });
 
   test('turning a slurred note into a rest clears adjacent slurs', () {
-    final notifier = ScoreNotifier();
-    notifier.score.notes.addAll([
+    final harness = buildEditorHarness();
+    addTearDown(harness.dispose);
+    final notifier = harness.editor;
+    final score = harness.session.score;
+    score.notes.addAll([
       const Note(midi: 60, duration: NoteDuration.quarter, slurToNext: true),
       const Note(midi: 62, duration: NoteDuration.quarter),
     ]);
@@ -562,128 +679,7 @@ void main() {
 
     notifier.handleRestAction();
 
-    expect(notifier.score.notes[0].slurToNext, isFalse);
-    expect(notifier.score.notes[1].isRest, isTrue);
+    expect(score.notes[0].slurToNext, isFalse);
+    expect(score.notes[1].isRest, isTrue);
   });
-
-  test(
-    'play retriggers repeated same-pitch notes with separate highlights',
-    () async {
-      final audioService = _FakeAudioService();
-      final notifier = ScoreNotifier(audioService: audioService);
-      final playbackIndices = <int>[];
-
-      notifier.addListener(() {
-        if (notifier.playbackIndex >= 0) {
-          playbackIndices.add(notifier.playbackIndex);
-        }
-      });
-      notifier.score.notes.addAll([
-        const Note(midi: 60, duration: NoteDuration.quarter),
-        const Note(midi: 60, duration: NoteDuration.quarter),
-      ]);
-
-      await notifier.play();
-
-      expect(audioService.events, [
-        'start-60',
-        'stop-60',
-        'start-60',
-        'stop-60',
-      ]);
-      expect(playbackIndices, containsAllInOrder([0, 1]));
-      expect(notifier.playbackIndex, -1);
-      expect(notifier.isPlaying, isFalse);
-    },
-  );
-
-  test(
-    'play sustains tied same-pitch notes while highlights still advance',
-    () async {
-      final audioService = _FakeAudioService();
-      final notifier = ScoreNotifier(audioService: audioService);
-      final playbackIndices = <int>[];
-
-      notifier.addListener(() {
-        if (notifier.playbackIndex >= 0) {
-          playbackIndices.add(notifier.playbackIndex);
-        }
-      });
-      notifier.score.notes.addAll([
-        const Note(midi: 60, duration: NoteDuration.quarter, slurToNext: true),
-        const Note(midi: 60, duration: NoteDuration.quarter),
-      ]);
-
-      await notifier.play();
-
-      expect(audioService.events, ['start-60', 'stop-60']);
-      expect(playbackIndices, containsAllInOrder([0, 1]));
-      expect(notifier.playbackIndex, -1);
-      expect(notifier.isPlaying, isFalse);
-    },
-  );
-
-  test('triplet tie continuation does not retrigger playback', () async {
-    final audioService = _FakeAudioService();
-    final notifier = ScoreNotifier(audioService: audioService);
-    final playbackIndices = <int>[];
-
-    notifier.addListener(() {
-      if (notifier.playbackIndex >= 0) {
-        playbackIndices.add(notifier.playbackIndex);
-      }
-    });
-    notifier.score.notes.addAll([
-      const Note(midi: 60, duration: NoteDuration.eighth, tripletGroupId: 4),
-      const Note(midi: 62, duration: NoteDuration.eighth, tripletGroupId: 4),
-      const Note(
-        midi: 64,
-        duration: NoteDuration.eighth,
-        tripletGroupId: 4,
-        slurToNext: true,
-      ),
-      const Note(midi: 64, duration: NoteDuration.quarter),
-    ]);
-
-    await notifier.play();
-
-    expect(audioService.events, [
-      'start-60',
-      'stop-60',
-      'start-62',
-      'stop-62',
-      'start-64',
-      'stop-64',
-    ]);
-    expect(playbackIndices, containsAllInOrder([0, 1, 2, 3]));
-    expect(notifier.playbackIndex, -1);
-    expect(notifier.isPlaying, isFalse);
-  });
-}
-
-class _FakeAudioService extends AudioService {
-  _FakeAudioService() : super(testMode: true);
-
-  final List<String> events = [];
-  int _nextHandleId = 1;
-
-  @override
-  Future<AudioNoteHandle?> startNote(
-    int midi, {
-    int velocity = AudioService.defaultPlaybackVelocity,
-  }) async {
-    events.add('start-$midi');
-    return AudioNoteHandle(id: _nextHandleId++, midi: midi);
-  }
-
-  @override
-  Future<void> stopNoteHandle(AudioNoteHandle handle) async {
-    events.add('stop-${handle.midi}');
-  }
-
-  @override
-  void stopPlayback() {}
-
-  @override
-  void dispose() {}
 }
