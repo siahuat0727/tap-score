@@ -3,6 +3,7 @@ import 'package:tap_score/input/editor_shortcuts.dart';
 import 'package:tap_score/models/enums.dart';
 import 'package:tap_score/models/key_signature.dart';
 import 'package:tap_score/models/note.dart';
+import 'package:tap_score/services/audio_service.dart';
 import 'package:tap_score/state/editable_score_session.dart';
 import 'package:tap_score/state/editor_controller.dart';
 import 'package:tap_score/state/playback_controller.dart';
@@ -34,7 +35,8 @@ class _EditorHarness {
 }
 
 class _PreviewPlaybackController extends PlaybackController {
-  _PreviewPlaybackController({required super.session});
+  _PreviewPlaybackController({required super.session})
+    : super(audioService: AudioService(testMode: true));
 
   final List<int> previewedMidis = [];
 
@@ -57,6 +59,85 @@ void main() {
     addTearDown(harness.dispose);
 
     expect(() => harness.editor.selectNote(0), throwsA(isA<RangeError>()));
+  });
+
+  test('score changes notify session and editor and mark unsaved', () {
+    final harness = buildEditorHarness();
+    addTearDown(harness.dispose);
+
+    var sessionNotifications = 0;
+    var editorNotifications = 0;
+    harness.session.addListener(() {
+      sessionNotifications += 1;
+    });
+    harness.editor.addListener(() {
+      editorNotifications += 1;
+    });
+
+    expect(harness.session.hasUnsavedChanges, isFalse);
+
+    harness.editor.insertPitchedNote(60);
+
+    expect(sessionNotifications, 1);
+    expect(editorNotifications, 1);
+    expect(harness.session.hasUnsavedChanges, isTrue);
+  });
+
+  test('editor-only state changes notify editor without dirtying session', () {
+    final harness = buildEditorHarness();
+    addTearDown(harness.dispose);
+
+    var sessionNotifications = 0;
+    var editorNotifications = 0;
+    harness.session.addListener(() {
+      sessionNotifications += 1;
+    });
+    harness.editor.addListener(() {
+      editorNotifications += 1;
+    });
+
+    expect(harness.session.hasUnsavedChanges, isFalse);
+
+    harness.editor.toggleTripletMode();
+
+    expect(sessionNotifications, 0);
+    expect(editorNotifications, 1);
+    expect(harness.session.hasUnsavedChanges, isFalse);
+  });
+
+  test('inserting a pitched note previews that midi', () {
+    final harness = buildEditorHarness();
+    addTearDown(harness.dispose);
+
+    harness.editor.insertPitchedNote(60);
+
+    expect(harness.playback.previewedMidis, [60]);
+  });
+
+  test('selecting a pitched note previews that midi', () {
+    final harness = buildEditorHarness();
+    addTearDown(harness.dispose);
+    harness.session.score.addNote(
+      const Note(midi: 62, duration: NoteDuration.quarter),
+    );
+
+    harness.editor.selectNote(0);
+
+    expect(harness.playback.previewedMidis, [62]);
+  });
+
+  test('changing selected pitch previews the new midi', () {
+    final harness = buildEditorHarness();
+    addTearDown(harness.dispose);
+    harness.session.score.addNote(
+      const Note(midi: 62, duration: NoteDuration.quarter),
+    );
+    harness.editor.selectNote(0);
+    harness.playback.previewedMidis.clear();
+
+    harness.editor.changeSelectedPitch(65);
+
+    expect(harness.playback.previewedMidis, [65]);
   });
 
   test('rest mode inserts a rest when duration is chosen', () {
