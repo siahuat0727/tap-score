@@ -19,6 +19,7 @@ class PlaybackController extends ChangeNotifier {
   final AudioService _audioService;
 
   bool _isPlaying = false;
+  bool _isDisposed = false;
   int _playbackIndex = -1;
   AudioStatus _audioStatus = AudioStatus.idle;
   String? _audioStatusMessage;
@@ -37,8 +38,10 @@ class PlaybackController extends ChangeNotifier {
     _audioService.playNoteWithDuration(midi, duration: duration);
   }
 
-  Future<void> preload() {
-    return _audioService.preload().then((_) => _syncAudioState());
+  Future<void> preload() async {
+    await _audioService.preload();
+    if (_isDisposed) return;
+    _syncAudioState();
   }
 
   Future<void> play() async {
@@ -51,10 +54,12 @@ class PlaybackController extends ChangeNotifier {
     await _audioService.playScore(
       _session.score,
       onNoteIndex: (index) {
+        if (_isDisposed) return;
         _playbackIndex = index;
         notifyListeners();
       },
       onComplete: () {
+        if (_isDisposed) return;
         _isPlaying = false;
         _playbackIndex = -1;
         notifyListeners();
@@ -63,13 +68,21 @@ class PlaybackController extends ChangeNotifier {
   }
 
   void stop() {
+    _stop(notify: true);
+  }
+
+  void _stop({required bool notify}) {
     _audioService.stopPlayback();
     _isPlaying = false;
     _playbackIndex = -1;
-    notifyListeners();
+    if (notify && !_isDisposed) {
+      notifyListeners();
+    }
   }
 
   void _syncAudioState({bool notify = true}) {
+    if (_isDisposed) return;
+
     final previousStatus = _audioStatus;
     final previousMessage = _audioStatusMessage;
 
@@ -99,7 +112,8 @@ class PlaybackController extends ChangeNotifier {
 
   @override
   void dispose() {
-    stop();
+    _isDisposed = true;
+    _stop(notify: false);
     _audioService.onStateChanged = null;
     _audioService.dispose();
     super.dispose();

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tap_score/models/enums.dart';
 import 'package:tap_score/models/note.dart';
@@ -75,14 +77,102 @@ void main() {
     expect(playback.isPlaying, isFalse);
     expect(playback.playbackIndex, -1);
   });
+
+  test('preload does not notify after dispose', () async {
+    final audioService = _FakeAudioService();
+    final session = EditableScoreSession();
+    final playback = PlaybackController(
+      session: session,
+      audioService: audioService,
+    );
+    addTearDown(session.dispose);
+
+    var listenerCalls = 0;
+    playback.addListener(() {
+      listenerCalls += 1;
+    });
+
+    final preloadFuture = playback.preload();
+    expect(listenerCalls, 1);
+
+    playback.dispose();
+    final callsAfterDispose = listenerCalls;
+    audioService.completePendingPreload(success: true);
+
+    Object? thrown;
+    try {
+      await preloadFuture;
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown, isNull);
+    expect(listenerCalls, callsAfterDispose);
+  });
+
+  test('dispose stops playback without notifying listeners', () {
+    final audioService = _FakeAudioService();
+    final session = EditableScoreSession();
+    final playback = PlaybackController(
+      session: session,
+      audioService: audioService,
+    );
+    addTearDown(session.dispose);
+
+    var listenerCalls = 0;
+    playback.addListener(() {
+      listenerCalls += 1;
+    });
+
+    playback.dispose();
+
+    expect(audioService.stopCalls, 1);
+    expect(listenerCalls, 0);
+  });
+
+  test('playback callbacks do not notify after dispose', () async {
+    final audioService = _FakeAudioService()..holdPlayback = true;
+    final session = EditableScoreSession();
+    session.score.addNote(const Note(midi: 60));
+    final playback = PlaybackController(
+      session: session,
+      audioService: audioService,
+    );
+    addTearDown(session.dispose);
+
+    var listenerCalls = 0;
+    playback.addListener(() {
+      listenerCalls += 1;
+    });
+
+    final playFuture = playback.play();
+    expect(playback.isPlaying, isTrue);
+
+    playback.dispose();
+    final callsAfterDispose = listenerCalls;
+    audioService.completePendingPlayback();
+
+    Object? thrown;
+    try {
+      await playFuture;
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown, isNull);
+    expect(listenerCalls, callsAfterDispose);
+  });
 }
 
 class _FakeAudioService extends AudioService {
   final List<int> previewedMidis = [];
   final List<Score> playedScores = [];
   int stopCalls = 0;
+  bool holdPlayback = false;
   AudioInitializationState _state = AudioInitializationState.idle;
   String? _error;
+  Completer<bool>? _pendingPreload;
+  Completer<void>? _pendingPlayback;
 
   @override
   AudioInitializationState get initializationState => _state;
@@ -105,7 +195,31 @@ class _FakeAudioService extends AudioService {
   Future<bool> preload({
     Duration webTimeout = const Duration(seconds: 12),
   }) async {
-    return completePreload(success: true);
+    if (_pendingPreload != null) {
+      throw StateError('Preload is already pending.');
+    }
+    _state = AudioInitializationState.loading;
+    _error = null;
+    onStateChanged?.call();
+
+    final pending = Completer<bool>();
+    _pendingPreload = pending;
+    final success = await pending.future;
+    _pendingPreload = null;
+    _state = success
+        ? AudioInitializationState.ready
+        : AudioInitializationState.error;
+    _error = success ? null : 'Fake preload failed.';
+    onStateChanged?.call();
+    return success;
+  }
+
+  void completePendingPreload({required bool success}) {
+    final pending = _pendingPreload;
+    if (pending == null) {
+      throw StateError('No pending preload.');
+    }
+    pending.complete(success);
   }
 
   @override
@@ -125,7 +239,25 @@ class _FakeAudioService extends AudioService {
   }) async {
     playedScores.add(score.copy());
     onNoteIndex(0);
+    if (holdPlayback) {
+      if (_pendingPlayback != null) {
+        throw StateError('Playback is already pending.');
+      }
+      final pending = Completer<void>();
+      _pendingPlayback = pending;
+      await pending.future;
+      _pendingPlayback = null;
+      onNoteIndex(1);
+    }
     onComplete();
+  }
+
+  void completePendingPlayback() {
+    final pending = _pendingPlayback;
+    if (pending == null) {
+      throw StateError('No pending playback.');
+    }
+    pending.complete();
   }
 
   @override
