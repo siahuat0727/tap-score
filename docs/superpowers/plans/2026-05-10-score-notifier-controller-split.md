@@ -287,7 +287,7 @@ git commit -m "refactor: introduce editable score session"
 - Create: `lib/state/playback_controller.dart`
 - Create: `test/state/playback_controller_test.dart`
 
-- [ ] **Step 1: Write failing playback tests**
+- [x] **Step 1: Write failing playback tests**
 
 Create `test/state/playback_controller_test.dart`:
 
@@ -419,7 +419,7 @@ class _FakeAudioService extends AudioService {
 }
 ```
 
-- [ ] **Step 2: Run failing playback tests**
+- [x] **Step 2: Run failing playback tests**
 
 Run:
 
@@ -429,7 +429,7 @@ flutter test test/state/playback_controller_test.dart
 
 Expected: fails because `PlaybackController` and `AudioStatus` do not exist.
 
-- [ ] **Step 3: Implement PlaybackController**
+- [x] **Step 3: Implement PlaybackController**
 
 Create `lib/state/playback_controller.dart`:
 
@@ -543,7 +543,7 @@ class PlaybackController extends ChangeNotifier {
 }
 ```
 
-- [ ] **Step 4: Run playback tests**
+- [x] **Step 4: Run playback tests**
 
 Run:
 
@@ -553,7 +553,7 @@ flutter test test/state/playback_controller_test.dart
 
 Expected: pass. If the audio status test still reports `idle`, adjust `_FakeAudioService` to expose state transitions in the same way existing fake audio services do in `test/state/score_notifier_test.dart`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add lib/state/playback_controller.dart test/state/playback_controller_test.dart
