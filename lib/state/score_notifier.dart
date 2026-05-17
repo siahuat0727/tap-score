@@ -16,9 +16,9 @@ import '../services/score_library_repository.dart';
 import '../workspace/workspace_document.dart';
 import '../workspace/workspace_repository.dart';
 import '../workspace/workspace_session.dart';
+import 'editor_controller.dart' show SelectionKind;
 
-/// What kind of element is currently selected.
-enum SelectionKind { clef, keySig, timeSig, note }
+export 'editor_controller.dart' show SelectionKind;
 
 enum AudioStatus { idle, preloading, ready, error }
 
