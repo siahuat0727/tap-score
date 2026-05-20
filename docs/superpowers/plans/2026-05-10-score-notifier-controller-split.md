@@ -569,7 +569,7 @@ git commit -m "refactor: introduce playback controller"
 - Modify: `test/state/score_notifier_test.dart`
 - Rename through git: `test/state/score_notifier_test.dart` to `test/state/editor_controller_test.dart`
 
-- [ ] **Step 1: Rename editor tests and update imports**
+- [x] **Step 1: Rename editor tests and update imports**
 
 Run:
 
@@ -655,7 +655,7 @@ final score = harness.session.score;
 
 For assertions that currently read `notifier.score`, replace with `score` or `harness.session.score`.
 
-- [ ] **Step 2: Add fail-fast selection test**
+- [x] **Step 2: Add fail-fast selection test**
 
 Append this test to `test/state/editor_controller_test.dart`:
 
@@ -671,7 +671,7 @@ test('selectNote throws for invalid note indexes', () {
 });
 ```
 
-- [ ] **Step 3: Run renamed tests to verify failures**
+- [x] **Step 3: Run renamed tests to verify failures**
 
 Run:
 
@@ -681,7 +681,7 @@ flutter test test/state/editor_controller_test.dart
 
 Expected: fails because `EditorController` does not exist.
 
-- [ ] **Step 4: Implement EditorController by moving editor-owned code**
+- [x] **Step 4: Implement EditorController by moving editor-owned code**
 
 Create `lib/state/editor_controller.dart`.
 
@@ -764,7 +764,7 @@ if (index != null && (index < 0 || index >= score.notes.length)) {
 
 Keep UI-disabled command guards such as `if (!durationButtonsEnabled) return;` unchanged.
 
-- [ ] **Step 5: Run editor tests**
+- [x] **Step 5: Run editor tests**
 
 Run:
 
@@ -774,7 +774,7 @@ flutter test test/state/editor_controller_test.dart
 
 Expected: pass after replacing all `notifier.score` references with `harness.session.score`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add lib/state/editor_controller.dart test/state/editor_controller_test.dart
