@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/foundation.dart';
 
 import '../app/score_seed_config.dart';
@@ -13,52 +11,64 @@ import '../models/score_library.dart';
 import '../services/audio_service.dart';
 import '../services/preset_score_repository.dart';
 import '../services/score_library_repository.dart';
-import '../workspace/workspace_document.dart';
 import '../workspace/workspace_repository.dart';
-import '../workspace/workspace_session.dart';
+import 'editable_score_session.dart';
 import 'editor_controller.dart' show SelectionKind;
+import 'playback_controller.dart' show AudioStatus, PlaybackController;
+import 'score_library_controller.dart';
 
 export 'editor_controller.dart' show SelectionKind;
-
-enum AudioStatus { idle, preloading, ready, error }
+export 'playback_controller.dart' show AudioStatus;
 
 /// Central state manager for the score editor.
 class ScoreNotifier extends ChangeNotifier {
   static const double _epsilon = 0.001;
-  static const Duration _draftSaveDelay = Duration(milliseconds: 250);
 
-  ScoreNotifier({
+  factory ScoreNotifier({
     AudioService? audioService,
     WorkspaceRepository? workspaceRepository,
     ScoreLibraryRepository? scoreLibraryRepository,
     PresetScoreRepository? presetScoreRepository,
-  }) : _audioService = audioService ?? AudioService(),
-       _workspaceRepository =
-           workspaceRepository ??
-           DefaultWorkspaceRepository(
-             scoreLibraryRepository: scoreLibraryRepository,
-             presetScoreRepository: presetScoreRepository,
-           ) {
-    _workspaceSession = WorkspaceSession(
-      editorScore: score.copy(),
-      document: WorkspaceDocument.draft(score: score),
-      savedScores: const [],
-      presetScores: const [],
+  }) {
+    final session = EditableScoreSession();
+    final playback = PlaybackController(
+      session: session,
+      audioService: audioService,
     );
-    _audioService.onStateChanged = _syncAudioState;
-    _syncAudioState(notify: false);
+    final resolvedWorkspaceRepository =
+        workspaceRepository ??
+        DefaultWorkspaceRepository(
+          scoreLibraryRepository: scoreLibraryRepository,
+          presetScoreRepository: presetScoreRepository,
+        );
+    final library = ScoreLibraryController(
+      session: session,
+      playback: playback,
+      workspaceRepository: resolvedWorkspaceRepository,
+    );
+    return ScoreNotifier._(
+      session: session,
+      playback: playback,
+      library: library,
+    );
   }
 
-  final Score score = Score();
-  final AudioService _audioService;
-  final WorkspaceRepository _workspaceRepository;
+  ScoreNotifier._({
+    required EditableScoreSession session,
+    required PlaybackController playback,
+    required ScoreLibraryController library,
+  }) : _session = session,
+       _playback = playback,
+       _library = library {
+    _playback.addListener(_notifyFromOwnedController);
+    _library.addListener(_notifyFromOwnedController);
+  }
 
-  Timer? _draftSaveTimer;
-  WorkspaceSession? _workspaceSession;
-  int _initialWorkspaceLoadGeneration = 0;
-  Future<void> _initialWorkspacePersistence = Future<void>.value();
-  bool _initialWorkspaceLoadComplete = false;
-  bool _initialWorkspaceLoadSucceeded = false;
+  final EditableScoreSession _session;
+  final PlaybackController _playback;
+  final ScoreLibraryController _library;
+
+  Score get score => _session.score;
 
   /// Index where the next note will be inserted.
   int _cursorIndex = 0;
@@ -114,52 +124,27 @@ class ScoreNotifier extends ChangeNotifier {
   /// Auto-incrementing triplet group ID.
   int _nextTripletGroupId = 1;
 
-  List<SavedScoreEntry> get savedScores =>
-      List.unmodifiable(_workspaceSession?.savedScores ?? const []);
+  List<SavedScoreEntry> get savedScores => _library.savedScores;
 
-  List<PresetScoreEntry> get presetScores =>
-      List.unmodifiable(_workspaceSession?.presetScores ?? const []);
+  List<PresetScoreEntry> get presetScores => _library.presetScores;
 
-  String? get activeScoreId => _workspaceSession?.document.savedScoreId;
+  String? get activeScoreId => _library.activeScoreId;
 
-  String? get activePresetId => _workspaceSession?.document.presetId;
+  String? get activePresetId => _library.activePresetId;
 
-  SavedScoreEntry? get activeSavedScore {
-    final id = activeScoreId;
-    if (id == null) return null;
-    for (final entry in savedScores) {
-      if (entry.id == id) {
-        return entry;
-      }
-    }
-    return null;
-  }
+  SavedScoreEntry? get activeSavedScore => _library.activeSavedScore;
 
-  PresetScoreEntry? get activePresetScore {
-    final id = activePresetId;
-    if (id == null) return null;
-    for (final entry in presetScores) {
-      if (entry.id == id) {
-        return entry;
-      }
-    }
-    return null;
-  }
+  PresetScoreEntry? get activePresetScore => _library.activePresetScore;
 
-  String get currentScoreLabel => _workspaceSession?.document.name ?? 'Draft';
+  String get currentScoreLabel => _library.currentScoreLabel;
 
-  double get referenceBpm => _workspaceSession?.document.score.bpm ?? score.bpm;
+  double get referenceBpm => _session.referenceBpm;
 
-  bool _hasUnsavedChanges = false;
-  bool get hasUnsavedChanges => _hasUnsavedChanges;
+  bool get hasUnsavedChanges => _library.hasUnsavedChanges;
 
-  String? _libraryMessage;
-  String? get libraryMessage => _libraryMessage;
+  String? get libraryMessage => _library.libraryMessage;
 
-  bool _libraryMessageIsError = false;
-  bool get libraryMessageIsError => _libraryMessageIsError;
-
-  Timer? _libraryMessageTimer;
+  bool get libraryMessageIsError => _library.libraryMessageIsError;
 
   /// Selection-aware toolbar state.
   bool get timingControlsEnabled =>
@@ -231,172 +216,28 @@ class ScoreNotifier extends ChangeNotifier {
   }
 
   /// Playback state.
-  bool _isPlaying = false;
-  bool get isPlaying => _isPlaying;
+  bool get isPlaying => _playback.isPlaying;
 
   /// Index of the note currently being played.
-  int _playbackIndex = -1;
-  int get playbackIndex => _playbackIndex;
+  int get playbackIndex => _playback.playbackIndex;
 
   /// Whether the audio engine is initialized.
-  AudioStatus _audioStatus = AudioStatus.idle;
-  AudioStatus get audioStatus => _audioStatus;
-  bool get isInitialized => _audioStatus == AudioStatus.ready;
-  String? _audioStatusMessage;
-  String? get audioStatusMessage => _audioStatusMessage;
-  bool get audioStatusIsError => _audioStatus == AudioStatus.error;
-  bool get initialWorkspaceLoadComplete => _initialWorkspaceLoadComplete;
-  bool get initialWorkspaceLoadSucceeded => _initialWorkspaceLoadSucceeded;
+  AudioStatus get audioStatus => _playback.audioStatus;
+  bool get isInitialized => _playback.isInitialized;
+  String? get audioStatusMessage => _playback.audioStatusMessage;
+  bool get audioStatusIsError => _playback.audioStatusIsError;
+  bool get initialWorkspaceLoadComplete =>
+      _library.initialWorkspaceLoadComplete;
+  bool get initialWorkspaceLoadSucceeded =>
+      _library.initialWorkspaceLoadSucceeded;
 
   /// Load local storage and the editor entry state.
   Future<void> loadInitialWorkspace({
     ScoreSeedConfig? initialScoreConfig,
   }) async {
-    final loadGeneration = ++_initialWorkspaceLoadGeneration;
-    _draftSaveTimer?.cancel();
-    _draftSaveTimer = null;
-    _initialWorkspaceLoadComplete = false;
-    _initialWorkspaceLoadSucceeded = false;
-    _libraryMessageTimer?.cancel();
-    _libraryMessage = null;
-    _libraryMessageIsError = false;
+    await _library.loadInitialWorkspace(initialScoreConfig: initialScoreConfig);
+    _resetEditorForScore();
     notifyListeners();
-
-    try {
-      final result = await _workspaceRepository.loadWorkspace(
-        initialScoreConfig: initialScoreConfig,
-      );
-      if (loadGeneration != _initialWorkspaceLoadGeneration) {
-        return;
-      }
-      _applyWorkspaceLoadResult(result, replaceScore: true);
-      _initialWorkspaceLoadSucceeded = true;
-      if (initialScoreConfig != null && !initialScoreConfig.isRestore) {
-        await _persistInitializedWorkspace(
-          result.workspace,
-          loadGeneration: loadGeneration,
-        );
-      } else {
-        await _initialWorkspacePersistence;
-      }
-      if (loadGeneration != _initialWorkspaceLoadGeneration) {
-        return;
-      }
-    } on WorkspaceRepositoryException catch (error) {
-      if (loadGeneration != _initialWorkspaceLoadGeneration) {
-        return;
-      }
-      _initialWorkspaceLoadSucceeded = false;
-      _setLibraryMessage(error.message, isError: true);
-    } on PresetScoreException catch (error) {
-      if (loadGeneration != _initialWorkspaceLoadGeneration) {
-        return;
-      }
-      _initialWorkspaceLoadSucceeded = false;
-      _setLibraryMessage(error.message, isError: true);
-    } on ScoreLibraryStorageException catch (error) {
-      if (loadGeneration != _initialWorkspaceLoadGeneration) {
-        return;
-      }
-      _initialWorkspaceLoadSucceeded = false;
-      _setLibraryMessage(error.message, isError: true);
-    } catch (error) {
-      if (loadGeneration != _initialWorkspaceLoadGeneration) {
-        return;
-      }
-      _initialWorkspaceLoadSucceeded = false;
-      _setLibraryMessage('Failed to load the workspace.', isError: true);
-      debugPrint('Workspace load failed: $error');
-    }
-
-    _initialWorkspaceLoadComplete = true;
-    notifyListeners();
-  }
-
-  WorkspaceSession get _requiredWorkspace {
-    final workspace = _workspaceSession;
-    if (workspace == null) {
-      throw StateError('Workspace has not been initialized.');
-    }
-    return workspace;
-  }
-
-  bool _applyWorkspaceLoadResult(
-    WorkspaceLoadResult result, {
-    required bool replaceScore,
-  }) {
-    _replaceWorkspace(result.workspace, replaceScore: replaceScore);
-    final warningMessage = result.warningMessage;
-    if (warningMessage == null) {
-      return false;
-    }
-    _setLibraryMessage(warningMessage, isError: true);
-    return true;
-  }
-
-  void _replaceWorkspace(
-    WorkspaceSession workspace, {
-    required bool replaceScore,
-  }) {
-    _workspaceSession = workspace;
-    if (replaceScore) {
-      _applyScore(workspace.editorScore);
-    }
-    _hasUnsavedChanges = _computeHasUnsavedChanges(score);
-  }
-
-  Future<void> _persistInitializedWorkspace(
-    WorkspaceSession workspace, {
-    required int loadGeneration,
-  }) async {
-    final previousPersistence = _initialWorkspacePersistence;
-    final currentPersistence = Completer<void>();
-    _initialWorkspacePersistence = currentPersistence.future;
-    try {
-      await previousPersistence;
-      if (loadGeneration != _initialWorkspaceLoadGeneration) {
-        return;
-      }
-      await _workspaceRepository.persistDraft(
-        workspace: workspace,
-        editedScore: workspace.editorScore,
-      );
-    } on ScoreLibraryStorageException catch (error) {
-      if (loadGeneration != _initialWorkspaceLoadGeneration) {
-        return;
-      }
-      _setLibraryMessage(error.message, isError: true);
-    } finally {
-      currentPersistence.complete();
-    }
-  }
-
-  void _syncAudioState({bool notify = true}) {
-    final previousStatus = _audioStatus;
-    final previousMessage = _audioStatusMessage;
-
-    switch (_audioService.initializationState) {
-      case AudioInitializationState.idle:
-        _audioStatus = AudioStatus.idle;
-        _audioStatusMessage = null;
-      case AudioInitializationState.loading:
-        _audioStatus = AudioStatus.preloading;
-        _audioStatusMessage = 'Preparing piano audio…';
-      case AudioInitializationState.ready:
-        _audioStatus = AudioStatus.ready;
-        _audioStatusMessage = null;
-      case AudioInitializationState.error:
-        _audioStatus = AudioStatus.error;
-        _audioStatusMessage =
-            _audioService.initializationError ??
-            'Piano audio failed to initialize.';
-    }
-
-    if (notify &&
-        (previousStatus != _audioStatus ||
-            previousMessage != _audioStatusMessage)) {
-      notifyListeners();
-    }
   }
 
   double get _measureDuration => score.beatsPerMeasure * (4.0 / score.beatUnit);
@@ -430,146 +271,47 @@ class ScoreNotifier extends ChangeNotifier {
   }
 
   void clearLibraryMessage() {
-    if (_libraryMessage == null) {
-      return;
-    }
-    _libraryMessage = null;
-    _libraryMessageIsError = false;
-    notifyListeners();
+    _library.clearLibraryMessage();
   }
 
   void showLibraryMessage(String message, {required bool isError}) {
-    _setLibraryMessage(message, isError: isError);
-    notifyListeners();
+    _library.showLibraryMessage(message, isError: isError);
   }
 
   Future<void> restoreDraft() async {
-    try {
-      stop();
-      final result = await _workspaceRepository.restoreDraft();
-      final hasWarning = _applyWorkspaceLoadResult(result, replaceScore: true);
-      if (!hasWarning) {
-        _setLibraryMessage('Draft restored.', isError: false);
-      }
-    } on WorkspaceRepositoryException catch (error) {
-      _setLibraryMessage(error.message, isError: true);
-    } on ScoreLibraryStorageException catch (error) {
-      _setLibraryMessage(error.message, isError: true);
-    }
+    await _library.restoreDraft();
+    _resetEditorForScore();
     notifyListeners();
   }
 
   Future<void> saveCurrentScore(String name, {bool createNew = false}) async {
-    final trimmedName = name.trim();
-    if (trimmedName.isEmpty) {
-      _setLibraryMessage('Score name cannot be empty.', isError: true);
-      notifyListeners();
-      return;
-    }
-
-    try {
-      final workspace = await _workspaceRepository.saveCurrentScore(
-        workspace: _requiredWorkspace,
-        editedScore: score,
-        name: trimmedName,
-        createNew: createNew,
-      );
-      _replaceWorkspace(workspace, replaceScore: false);
-      _setLibraryMessage('Saved "$trimmedName".', isError: false);
-    } on WorkspaceRepositoryException catch (error) {
-      _setLibraryMessage(error.message, isError: true);
-    } on ScoreLibraryStorageException catch (error) {
-      _setLibraryMessage(error.message, isError: true);
-    }
-
-    notifyListeners();
+    await _library.saveCurrentScore(name, createNew: createNew);
   }
 
   Future<void> loadSavedScore(String id) async {
-    try {
-      stop();
-      final workspace = await _workspaceRepository.loadSavedScore(
-        workspace: _requiredWorkspace,
-        id: id,
-      );
-      _replaceWorkspace(workspace, replaceScore: true);
-      _setLibraryMessage(
-        'Loaded "${workspace.document.name}".',
-        isError: false,
-      );
-    } on WorkspaceRepositoryException catch (error) {
-      throw ArgumentError.value(id, 'id', error.message);
-    } on ScoreLibraryStorageException catch (error) {
-      _setLibraryMessage(error.message, isError: true);
-    }
-
+    await _library.loadSavedScore(id);
+    _resetEditorForScore();
     notifyListeners();
   }
 
   Future<void> loadPresetScore(String id) async {
-    try {
-      stop();
-      final workspace = await _workspaceRepository.loadPresetScore(
-        workspace: _requiredWorkspace,
-        id: id,
-      );
-      _replaceWorkspace(workspace, replaceScore: true);
-      _setLibraryMessage(
-        'Loaded "${workspace.document.name}".',
-        isError: false,
-      );
-    } on WorkspaceRepositoryException catch (error) {
-      throw ArgumentError.value(id, 'id', error.message);
-    } on ScoreLibraryStorageException catch (error) {
-      _setLibraryMessage(error.message, isError: true);
-    }
-
+    await _library.loadPresetScore(id);
+    _resetEditorForScore();
     notifyListeners();
   }
 
   Future<void> importScoreDocument(PortableScoreDocument document) async {
-    try {
-      stop();
-      final workspace = await _workspaceRepository.importDocument(
-        workspace: _requiredWorkspace,
-        document: document,
-      );
-      _replaceWorkspace(workspace, replaceScore: true);
-      _setLibraryMessage('Imported "${document.name}".', isError: false);
-    } on ScoreLibraryStorageException catch (error) {
-      _setLibraryMessage(error.message, isError: true);
-    }
-
+    await _library.importScoreDocument(document);
+    _resetEditorForScore();
     notifyListeners();
   }
 
   PortableScoreDocument buildPortableDocument() {
-    return PortableScoreDocument(
-      version: PortableScoreDocument.currentVersion,
-      name: currentScoreLabel,
-      score: score.copy(),
-    );
+    return _library.buildPortableDocument();
   }
 
   Future<void> deleteSavedScore(String id) async {
-    try {
-      final removedEntry = savedScores.firstWhere(
-        (entry) => entry.id == id,
-        orElse: () =>
-            throw ArgumentError.value(id, 'id', 'Saved score does not exist'),
-      );
-      final workspace = await _workspaceRepository.deleteSavedScore(
-        workspace: _requiredWorkspace,
-        id: id,
-        currentScore: score,
-      );
-      _replaceWorkspace(workspace, replaceScore: false);
-      _setLibraryMessage('Deleted "${removedEntry.name}".', isError: false);
-    } on ScoreLibraryStorageException catch (error) {
-      _setLibraryMessage(error.message, isError: true);
-    }
-
-    notifyListeners();
+    await _library.deleteSavedScore(id);
   }
 
   /// Set the active duration for future input, or edit the selected note/rest.
@@ -607,7 +349,7 @@ class ScoreNotifier extends ChangeNotifier {
       _dottedMode = updated.isDotted;
 
       if (!updated.isRest) {
-        _audioService.playNoteWithDuration(
+        _playback.previewNote(
           updated.midi,
           duration: const Duration(milliseconds: 500),
         );
@@ -711,7 +453,7 @@ class ScoreNotifier extends ChangeNotifier {
       }
     }
     if (soundedNote != null) {
-      _audioService.playNoteWithDuration(
+      _playback.previewNote(
         soundedNote.midi,
         duration: const Duration(milliseconds: 500),
       );
@@ -844,7 +586,7 @@ class ScoreNotifier extends ChangeNotifier {
 
       final note = score.notes[index];
       if (!note.isRest) {
-        _audioService.playNoteWithDuration(
+        _playback.previewNote(
           note.midi,
           duration: const Duration(milliseconds: 500),
         );
@@ -971,10 +713,7 @@ class ScoreNotifier extends ChangeNotifier {
       _selectedNoteIndex!,
       note.copyWith(midi: newMidi, sourceMidi: () => null),
     );
-    _audioService.playNoteWithDuration(
-      newMidi,
-      duration: const Duration(milliseconds: 500),
-    );
+    _playback.previewNote(newMidi, duration: const Duration(milliseconds: 500));
     _notifyScoreChanged();
   }
 
@@ -1062,10 +801,7 @@ class ScoreNotifier extends ChangeNotifier {
       old.copyWith(midi: midi, sourceMidi: () => null),
     );
 
-    _audioService.playNoteWithDuration(
-      midi,
-      duration: const Duration(milliseconds: 500),
-    );
+    _playback.previewNote(midi, duration: const Duration(milliseconds: 500));
 
     _notifyScoreChanged();
   }
@@ -1303,32 +1039,12 @@ class ScoreNotifier extends ChangeNotifier {
 
   /// Start playing the score from the beginning.
   Future<void> play() async {
-    if (score.notes.isEmpty || _isPlaying) return;
-
-    _isPlaying = true;
-    _playbackIndex = 0;
-    notifyListeners();
-
-    await _audioService.playScore(
-      score,
-      onNoteIndex: (index) {
-        _playbackIndex = index;
-        notifyListeners();
-      },
-      onComplete: () {
-        _isPlaying = false;
-        _playbackIndex = -1;
-        notifyListeners();
-      },
-    );
+    await _playback.play();
   }
 
   /// Stop playback.
   void stop() {
-    _audioService.stopPlayback();
-    _isPlaying = false;
-    _playbackIndex = -1;
-    notifyListeners();
+    _playback.stop();
   }
 
   /// Set tempo (BPM).
@@ -1421,37 +1137,11 @@ class ScoreNotifier extends ChangeNotifier {
   }
 
   void _notifyScoreChanged() {
-    _hasUnsavedChanges = _computeHasUnsavedChanges(score);
-    _scheduleDraftSave();
+    _session.markScoreChanged();
     notifyListeners();
   }
 
-  void _scheduleDraftSave() {
-    if (!_initialWorkspaceLoadComplete || !_initialWorkspaceLoadSucceeded) {
-      return;
-    }
-    _draftSaveTimer?.cancel();
-    _draftSaveTimer = Timer(_draftSaveDelay, () async {
-      try {
-        await _workspaceRepository.persistDraft(
-          workspace: _requiredWorkspace,
-          editedScore: score,
-        );
-      } on ScoreLibraryStorageException {
-        notifyListeners();
-      }
-    });
-  }
-
-  void _applyScore(Score source) {
-    score.notes
-      ..clear()
-      ..addAll(source.notes);
-    score.beatsPerMeasure = source.beatsPerMeasure;
-    score.beatUnit = source.beatUnit;
-    score.bpm = source.bpm;
-    score.clef = source.clef;
-    score.keySignature = source.keySignature;
+  void _resetEditorForScore() {
     _keyboardOctaveShift = _keyboardShiftBounds.clamp(_keyboardOctaveShift);
 
     _selectionKind = null;
@@ -1476,32 +1166,17 @@ class ScoreNotifier extends ChangeNotifier {
     _nextTripletGroupId = maxTripletGroupId + 1;
   }
 
-  bool _computeHasUnsavedChanges(Score candidate) {
-    final baseline = _workspaceSession?.document.score;
-    if (baseline == null) {
-      return false;
-    }
-    return candidate != baseline;
-  }
-
-  void _setLibraryMessage(String message, {required bool isError}) {
-    _libraryMessageTimer?.cancel();
-    _libraryMessage = message;
-    _libraryMessageIsError = isError;
-    if (!isError) {
-      _libraryMessageTimer = Timer(const Duration(seconds: 3), () {
-        clearLibraryMessage();
-      });
-    }
+  void _notifyFromOwnedController() {
+    notifyListeners();
   }
 
   @override
   void dispose() {
-    _libraryMessageTimer?.cancel();
-    _draftSaveTimer?.cancel();
-    stop();
-    _audioService.onStateChanged = null;
-    _audioService.dispose();
+    _playback.removeListener(_notifyFromOwnedController);
+    _library.removeListener(_notifyFromOwnedController);
+    _library.dispose();
+    _playback.dispose();
+    _session.dispose();
     super.dispose();
   }
 }
