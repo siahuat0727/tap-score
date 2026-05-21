@@ -1322,7 +1322,7 @@ git commit -m "refactor: migrate workspace screen controllers"
 - Modify: `test/widgets/score_view_widget_test.dart`
 - Modify: `test/widgets/rhythm_test_workspace_test.dart`
 
-- [ ] **Step 1: Update signature pickers**
+- [x] **Step 1: Update signature pickers**
 
 In `lib/widgets/signature_pickers.dart`, replace `ScoreNotifier` with `EditableScoreSession` and `EditorController`:
 
@@ -1336,7 +1336,7 @@ void showClefPicker(
 
 Use `session.score.clef` to determine the current value and `editor.setClef(clef)` to mutate. Apply the same pattern for `showTimeSigPicker` and `showKeySigPicker`.
 
-- [ ] **Step 2: Update score view widget dependencies**
+- [x] **Step 2: Update score view widget dependencies**
 
 In `lib/widgets/score_view_widget.dart`:
 
@@ -1354,7 +1354,7 @@ void _handleScoreOrEditorChanged() {
 }
 ```
 
-- [ ] **Step 3: Update duration selector**
+- [x] **Step 3: Update duration selector**
 
 In `lib/widgets/duration_selector.dart`, replace:
 
@@ -1372,7 +1372,7 @@ return Consumer<EditorController>(
 
 Then replace all `notifier.` toolbar and command references with `editor.`.
 
-- [ ] **Step 4: Update piano keyboard**
+- [x] **Step 4: Update piano keyboard**
 
 In `lib/widgets/piano_keyboard.dart`, use:
 
@@ -1390,7 +1390,7 @@ Replace:
 - `notifier.handlePianoTap(midi)` -> `editor.handlePianoTap(midi)`
 - `notifier.resolveInputMidi(midi)` -> `editor.resolveInputMidi(midi)`
 
-- [ ] **Step 5: Update playback controls**
+- [x] **Step 5: Update playback controls**
 
 In `lib/widgets/playback_controls.dart`, update tempo, time signature, and key signature controls:
 
@@ -1398,7 +1398,7 @@ In `lib/widgets/playback_controls.dart`, update tempo, time signature, and key s
 - tempo slider calls `EditorController.setTempo`
 - time/key chips call picker functions with `session` and `editor`
 
-- [ ] **Step 6: Update widget harnesses**
+- [x] **Step 6: Update widget harnesses**
 
 In `test/widgets/score_view_widget_test.dart`, replace `_buildScoreViewHarness` with:
 
@@ -1429,7 +1429,7 @@ Widget _buildScoreViewHarness({
 
 Remove the `notifier:` argument at call sites.
 
-- [ ] **Step 7: Run widget tests**
+- [x] **Step 7: Run widget tests**
 
 Run:
 
@@ -1439,7 +1439,7 @@ flutter test test/widgets/score_view_widget_test.dart test/widgets/rhythm_test_w
 
 Expected: pass after all widget imports are migrated.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add lib/widgets/score_view_widget.dart lib/widgets/duration_selector.dart lib/widgets/piano_keyboard.dart lib/widgets/playback_controls.dart lib/widgets/signature_pickers.dart test/widgets/score_view_widget_test.dart test/widgets/rhythm_test_workspace_test.dart
