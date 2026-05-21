@@ -68,7 +68,7 @@ class ScoreNotifier extends ChangeNotifier {
   final PlaybackController _playback;
   final ScoreLibraryController _library;
   bool _isDisposed = false;
-  bool _suppressOwnedControllerNotifications = false;
+  int _ownedControllerNotificationSuppressionDepth = 0;
 
   Score get score => _session.score;
 
@@ -1150,18 +1150,30 @@ class ScoreNotifier extends ChangeNotifier {
       return;
     }
 
-    _suppressOwnedControllerNotifications = true;
+    final workspaceBefore = _session.workspace;
+    Object? failure;
+    StackTrace? failureStack;
+    _ownedControllerNotificationSuppressionDepth += 1;
     try {
       await operation();
+    } catch (error, stackTrace) {
+      failure = error;
+      failureStack = stackTrace;
     } finally {
-      _suppressOwnedControllerNotifications = false;
+      _ownedControllerNotificationSuppressionDepth -= 1;
     }
 
     if (_isDisposed) {
       return;
     }
-    _resetEditorForScore();
+
+    if (!identical(workspaceBefore, _session.workspace)) {
+      _resetEditorForScore();
+    }
     notifyListeners();
+    if (failure != null) {
+      Error.throwWithStackTrace(failure, failureStack!);
+    }
   }
 
   void _resetEditorForScore() {
@@ -1190,7 +1202,7 @@ class ScoreNotifier extends ChangeNotifier {
   }
 
   void _notifyFromOwnedController() {
-    if (_isDisposed || _suppressOwnedControllerNotifications) {
+    if (_isDisposed || _ownedControllerNotificationSuppressionDepth > 0) {
       return;
     }
     notifyListeners();
