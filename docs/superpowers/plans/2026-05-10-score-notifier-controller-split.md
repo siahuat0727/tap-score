@@ -1022,7 +1022,7 @@ git commit -m "refactor: introduce score library controller"
 - Modify: `test/workspace/workspace_repository_test.dart`
 - Modify: startup-related sections of `test/widget_test.dart`
 
-- [ ] **Step 1: Add failing startup wiring expectations**
+- [x] **Step 1: Add failing startup wiring expectations**
 
 In `test/widget_test.dart`, update one workspace startup test to retrieve the new providers:
 
@@ -1046,7 +1046,7 @@ import 'package:tap_score/state/playback_controller.dart';
 import 'package:tap_score/state/score_library_controller.dart';
 ```
 
-- [ ] **Step 2: Run the targeted widget test**
+- [x] **Step 2: Run the targeted widget test**
 
 Run the specific test name you changed:
 
@@ -1056,7 +1056,7 @@ flutter test test/widget_test.dart --plain-name "workspace"
 
 Expected: fails until providers and startup use the new controllers.
 
-- [ ] **Step 3: Update WorkspaceStartupController constructor and fields**
+- [x] **Step 3: Update WorkspaceStartupController constructor and fields**
 
 In `lib/workspace/workspace_startup_controller.dart`, replace:
 
@@ -1105,7 +1105,7 @@ After a successful load or mode switch that replaces the score, call:
 _editorController.resetForScore();
 ```
 
-- [ ] **Step 4: Update router provider setup**
+- [x] **Step 4: Update router provider setup**
 
 In `lib/app/tap_score_router.dart`, replace the workspace page provider:
 
@@ -1189,7 +1189,7 @@ class _WorkspaceControllerScopeState extends State<_WorkspaceControllerScope> {
 
 Add imports for the four new state files and remove the `ScoreNotifier` import.
 
-- [ ] **Step 5: Run startup and router tests**
+- [x] **Step 5: Run startup and router tests**
 
 Run:
 
@@ -1199,7 +1199,7 @@ flutter test test/workspace/workspace_repository_test.dart test/widget_test.dart
 
 Expected: pass after updating remaining provider reads in startup paths.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add lib/workspace/workspace_startup_controller.dart lib/app/tap_score_router.dart test/widget_test.dart
