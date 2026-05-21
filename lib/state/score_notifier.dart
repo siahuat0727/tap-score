@@ -67,6 +67,8 @@ class ScoreNotifier extends ChangeNotifier {
   final EditableScoreSession _session;
   final PlaybackController _playback;
   final ScoreLibraryController _library;
+  bool _isDisposed = false;
+  bool _suppressOwnedControllerNotifications = false;
 
   Score get score => _session.score;
 
@@ -235,9 +237,10 @@ class ScoreNotifier extends ChangeNotifier {
   Future<void> loadInitialWorkspace({
     ScoreSeedConfig? initialScoreConfig,
   }) async {
-    await _library.loadInitialWorkspace(initialScoreConfig: initialScoreConfig);
-    _resetEditorForScore();
-    notifyListeners();
+    await _runLibraryScoreReplacement(
+      () =>
+          _library.loadInitialWorkspace(initialScoreConfig: initialScoreConfig),
+    );
   }
 
   double get _measureDuration => score.beatsPerMeasure * (4.0 / score.beatUnit);
@@ -279,31 +282,28 @@ class ScoreNotifier extends ChangeNotifier {
   }
 
   Future<void> restoreDraft() async {
-    await _library.restoreDraft();
-    _resetEditorForScore();
-    notifyListeners();
+    await _runLibraryScoreReplacement(_library.restoreDraft);
   }
 
   Future<void> saveCurrentScore(String name, {bool createNew = false}) async {
+    if (_isDisposed) {
+      return;
+    }
     await _library.saveCurrentScore(name, createNew: createNew);
   }
 
   Future<void> loadSavedScore(String id) async {
-    await _library.loadSavedScore(id);
-    _resetEditorForScore();
-    notifyListeners();
+    await _runLibraryScoreReplacement(() => _library.loadSavedScore(id));
   }
 
   Future<void> loadPresetScore(String id) async {
-    await _library.loadPresetScore(id);
-    _resetEditorForScore();
-    notifyListeners();
+    await _runLibraryScoreReplacement(() => _library.loadPresetScore(id));
   }
 
   Future<void> importScoreDocument(PortableScoreDocument document) async {
-    await _library.importScoreDocument(document);
-    _resetEditorForScore();
-    notifyListeners();
+    await _runLibraryScoreReplacement(
+      () => _library.importScoreDocument(document),
+    );
   }
 
   PortableScoreDocument buildPortableDocument() {
@@ -311,6 +311,9 @@ class ScoreNotifier extends ChangeNotifier {
   }
 
   Future<void> deleteSavedScore(String id) async {
+    if (_isDisposed) {
+      return;
+    }
     await _library.deleteSavedScore(id);
   }
 
@@ -1138,6 +1141,26 @@ class ScoreNotifier extends ChangeNotifier {
 
   void _notifyScoreChanged() {
     _session.markScoreChanged();
+  }
+
+  Future<void> _runLibraryScoreReplacement(
+    Future<void> Function() operation,
+  ) async {
+    if (_isDisposed) {
+      return;
+    }
+
+    _suppressOwnedControllerNotifications = true;
+    try {
+      await operation();
+    } finally {
+      _suppressOwnedControllerNotifications = false;
+    }
+
+    if (_isDisposed) {
+      return;
+    }
+    _resetEditorForScore();
     notifyListeners();
   }
 
@@ -1167,11 +1190,15 @@ class ScoreNotifier extends ChangeNotifier {
   }
 
   void _notifyFromOwnedController() {
+    if (_isDisposed || _suppressOwnedControllerNotifications) {
+      return;
+    }
     notifyListeners();
   }
 
   @override
   void dispose() {
+    _isDisposed = true;
     _playback.removeListener(_notifyFromOwnedController);
     _library.removeListener(_notifyFromOwnedController);
     _library.dispose();

@@ -22,7 +22,7 @@ class ScoreLibraryController extends ChangeNotifier {
   }) : _session = session,
        _playback = playback,
        _workspaceRepository = workspaceRepository {
-    _session.addScoreChangedListener(_scheduleDraftSave);
+    _session.addScoreChangedListener(_handleScoreChanged);
   }
 
   final EditableScoreSession _session;
@@ -37,6 +37,7 @@ class ScoreLibraryController extends ChangeNotifier {
   bool _initialWorkspaceLoadSucceeded = false;
   String? _libraryMessage;
   bool _libraryMessageIsError = false;
+  bool _isDisposed = false;
 
   List<SavedScoreEntry> get savedScores => _session.savedScores;
   List<PresetScoreEntry> get presetScores => _session.presetScores;
@@ -54,6 +55,9 @@ class ScoreLibraryController extends ChangeNotifier {
   Future<void> loadInitialWorkspace({
     ScoreSeedConfig? initialScoreConfig,
   }) async {
+    if (_isDisposed) {
+      return;
+    }
     final loadGeneration = ++_initialWorkspaceLoadGeneration;
     _draftSaveTimer?.cancel();
     _draftSaveTimer = null;
@@ -62,13 +66,13 @@ class ScoreLibraryController extends ChangeNotifier {
     _libraryMessageTimer?.cancel();
     _libraryMessage = null;
     _libraryMessageIsError = false;
-    notifyListeners();
+    _notifyListeners();
 
     try {
       final result = await _workspaceRepository.loadWorkspace(
         initialScoreConfig: initialScoreConfig,
       );
-      if (loadGeneration != _initialWorkspaceLoadGeneration) {
+      if (!_isCurrentLoad(loadGeneration)) {
         return;
       }
       _applyWorkspaceLoadResult(result, replaceScore: true);
@@ -81,29 +85,29 @@ class ScoreLibraryController extends ChangeNotifier {
       } else {
         await _initialWorkspacePersistence;
       }
-      if (loadGeneration != _initialWorkspaceLoadGeneration) {
+      if (!_isCurrentLoad(loadGeneration)) {
         return;
       }
     } on WorkspaceRepositoryException catch (error) {
-      if (loadGeneration != _initialWorkspaceLoadGeneration) {
+      if (!_isCurrentLoad(loadGeneration)) {
         return;
       }
       _initialWorkspaceLoadSucceeded = false;
       _setLibraryMessage(error.message, isError: true);
     } on PresetScoreException catch (error) {
-      if (loadGeneration != _initialWorkspaceLoadGeneration) {
+      if (!_isCurrentLoad(loadGeneration)) {
         return;
       }
       _initialWorkspaceLoadSucceeded = false;
       _setLibraryMessage(error.message, isError: true);
     } on ScoreLibraryStorageException catch (error) {
-      if (loadGeneration != _initialWorkspaceLoadGeneration) {
+      if (!_isCurrentLoad(loadGeneration)) {
         return;
       }
       _initialWorkspaceLoadSucceeded = false;
       _setLibraryMessage(error.message, isError: true);
     } catch (error) {
-      if (loadGeneration != _initialWorkspaceLoadGeneration) {
+      if (!_isCurrentLoad(loadGeneration)) {
         return;
       }
       _initialWorkspaceLoadSucceeded = false;
@@ -112,44 +116,65 @@ class ScoreLibraryController extends ChangeNotifier {
     }
 
     _initialWorkspaceLoadComplete = true;
-    notifyListeners();
+    _notifyListeners();
   }
 
   void clearLibraryMessage() {
+    if (_isDisposed) {
+      return;
+    }
     if (_libraryMessage == null) {
       return;
     }
     _libraryMessage = null;
     _libraryMessageIsError = false;
-    notifyListeners();
+    _notifyListeners();
   }
 
   void showLibraryMessage(String message, {required bool isError}) {
+    if (_isDisposed) {
+      return;
+    }
     _setLibraryMessage(message, isError: isError);
-    notifyListeners();
+    _notifyListeners();
   }
 
   Future<void> restoreDraft() async {
+    if (_isDisposed) {
+      return;
+    }
     try {
       _playback.stop();
       final result = await _workspaceRepository.restoreDraft();
+      if (_isDisposed) {
+        return;
+      }
       final hasWarning = _applyWorkspaceLoadResult(result, replaceScore: true);
       if (!hasWarning) {
         _setLibraryMessage('Draft restored.', isError: false);
       }
     } on WorkspaceRepositoryException catch (error) {
+      if (_isDisposed) {
+        return;
+      }
       _setLibraryMessage(error.message, isError: true);
     } on ScoreLibraryStorageException catch (error) {
+      if (_isDisposed) {
+        return;
+      }
       _setLibraryMessage(error.message, isError: true);
     }
-    notifyListeners();
+    _notifyListeners();
   }
 
   Future<void> saveCurrentScore(String name, {bool createNew = false}) async {
+    if (_isDisposed) {
+      return;
+    }
     final trimmedName = name.trim();
     if (trimmedName.isEmpty) {
       _setLibraryMessage('Score name cannot be empty.', isError: true);
-      notifyListeners();
+      _notifyListeners();
       return;
     }
 
@@ -160,73 +185,115 @@ class ScoreLibraryController extends ChangeNotifier {
         name: trimmedName,
         createNew: createNew,
       );
+      if (_isDisposed) {
+        return;
+      }
       _session.replaceWorkspace(workspace, replaceScore: false);
       _setLibraryMessage('Saved "$trimmedName".', isError: false);
     } on WorkspaceRepositoryException catch (error) {
+      if (_isDisposed) {
+        return;
+      }
       _setLibraryMessage(error.message, isError: true);
     } on ScoreLibraryStorageException catch (error) {
+      if (_isDisposed) {
+        return;
+      }
       _setLibraryMessage(error.message, isError: true);
     }
 
-    notifyListeners();
+    _notifyListeners();
   }
 
   Future<void> loadSavedScore(String id) async {
+    if (_isDisposed) {
+      return;
+    }
     try {
       _playback.stop();
       final workspace = await _workspaceRepository.loadSavedScore(
         workspace: _session.workspace,
         id: id,
       );
+      if (_isDisposed) {
+        return;
+      }
       _session.replaceWorkspace(workspace, replaceScore: true);
       _setLibraryMessage(
         'Loaded "${workspace.document.name}".',
         isError: false,
       );
     } on WorkspaceRepositoryException catch (error) {
+      if (_isDisposed) {
+        return;
+      }
       throw ArgumentError.value(id, 'id', error.message);
     } on ScoreLibraryStorageException catch (error) {
+      if (_isDisposed) {
+        return;
+      }
       _setLibraryMessage(error.message, isError: true);
     }
 
-    notifyListeners();
+    _notifyListeners();
   }
 
   Future<void> loadPresetScore(String id) async {
+    if (_isDisposed) {
+      return;
+    }
     try {
       _playback.stop();
       final workspace = await _workspaceRepository.loadPresetScore(
         workspace: _session.workspace,
         id: id,
       );
+      if (_isDisposed) {
+        return;
+      }
       _session.replaceWorkspace(workspace, replaceScore: true);
       _setLibraryMessage(
         'Loaded "${workspace.document.name}".',
         isError: false,
       );
     } on WorkspaceRepositoryException catch (error) {
+      if (_isDisposed) {
+        return;
+      }
       throw ArgumentError.value(id, 'id', error.message);
     } on ScoreLibraryStorageException catch (error) {
+      if (_isDisposed) {
+        return;
+      }
       _setLibraryMessage(error.message, isError: true);
     }
 
-    notifyListeners();
+    _notifyListeners();
   }
 
   Future<void> importScoreDocument(PortableScoreDocument document) async {
+    if (_isDisposed) {
+      return;
+    }
     try {
       _playback.stop();
       final workspace = await _workspaceRepository.importDocument(
         workspace: _session.workspace,
         document: document,
       );
+      if (_isDisposed) {
+        return;
+      }
       _session.replaceWorkspace(workspace, replaceScore: true);
       _setLibraryMessage('Imported "${document.name}".', isError: false);
     } on ScoreLibraryStorageException catch (error) {
+      if (_isDisposed) {
+        return;
+      }
       _setLibraryMessage(error.message, isError: true);
     }
 
-    notifyListeners();
+    _notifyListeners();
   }
 
   PortableScoreDocument buildPortableDocument() {
@@ -238,6 +305,9 @@ class ScoreLibraryController extends ChangeNotifier {
   }
 
   Future<void> deleteSavedScore(String id) async {
+    if (_isDisposed) {
+      return;
+    }
     try {
       final removedEntry = savedScores.firstWhere(
         (entry) => entry.id == id,
@@ -249,13 +319,19 @@ class ScoreLibraryController extends ChangeNotifier {
         id: id,
         currentScore: _session.score,
       );
+      if (_isDisposed) {
+        return;
+      }
       _session.replaceWorkspace(workspace, replaceScore: false);
       _setLibraryMessage('Deleted "${removedEntry.name}".', isError: false);
     } on ScoreLibraryStorageException catch (error) {
+      if (_isDisposed) {
+        return;
+      }
       _setLibraryMessage(error.message, isError: true);
     }
 
-    notifyListeners();
+    _notifyListeners();
   }
 
   bool _applyWorkspaceLoadResult(
@@ -280,7 +356,7 @@ class ScoreLibraryController extends ChangeNotifier {
     _initialWorkspacePersistence = currentPersistence.future;
     try {
       await previousPersistence;
-      if (loadGeneration != _initialWorkspaceLoadGeneration) {
+      if (!_isCurrentLoad(loadGeneration)) {
         return;
       }
       await _workspaceRepository.persistDraft(
@@ -288,7 +364,7 @@ class ScoreLibraryController extends ChangeNotifier {
         editedScore: workspace.editorScore,
       );
     } on ScoreLibraryStorageException catch (error) {
-      if (loadGeneration != _initialWorkspaceLoadGeneration) {
+      if (!_isCurrentLoad(loadGeneration)) {
         return;
       }
       _setLibraryMessage(error.message, isError: true);
@@ -297,37 +373,69 @@ class ScoreLibraryController extends ChangeNotifier {
     }
   }
 
+  void _handleScoreChanged() {
+    _scheduleDraftSave();
+    _notifyListeners();
+  }
+
   void _scheduleDraftSave() {
+    if (_isDisposed) {
+      return;
+    }
     if (!_initialWorkspaceLoadComplete || !_initialWorkspaceLoadSucceeded) {
       return;
     }
     _draftSaveTimer?.cancel();
     _draftSaveTimer = Timer(_draftSaveDelay, () async {
+      if (_isDisposed) {
+        return;
+      }
+      final workspace = _session.workspace;
+      final score = _session.score;
       try {
         await _workspaceRepository.persistDraft(
-          workspace: _session.workspace,
-          editedScore: _session.score,
+          workspace: workspace,
+          editedScore: score,
         );
       } on ScoreLibraryStorageException {
-        notifyListeners();
+        _notifyListeners();
       }
     });
   }
 
   void _setLibraryMessage(String message, {required bool isError}) {
+    if (_isDisposed) {
+      return;
+    }
     _libraryMessageTimer?.cancel();
     _libraryMessage = message;
     _libraryMessageIsError = isError;
     if (!isError) {
       _libraryMessageTimer = Timer(const Duration(seconds: 3), () {
+        if (_isDisposed) {
+          return;
+        }
         clearLibraryMessage();
       });
     }
   }
 
+  bool _isCurrentLoad(int loadGeneration) {
+    return !_isDisposed && loadGeneration == _initialWorkspaceLoadGeneration;
+  }
+
+  void _notifyListeners() {
+    if (_isDisposed) {
+      return;
+    }
+    notifyListeners();
+  }
+
   @override
   void dispose() {
-    _session.removeScoreChangedListener(_scheduleDraftSave);
+    _isDisposed = true;
+    _initialWorkspaceLoadGeneration += 1;
+    _session.removeScoreChangedListener(_handleScoreChanged);
     _libraryMessageTimer?.cancel();
     _draftSaveTimer?.cancel();
     super.dispose();

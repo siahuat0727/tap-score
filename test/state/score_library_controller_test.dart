@@ -131,6 +131,47 @@ void main() {
     expect(harness.session.referenceBpm, 88);
   });
 
+  test('score changes notify library listeners for unsaved state', () async {
+    final harness = _LibraryHarness(
+      scoreLibraryRepository: _MemoryScoreLibraryRepository(),
+      presetScoreRepository: _MemoryPresetScoreRepository(),
+    );
+    addTearDown(harness.dispose);
+
+    await harness.library.loadInitialWorkspace();
+
+    var listenerCalls = 0;
+    harness.library.addListener(() {
+      listenerCalls += 1;
+    });
+
+    harness.insertPitchedNote(64);
+
+    expect(listenerCalls, 1);
+    expect(harness.library.hasUnsavedChanges, isTrue);
+  });
+
+  test('loadInitialWorkspace does not notify after dispose', () async {
+    final repository = _ControlledLoadScoreLibraryRepository();
+    final harness = _LibraryHarness(
+      scoreLibraryRepository: repository,
+      presetScoreRepository: _MemoryPresetScoreRepository(),
+    );
+
+    final load = harness.library.loadInitialWorkspace();
+    await Future<void>.delayed(Duration.zero);
+
+    harness.dispose();
+    repository.completeLoad(
+      ScoreLibrarySnapshot(
+        draft: Score(notes: const [Note(midi: 60)]),
+        savedScores: const [],
+      ),
+    );
+
+    await load;
+  });
+
   test(
     'delete clears the active saved reference when removing the current score',
     () async {
@@ -602,6 +643,26 @@ class _MemoryScoreLibraryRepository implements ScoreLibraryRepository {
   @override
   Future<void> saveSnapshot(ScoreLibrarySnapshot nextSnapshot) async {
     snapshot = nextSnapshot;
+  }
+}
+
+class _ControlledLoadScoreLibraryRepository implements ScoreLibraryRepository {
+  final Completer<ScoreLibrarySnapshot?> _loadCompleter =
+      Completer<ScoreLibrarySnapshot?>();
+  ScoreLibrarySnapshot? snapshot;
+
+  @override
+  Future<ScoreLibrarySnapshot?> loadSnapshot() {
+    return _loadCompleter.future;
+  }
+
+  @override
+  Future<void> saveSnapshot(ScoreLibrarySnapshot nextSnapshot) async {
+    snapshot = nextSnapshot;
+  }
+
+  void completeLoad(ScoreLibrarySnapshot? snapshot) {
+    _loadCompleter.complete(snapshot);
   }
 }
 
