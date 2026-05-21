@@ -300,6 +300,7 @@ class _WorkspaceControllerScope extends StatelessWidget {
           create: (context) => ScoreNotifier.compatibility(
             session: context.read<EditableScoreSession>(),
             playback: context.read<PlaybackController>(),
+            editor: context.read<EditorController>(),
             library: context.read<ScoreLibraryController>(),
           ),
         ),

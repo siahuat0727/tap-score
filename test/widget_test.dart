@@ -131,11 +131,8 @@ Widget _buildWorkspace(
       ChangeNotifierProvider<PlaybackController>.value(
         value: notifier.playbackController,
       ),
-      ChangeNotifierProvider(
-        create: (_) => EditorController(
-          session: notifier.session,
-          notePreview: notifier.playbackController,
-        ),
+      ChangeNotifierProvider<EditorController>.value(
+        value: notifier.editorController,
       ),
       ChangeNotifierProvider<ScoreLibraryController>.value(
         value: notifier.scoreLibraryController,
@@ -240,7 +237,12 @@ void main() {
     expect(library.initialWorkspaceLoadComplete, isTrue);
     expect(notifier.session, same(session));
     expect(notifier.playbackController, same(playback));
+    expect(notifier.editorController, same(editor));
     expect(notifier.scoreLibraryController, same(library));
+
+    editor.insertPitchedNote(60);
+
+    expect(notifier.cursorIndex, editor.cursorIndex);
   });
 
   testWidgets(
