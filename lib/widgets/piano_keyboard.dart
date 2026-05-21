@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../input/editor_shortcuts.dart';
-import '../state/score_notifier.dart';
+import '../state/editable_score_session.dart';
+import '../state/editor_controller.dart';
 import '../theme/app_colors.dart';
 import 'input_affordance.dart';
 
@@ -161,7 +162,8 @@ class _KeyboardContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final notifier = context.watch<ScoreNotifier>();
+    final session = context.watch<EditableScoreSession>();
+    final editor = context.watch<EditorController>();
     final affordanceProfile = resolveInputAffordanceProfile(
       context,
       compact: layout.isCompact,
@@ -183,9 +185,9 @@ class _KeyboardContent extends StatelessWidget {
       final hint = showsShortcutHints
           ? describePianoKeyHint(
               midi,
-              inputMode: notifier.keyboardInputMode,
-              octaveShift: notifier.keyboardOctaveShift,
-              clef: notifier.score.clef,
+              inputMode: editor.keyboardInputMode,
+              octaveShift: editor.keyboardOctaveShift,
+              clef: session.score.clef,
             )
           : const PianoKeyHint(
               label: '',
@@ -198,12 +200,12 @@ class _KeyboardContent extends StatelessWidget {
           x: xOffset,
           width: whiteKeyWidth,
           height: layout.whiteKeyHeight,
-          label: _whiteKeyLabel(notifier, midi),
+          label: _whiteKeyLabel(editor, midi),
           hint: hint,
           hintTop: layout.whiteHintTop,
           labelBottom: layout.whiteLabelBottom,
           labelFontSize: layout.labelFontSize,
-          onTap: _tapHandler(notifier, midi),
+          onTap: _tapHandler(editor, midi),
         ),
       );
       xOffset += whiteKeyWidth + gap;
@@ -226,9 +228,9 @@ class _KeyboardContent extends StatelessWidget {
       final hint = showsShortcutHints
           ? describePianoKeyHint(
               nextMidi,
-              inputMode: notifier.keyboardInputMode,
-              octaveShift: notifier.keyboardOctaveShift,
-              clef: notifier.score.clef,
+              inputMode: editor.keyboardInputMode,
+              octaveShift: editor.keyboardOctaveShift,
+              clef: session.score.clef,
             )
           : const PianoKeyHint(
               label: '',
@@ -243,7 +245,7 @@ class _KeyboardContent extends StatelessWidget {
           height: layout.blackKeyHeight,
           hint: hint,
           hintTop: layout.blackHintTop,
-          onTap: _tapHandler(notifier, nextMidi),
+          onTap: _tapHandler(editor, nextMidi),
         ),
       );
       xOffset += whiteKeyWidth + gap;
@@ -256,11 +258,11 @@ class _KeyboardContent extends StatelessWidget {
     );
   }
 
-  VoidCallback? _tapHandler(ScoreNotifier notifier, int midi) {
-    if (!notifier.canTapPianoKey(midi)) {
+  VoidCallback? _tapHandler(EditorController editor, int midi) {
+    if (!editor.canTapPianoKey(midi)) {
       return null;
     }
-    return () => notifier.handlePianoTap(midi);
+    return () => editor.handlePianoTap(midi);
   }
 
   String _midiToLabel(int midi) {
@@ -282,10 +284,10 @@ class _KeyboardContent extends StatelessWidget {
     return '${names[midi % 12]}$octave';
   }
 
-  String _whiteKeyLabel(ScoreNotifier notifier, int midi) {
+  String _whiteKeyLabel(EditorController editor, int midi) {
     final labelMidi =
-        notifier.keyboardInputMode == KeyboardInputMode.keySignatureAware
-        ? notifier.resolveInputMidi(midi)
+        editor.keyboardInputMode == KeyboardInputMode.keySignatureAware
+        ? editor.resolveInputMidi(midi)
         : midi;
     return _midiToLabel(labelMidi);
   }
@@ -546,8 +548,8 @@ class _KeyboardControlPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<ScoreNotifier>(
-      builder: (context, notifier, _) {
+    return Consumer<EditorController>(
+      builder: (context, editor, _) {
         final affordanceProfile = resolveInputAffordanceProfile(
           context,
           compact: layout.isCompact,
@@ -563,7 +565,7 @@ class _KeyboardControlPanel extends StatelessWidget {
                   key: const ValueKey('keyboard-nav-left'),
                   icon: Icons.keyboard_arrow_left_rounded,
                   tooltip: 'Move selection left',
-                  onPressed: notifier.moveSelectionLeft,
+                  onPressed: editor.moveSelectionLeft,
                 ),
                 SizedBox(width: layout.arrowButtonGap),
                 _ArrowButton(
@@ -571,7 +573,7 @@ class _KeyboardControlPanel extends StatelessWidget {
                   key: const ValueKey('keyboard-nav-right'),
                   icon: Icons.keyboard_arrow_right_rounded,
                   tooltip: 'Move selection right',
-                  onPressed: notifier.moveSelectionRight,
+                  onPressed: editor.moveSelectionRight,
                 ),
               ],
             ),
@@ -584,7 +586,7 @@ class _KeyboardControlPanel extends StatelessWidget {
                   key: const ValueKey('keyboard-nav-up'),
                   icon: Icons.keyboard_arrow_up_rounded,
                   tooltip: 'Move pitch up',
-                  onPressed: () => notifier.adjustSelection(1),
+                  onPressed: () => editor.adjustSelection(1),
                 ),
                 SizedBox(width: layout.arrowButtonGap),
                 _ArrowButton(
@@ -592,7 +594,7 @@ class _KeyboardControlPanel extends StatelessWidget {
                   key: const ValueKey('keyboard-nav-down'),
                   icon: Icons.keyboard_arrow_down_rounded,
                   tooltip: 'Move pitch down',
-                  onPressed: () => notifier.adjustSelection(-1),
+                  onPressed: () => editor.adjustSelection(-1),
                 ),
               ],
             ),
@@ -604,7 +606,7 @@ class _KeyboardControlPanel extends StatelessWidget {
           mainAxisSize: layout.isCompact ? MainAxisSize.min : MainAxisSize.max,
           children: [
             _KeyboardModeToggle(
-              notifier: notifier,
+              editor: editor,
               layout: layout,
               showShortcutHint: affordanceProfile.showsKeyboardAffordances,
             ),
@@ -645,12 +647,12 @@ class _KeyboardControlPanel extends StatelessWidget {
 }
 
 class _KeyboardModeToggle extends StatelessWidget {
-  final ScoreNotifier notifier;
+  final EditorController editor;
   final PianoKeyboardLayout layout;
   final bool showShortcutHint;
 
   const _KeyboardModeToggle({
-    required this.notifier,
+    required this.editor,
     required this.layout,
     required this.showShortcutHint,
   });
@@ -658,7 +660,7 @@ class _KeyboardModeToggle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isKeySig =
-        notifier.keyboardInputMode == KeyboardInputMode.keySignatureAware;
+        editor.keyboardInputMode == KeyboardInputMode.keySignatureAware;
     final modeLabel = isKeySig ? 'Key Sig' : 'Chromatic';
 
     return Column(
@@ -678,7 +680,7 @@ class _KeyboardModeToggle extends StatelessWidget {
           color: Colors.transparent,
           child: Center(
             child: InkWell(
-              onTap: notifier.toggleKeyboardInputMode,
+              onTap: editor.toggleKeyboardInputMode,
               borderRadius: BorderRadius.circular(999),
               child: Container(
                 key: const ValueKey('keyboard-mode-toggle'),

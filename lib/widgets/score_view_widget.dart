@@ -5,7 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../input/editor_shortcuts.dart';
 import '../rhythm_test/rhythm_test_models.dart';
-import '../state/score_notifier.dart';
+import '../state/editable_score_session.dart';
+import '../state/editor_controller.dart';
+import '../state/playback_controller.dart';
 import '../theme/app_colors.dart';
 import 'signature_pickers.dart';
 
@@ -115,7 +117,9 @@ class _ScoreViewWidgetState extends State<ScoreViewWidget> {
   void Function(Map<String, dynamic> payload)? _sendCommand;
   final ScoreRendererCommandController _commandController =
       ScoreRendererCommandController();
-  ScoreNotifier? _notifier;
+  EditableScoreSession? _session;
+  EditorController? _editor;
+  PlaybackController? _playback;
   Timer? _rendererAckTimer;
   int? _pendingStaticCommandId;
   int _rendererGeneration = 0;
@@ -126,7 +130,8 @@ class _ScoreViewWidgetState extends State<ScoreViewWidget> {
   // JS → Dart message handler
   // ---------------------------------------------------------------------------
   void _onJsMessage(Map<String, dynamic> data) {
-    final notifier = context.read<ScoreNotifier>();
+    final session = context.read<EditableScoreSession>();
+    final editor = context.read<EditorController>();
     final type = data['type'] as String?;
     switch (type) {
       case 'ready':
@@ -139,30 +144,30 @@ class _ScoreViewWidgetState extends State<ScoreViewWidget> {
       case 'noteTap':
         if (!widget.interactive) return;
         final index = data['index'] as int?;
-        if (index != null) notifier.selectNote(index);
+        if (index != null) editor.selectNote(index);
       case 'clefTap':
         if (!widget.interactive) return;
-        if (notifier.selectionKind == SelectionKind.clef) {
+        if (editor.selectionKind == SelectionKind.clef) {
           _showClefPicker(context);
         } else {
-          notifier.selectClef();
+          editor.selectClef();
         }
       case 'bgTap':
         if (!widget.interactive) return;
-        notifier.selectNote(null);
+        editor.selectNote(null);
       case 'timeSigTap':
         if (!widget.interactive) return;
-        if (notifier.selectionKind == SelectionKind.timeSig) {
+        if (editor.selectionKind == SelectionKind.timeSig) {
           _showTimeSigPicker(context);
         } else {
-          notifier.selectTimeSig();
+          editor.selectTimeSig();
         }
       case 'keySigTap':
         if (!widget.interactive) return;
-        if (notifier.selectionKind == SelectionKind.keySig) {
+        if (editor.selectionKind == SelectionKind.keySig) {
           _showKeySigPicker(context);
         } else {
-          notifier.selectKeySig();
+          editor.selectKeySig();
         }
       case 'keydown':
         final key = data['key'] as String?;
@@ -181,25 +186,25 @@ class _ScoreViewWidgetState extends State<ScoreViewWidget> {
         }
         final shortcut = resolveEditorShortcutEvent(
           EditorShortcutEvent(code: code, character: key),
-          inputMode: notifier.keyboardInputMode,
-          octaveShift: notifier.keyboardOctaveShift,
-          clef: notifier.score.clef,
+          inputMode: editor.keyboardInputMode,
+          octaveShift: editor.keyboardOctaveShift,
+          clef: session.score.clef,
         );
         if (shortcut != null) {
-          notifier.handleEditorShortcut(shortcut);
+          editor.handleEditorShortcut(shortcut);
           return;
         }
         switch (key) {
           case 'ArrowLeft':
-            notifier.moveSelectionLeft();
+            editor.moveSelectionLeft();
           case 'ArrowRight':
-            notifier.moveSelectionRight();
+            editor.moveSelectionRight();
           case 'ArrowUp':
-            notifier.adjustSelection(1);
+            editor.adjustSelection(1);
           case 'ArrowDown':
-            notifier.adjustSelection(-1);
+            editor.adjustSelection(-1);
           case 'Delete' || 'Backspace':
-            notifier.deleteSelected();
+            editor.deleteSelected();
         }
     }
   }
@@ -207,8 +212,11 @@ class _ScoreViewWidgetState extends State<ScoreViewWidget> {
   // ---------------------------------------------------------------------------
   // Dart → JS render
   // ---------------------------------------------------------------------------
-  Map<String, dynamic> _buildStaticPayload(ScoreNotifier notifier) {
-    final score = notifier.score;
+  Map<String, dynamic> _buildStaticPayload(
+    EditableScoreSession session,
+    EditorController editor,
+  ) {
+    final score = session.score;
     final clef = score.clef;
     final keySig = score.keySignature;
 
@@ -224,9 +232,9 @@ class _ScoreViewWidgetState extends State<ScoreViewWidget> {
       };
     }).toList();
 
-    final label = notifier.currentScoreLabel;
+    final label = session.currentScoreLabel;
     var title = label == 'Draft' ? '' : label;
-    if (title.isNotEmpty && notifier.hasUnsavedChanges) {
+    if (title.isNotEmpty && session.hasUnsavedChanges) {
       title += ' \u2022';
     }
 
@@ -239,9 +247,9 @@ class _ScoreViewWidgetState extends State<ScoreViewWidget> {
       'alteredPitches': keySig.alteredPitches.toList(),
       'accidentalOffset': keySig.accidentalOffset,
       'notes': notesList,
-      'selectedIndex': notifier.selectedIndex ?? -1,
-      'cursorIndex': notifier.cursorIndex,
-      'selectionKind': notifier.selectionKind?.name ?? '',
+      'selectedIndex': editor.selectedIndex ?? -1,
+      'cursorIndex': editor.cursorIndex,
+      'selectionKind': editor.selectionKind?.name ?? '',
       'showsRhythmOverlay': widget.rhythmOverlay != null,
       'title': title,
       'bpm': score.bpm.round(),
@@ -254,19 +262,23 @@ class _ScoreViewWidgetState extends State<ScoreViewWidget> {
     bool overlayChanged = false,
     bool playbackChanged = false,
   }) {
-    final notifier = _notifier;
+    final session = _session;
+    final editor = _editor;
+    final playback = _playback;
     final send = _sendCommand;
-    if (notifier == null || send == null) {
+    if (session == null || editor == null || playback == null || send == null) {
       return;
     }
 
     final needsStaticRender = forceStatic || staticChanged;
     final commands = _commandController.buildCommands(
-      staticPayload: needsStaticRender ? _buildStaticPayload(notifier) : null,
+      staticPayload: needsStaticRender
+          ? _buildStaticPayload(session, editor)
+          : null,
       rhythmOverlayPayload: needsStaticRender || overlayChanged
           ? widget.rhythmOverlay?.toPayload()
           : null,
-      playbackIndex: widget.playbackIndex ?? notifier.playbackIndex,
+      playbackIndex: widget.playbackIndex ?? playback.playbackIndex,
       forceStatic: forceStatic,
       overlayChanged: overlayChanged,
       playbackChanged: playbackChanged,
@@ -338,8 +350,12 @@ class _ScoreViewWidgetState extends State<ScoreViewWidget> {
     _reloadRenderer();
   }
 
-  void _handleScoreNotifierChanged() {
+  void _handleScoreOrEditorChanged() {
     _flushRendererCommands(staticChanged: true);
+  }
+
+  void _handlePlaybackChanged() {
+    _flushRendererCommands(playbackChanged: true);
   }
 
   // ---------------------------------------------------------------------------
@@ -347,15 +363,27 @@ class _ScoreViewWidgetState extends State<ScoreViewWidget> {
   // ---------------------------------------------------------------------------
 
   void _showClefPicker(BuildContext context) {
-    showClefPicker(context, context.read<ScoreNotifier>());
+    showClefPicker(
+      context,
+      session: context.read<EditableScoreSession>(),
+      editor: context.read<EditorController>(),
+    );
   }
 
   void _showTimeSigPicker(BuildContext context) {
-    showTimeSigPicker(context, context.read<ScoreNotifier>());
+    showTimeSigPicker(
+      context,
+      session: context.read<EditableScoreSession>(),
+      editor: context.read<EditorController>(),
+    );
   }
 
   void _showKeySigPicker(BuildContext context) {
-    showKeySigPicker(context, context.read<ScoreNotifier>());
+    showKeySigPicker(
+      context,
+      session: context.read<EditableScoreSession>(),
+      editor: context.read<EditorController>(),
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -365,13 +393,21 @@ class _ScoreViewWidgetState extends State<ScoreViewWidget> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final notifier = context.read<ScoreNotifier>();
-    if (_notifier == notifier) {
+    final session = context.read<EditableScoreSession>();
+    final editor = context.read<EditorController>();
+    final playback = context.read<PlaybackController>();
+    if (_session == session && _editor == editor && _playback == playback) {
       return;
     }
-    _notifier?.removeListener(_handleScoreNotifierChanged);
-    _notifier = notifier;
-    notifier.addListener(_handleScoreNotifierChanged);
+    _session?.removeListener(_handleScoreOrEditorChanged);
+    _editor?.removeListener(_handleScoreOrEditorChanged);
+    _playback?.removeListener(_handlePlaybackChanged);
+    _session = session;
+    _editor = editor;
+    _playback = playback;
+    session.addListener(_handleScoreOrEditorChanged);
+    editor.addListener(_handleScoreOrEditorChanged);
+    playback.addListener(_handlePlaybackChanged);
     _flushRendererCommands(forceStatic: true);
   }
 
@@ -391,7 +427,9 @@ class _ScoreViewWidgetState extends State<ScoreViewWidget> {
   @override
   void dispose() {
     _rendererAckTimer?.cancel();
-    _notifier?.removeListener(_handleScoreNotifierChanged);
+    _session?.removeListener(_handleScoreOrEditorChanged);
+    _editor?.removeListener(_handleScoreOrEditorChanged);
+    _playback?.removeListener(_handlePlaybackChanged);
     super.dispose();
   }
 

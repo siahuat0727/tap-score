@@ -4,7 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../input/editor_shortcuts.dart';
 import '../models/enums.dart';
-import '../state/score_notifier.dart';
+import '../state/editor_controller.dart';
 import '../theme/app_colors.dart';
 import 'input_affordance.dart';
 import 'playback_controls.dart';
@@ -51,8 +51,8 @@ class DurationSelector extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<ScoreNotifier>(
-      builder: (context, notifier, child) {
+    return Consumer<EditorController>(
+      builder: (context, editor, child) {
         final affordanceProfile = resolveInputAffordanceProfile(
           context,
           compact: compact,
@@ -63,15 +63,15 @@ class DurationSelector extends StatelessWidget {
             buttonKey: const ValueKey('rest-tool'),
             tooltip: 'Rest',
             glyph: _DurationGlyph(
-              duration: notifier.toolbarDuration,
+              duration: editor.toolbarDuration,
               isRest: true,
             ),
             shortcutLabel: affordanceProfile.showsKeyboardAffordances
                 ? restShortcutLabel
                 : null,
-            isSelected: notifier.toolbarRestSelected,
-            onTap: notifier.timingControlsEnabled
-                ? notifier.handleRestAction
+            isSelected: editor.toolbarRestSelected,
+            onTap: editor.timingControlsEnabled
+                ? editor.handleRestAction
                 : null,
             activeColor: AppColors.toolRest,
           ),
@@ -81,14 +81,14 @@ class DurationSelector extends StatelessWidget {
               tooltip: duration.name,
               glyph: _DurationGlyph(
                 duration: duration,
-                isRest: notifier.toolbarShowsRestDurations,
+                isRest: editor.toolbarShowsRestDurations,
               ),
               shortcutLabel: affordanceProfile.showsKeyboardAffordances
                   ? durationShortcutLabels[duration]!
                   : null,
-              isSelected: notifier.toolbarDuration == duration,
-              onTap: notifier.durationButtonsEnabled
-                  ? () => notifier.setDuration(duration)
+              isSelected: editor.toolbarDuration == duration,
+              onTap: editor.durationButtonsEnabled
+                  ? () => editor.setDuration(duration)
                   : null,
               activeColor: AppColors.toolDuration,
             ),
@@ -103,9 +103,9 @@ class DurationSelector extends StatelessWidget {
             shortcutLabel: affordanceProfile.showsKeyboardAffordances
                 ? dottedShortcutLabel
                 : null,
-            isSelected: notifier.toolbarDottedSelected,
-            onTap: notifier.timingControlsEnabled
-                ? notifier.toggleDottedMode
+            isSelected: editor.toolbarDottedSelected,
+            onTap: editor.timingControlsEnabled
+                ? editor.toggleDottedMode
                 : null,
             activeColor: AppColors.toolDot,
           ),
@@ -119,8 +119,8 @@ class DurationSelector extends StatelessWidget {
             shortcutLabel: affordanceProfile.showsKeyboardAffordances
                 ? slurShortcutLabel
                 : null,
-            isSelected: notifier.toolbarSlurSelected,
-            onTap: notifier.slurButtonEnabled ? notifier.toggleSlurMode : null,
+            isSelected: editor.toolbarSlurSelected,
+            onTap: editor.slurButtonEnabled ? editor.toggleSlurMode : null,
             activeColor: AppColors.toolSlur,
           ),
           _SquareButton(
@@ -133,9 +133,9 @@ class DurationSelector extends StatelessWidget {
             shortcutLabel: affordanceProfile.showsKeyboardAffordances
                 ? tripletShortcutLabel
                 : null,
-            isSelected: notifier.toolbarTripletSelected,
-            onTap: notifier.tripletButtonEnabled
-                ? notifier.toggleTripletMode
+            isSelected: editor.toolbarTripletSelected,
+            onTap: editor.tripletButtonEnabled
+                ? editor.toggleTripletMode
                 : null,
             activeColor: AppColors.toolTriplet,
           ),
@@ -144,9 +144,7 @@ class DurationSelector extends StatelessWidget {
             tooltip: 'Delete',
             glyph: const Icon(Icons.delete_outline, size: 20),
             isSelected: false,
-            onTap: notifier.deleteButtonEnabled
-                ? notifier.deleteSelected
-                : null,
+            onTap: editor.deleteButtonEnabled ? editor.deleteSelected : null,
             activeColor: AppColors.toolDelete,
           ),
         ];
@@ -385,7 +383,6 @@ class ToolbarInfoChips extends StatelessWidget {
         ),
         ComposeTempoChip(
           key: const ValueKey('compose-tempo'),
-          bpm: bpm,
           enabled: tempoEnabled,
         ),
       ],

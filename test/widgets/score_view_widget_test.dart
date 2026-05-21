@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
-import 'package:tap_score/state/score_notifier.dart';
+import 'package:tap_score/services/audio_service.dart';
+import 'package:tap_score/state/editable_score_session.dart';
+import 'package:tap_score/state/editor_controller.dart';
+import 'package:tap_score/state/playback_controller.dart';
 import 'package:tap_score/widgets/score_view_widget.dart';
 import 'package:webview_flutter_platform_interface/webview_flutter_platform_interface.dart';
 
@@ -112,7 +115,6 @@ void main() {
 
     await tester.pumpWidget(
       _buildScoreViewHarness(
-        notifier: ScoreNotifier(),
         rendererCommandTimeout: const Duration(milliseconds: 10),
       ),
     );
@@ -132,7 +134,6 @@ void main() {
 
     await tester.pumpWidget(
       _buildScoreViewHarness(
-        notifier: ScoreNotifier(),
         rendererCommandTimeout: const Duration(milliseconds: 10),
       ),
     );
@@ -180,12 +181,19 @@ Map<String, dynamic> _staticPayload({required int selectedIndex}) {
   };
 }
 
-Widget _buildScoreViewHarness({
-  required ScoreNotifier notifier,
-  required Duration rendererCommandTimeout,
-}) {
-  return ChangeNotifierProvider.value(
-    value: notifier,
+Widget _buildScoreViewHarness({required Duration rendererCommandTimeout}) {
+  final session = EditableScoreSession();
+  final playback = PlaybackController(
+    session: session,
+    audioService: AudioService(testMode: true),
+  );
+  final editor = EditorController(session: session, notePreview: playback);
+  return MultiProvider(
+    providers: [
+      ChangeNotifierProvider<EditableScoreSession>.value(value: session),
+      ChangeNotifierProvider<PlaybackController>.value(value: playback),
+      ChangeNotifierProvider<EditorController>.value(value: editor),
+    ],
     child: MaterialApp(
       home: Scaffold(
         body: ScoreViewWidget(rendererCommandTimeout: rendererCommandTimeout),

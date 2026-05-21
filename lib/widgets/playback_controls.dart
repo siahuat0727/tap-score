@@ -1,18 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../state/score_notifier.dart';
+import '../state/editable_score_session.dart';
+import '../state/editor_controller.dart';
 import '../theme/app_colors.dart';
 import 'signature_pickers.dart';
 
 class ComposeTempoChip extends StatelessWidget {
-  const ComposeTempoChip({required this.bpm, required this.enabled, super.key});
+  const ComposeTempoChip({required this.enabled, super.key});
 
-  final double bpm;
   final bool enabled;
 
   @override
   Widget build(BuildContext context) {
+    final bpm = context.select<EditableScoreSession, double>(
+      (session) => session.score.bpm,
+    );
     return CapsuleActionButton(
       onTap: enabled ? () => _showTempoSheet(context) : null,
       icon: Icons.speed_rounded,
@@ -29,13 +32,13 @@ class ComposeTempoChip extends StatelessWidget {
       builder: (ctx) {
         return Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-          child: Consumer<ScoreNotifier>(
-            builder: (context, notifier, _) {
+          child: Consumer2<EditableScoreSession, EditorController>(
+            builder: (context, session, editor, _) {
               return Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    '♩ = ${notifier.score.bpm.round()}',
+                    '♩ = ${session.score.bpm.round()}',
                     style: const TextStyle(
                       fontSize: 24,
                       fontWeight: FontWeight.w700,
@@ -55,12 +58,12 @@ class ComposeTempoChip extends StatelessWidget {
                       ),
                     ),
                     child: Slider(
-                      value: notifier.score.bpm,
+                      value: session.score.bpm,
                       min: 40,
                       max: 240,
                       divisions: 200,
-                      label: '${notifier.score.bpm.round()} BPM',
-                      onChanged: notifier.setTempo,
+                      label: '${session.score.bpm.round()} BPM',
+                      onChanged: editor.setTempo,
                     ),
                   ),
                   const SizedBox(height: 4),
@@ -123,7 +126,11 @@ class ComposeTimeSigChip extends StatelessWidget {
   Widget build(BuildContext context) {
     return CapsuleActionButton(
       onTap: () {
-        showTimeSigPicker(context, context.read<ScoreNotifier>());
+        showTimeSigPicker(
+          context,
+          session: context.read<EditableScoreSession>(),
+          editor: context.read<EditorController>(),
+        );
       },
       icon: Icons.music_note_rounded,
       label: '$beatsPerMeasure/$beatUnit',
@@ -140,7 +147,11 @@ class ComposeKeySigChip extends StatelessWidget {
   Widget build(BuildContext context) {
     return CapsuleActionButton(
       onTap: () {
-        showKeySigPicker(context, context.read<ScoreNotifier>());
+        showKeySigPicker(
+          context,
+          session: context.read<EditableScoreSession>(),
+          editor: context.read<EditorController>(),
+        );
       },
       icon: Icons.queue_music_rounded,
       label: label,

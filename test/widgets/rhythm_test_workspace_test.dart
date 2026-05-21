@@ -10,8 +10,10 @@ import 'package:tap_score/rhythm_test/rhythm_matcher.dart';
 import 'package:tap_score/rhythm_test/rhythm_test_models.dart';
 import 'package:tap_score/rhythm_test/rhythm_timeline_builder.dart';
 import 'package:tap_score/services/audio_service.dart';
+import 'package:tap_score/state/editable_score_session.dart';
+import 'package:tap_score/state/editor_controller.dart';
+import 'package:tap_score/state/playback_controller.dart';
 import 'package:tap_score/state/rhythm_test_notifier.dart';
-import 'package:tap_score/state/score_notifier.dart';
 import 'package:tap_score/widgets/rhythm_test_workspace.dart';
 import 'package:tap_score/widgets/score_view_widget.dart';
 import 'package:tap_score/workspace/workspace_layout_profile.dart';
@@ -525,9 +527,18 @@ ThemeData? _themeForPlatform(TargetPlatform? platform) {
 }
 
 Widget _wrap(RhythmTestNotifier notifier, {TargetPlatform? platform}) {
+  final session = EditableScoreSession()
+    ..replaceScore(notifier.score, notify: false);
+  final playback = PlaybackController(
+    session: session,
+    audioService: AudioService(testMode: true),
+  );
+  final editor = EditorController(session: session, notePreview: playback);
   return MultiProvider(
     providers: [
-      ChangeNotifierProvider(create: (_) => ScoreNotifier()),
+      ChangeNotifierProvider<EditableScoreSession>(create: (_) => session),
+      ChangeNotifierProvider<PlaybackController>(create: (_) => playback),
+      ChangeNotifierProvider<EditorController>(create: (_) => editor),
       ChangeNotifierProvider.value(value: notifier),
     ],
     child: MaterialApp(
@@ -535,7 +546,10 @@ Widget _wrap(RhythmTestNotifier notifier, {TargetPlatform? platform}) {
       home: Scaffold(
         body: RhythmTestWorkspace(
           layoutProfile: WorkspaceLayoutProfile.fromSize(const Size(430, 932)),
-          onTempoChanged: notifier.setTempo,
+          onTempoChanged: (bpm) {
+            editor.setTempo(bpm);
+            notifier.setTempo(bpm);
+          },
           onRendererKeyDown: _ignoreRendererKeyDown,
         ),
       ),
