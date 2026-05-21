@@ -570,7 +570,6 @@ class _ComposeToolbarLayout extends StatelessWidget {
           beatsPerMeasure: score.beatsPerMeasure,
           beatUnit: score.beatUnit,
           keyLabel: score.keySignature.vexflowKey,
-          bpm: score.bpm,
           tempoEnabled: !playback.isPlaying,
           spacing: metrics.infoChipSpacing,
           runSpacing: metrics.infoChipRunSpacing,

@@ -393,9 +393,9 @@ class _ScoreViewWidgetState extends State<ScoreViewWidget> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final session = context.read<EditableScoreSession>();
-    final editor = context.read<EditorController>();
-    final playback = context.read<PlaybackController>();
+    final session = Provider.of<EditableScoreSession>(context);
+    final editor = Provider.of<EditorController>(context);
+    final playback = Provider.of<PlaybackController>(context);
     if (_session == session && _editor == editor && _playback == playback) {
       return;
     }

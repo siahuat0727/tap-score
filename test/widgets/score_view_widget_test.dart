@@ -1,6 +1,10 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
+import 'package:tap_score/models/note.dart';
+import 'package:tap_score/models/score.dart';
 import 'package:tap_score/services/audio_service.dart';
 import 'package:tap_score/state/editable_score_session.dart';
 import 'package:tap_score/state/editor_controller.dart';
@@ -150,6 +154,38 @@ void main() {
     expect(find.byKey(const ValueKey('score-renderer-retry')), findsNothing);
     expect(find.text('Score renderer stopped responding.'), findsNothing);
   });
+
+  testWidgets('provider identity changes rebind score view listeners', (
+    WidgetTester tester,
+  ) async {
+    final first = _ScoreViewControllers();
+    final second = _ScoreViewControllers();
+    second.session.replaceScore(
+      Score(notes: const [Note(midi: 60)]),
+      notify: false,
+    );
+
+    try {
+      await tester.pumpWidget(first.wrapWithValueProviders());
+      await tester.pump();
+      FakeWebViewPlatform.runJavaScriptCalls.clear();
+
+      await tester.pumpWidget(second.wrapWithValueProviders());
+      await tester.pump();
+      second.editor.selectNote(0);
+      await tester.pump();
+
+      final staticPayloads = _rendererCommands()
+          .where((command) => command['type'] == 'renderScoreStatic')
+          .toList();
+      expect(staticPayloads, isNotEmpty);
+      expect(staticPayloads.last['selectedIndex'], 0);
+    } finally {
+      await tester.pumpWidget(const SizedBox.shrink());
+      first.dispose();
+      second.dispose();
+    }
+  });
 }
 
 Map<String, dynamic> _staticPayload({required int selectedIndex}) {
@@ -182,24 +218,78 @@ Map<String, dynamic> _staticPayload({required int selectedIndex}) {
 }
 
 Widget _buildScoreViewHarness({required Duration rendererCommandTimeout}) {
-  final session = EditableScoreSession();
-  final playback = PlaybackController(
-    session: session,
-    audioService: AudioService(testMode: true),
-  );
-  final editor = EditorController(session: session, notePreview: playback);
   return MultiProvider(
     providers: [
-      ChangeNotifierProvider<EditableScoreSession>.value(value: session),
-      ChangeNotifierProvider<PlaybackController>.value(value: playback),
-      ChangeNotifierProvider<EditorController>.value(value: editor),
-    ],
-    child: MaterialApp(
-      home: Scaffold(
-        body: ScoreViewWidget(rendererCommandTimeout: rendererCommandTimeout),
+      ChangeNotifierProvider(create: (_) => EditableScoreSession()),
+      ChangeNotifierProvider(
+        create: (context) => PlaybackController(
+          session: context.read<EditableScoreSession>(),
+          audioService: AudioService(testMode: true),
+        ),
       ),
+      ChangeNotifierProvider(
+        create: (context) => EditorController(
+          session: context.read<EditableScoreSession>(),
+          notePreview: context.read<PlaybackController>(),
+        ),
+      ),
+    ],
+    child: _scoreViewApp(rendererCommandTimeout: rendererCommandTimeout),
+  );
+}
+
+class _ScoreViewControllers {
+  _ScoreViewControllers() {
+    playback = PlaybackController(
+      session: session,
+      audioService: AudioService(testMode: true),
+    );
+    editor = EditorController(session: session, notePreview: playback);
+  }
+
+  final EditableScoreSession session = EditableScoreSession();
+  late final PlaybackController playback;
+  late final EditorController editor;
+
+  Widget wrapWithValueProviders({
+    Duration rendererCommandTimeout = const Duration(seconds: 2),
+  }) {
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider<EditableScoreSession>.value(value: session),
+        ChangeNotifierProvider<PlaybackController>.value(value: playback),
+        ChangeNotifierProvider<EditorController>.value(value: editor),
+      ],
+      child: _scoreViewApp(rendererCommandTimeout: rendererCommandTimeout),
+    );
+  }
+
+  void dispose() {
+    editor.dispose();
+    playback.dispose();
+    session.dispose();
+  }
+}
+
+Widget _scoreViewApp({required Duration rendererCommandTimeout}) {
+  return MaterialApp(
+    home: Scaffold(
+      body: ScoreViewWidget(rendererCommandTimeout: rendererCommandTimeout),
     ),
   );
+}
+
+List<Map<String, dynamic>> _rendererCommands() {
+  return FakeWebViewPlatform.runJavaScriptCalls.map((javaScript) {
+    final match = RegExp(
+      r'^window\.renderFromDart\((.*)\)$',
+    ).firstMatch(javaScript);
+    if (match == null) {
+      throw StateError('Unexpected JavaScript call: $javaScript');
+    }
+    final payloadText = jsonDecode(match.group(1)!) as String;
+    return jsonDecode(payloadText) as Map<String, dynamic>;
+  }).toList();
 }
 
 Map<String, dynamic> _rhythmOverlayPayload({

@@ -351,7 +351,6 @@ class ToolbarInfoChips extends StatelessWidget {
     required this.beatsPerMeasure,
     required this.beatUnit,
     required this.keyLabel,
-    required this.bpm,
     required this.tempoEnabled,
     this.spacing = 10,
     this.runSpacing = 8,
@@ -361,7 +360,6 @@ class ToolbarInfoChips extends StatelessWidget {
   final int beatsPerMeasure;
   final int beatUnit;
   final String keyLabel;
-  final double bpm;
   final bool tempoEnabled;
   final double spacing;
   final double runSpacing;
