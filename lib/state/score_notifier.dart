@@ -12,7 +12,6 @@ import '../services/audio_service.dart';
 import '../services/preset_score_repository.dart';
 import '../services/score_library_repository.dart';
 import '../workspace/workspace_repository.dart';
-import '../workspace/workspace_session.dart';
 import 'editable_score_session.dart';
 import 'editor_controller.dart';
 import 'playback_controller.dart' show AudioStatus, PlaybackController;
@@ -82,7 +81,6 @@ class ScoreNotifier extends ChangeNotifier {
        _editor = editor,
        _library = library,
        _ownsControllers = ownsControllers {
-    _observedWorkspace = _session.workspace;
     _playback.addListener(_notifyFromOwnedController);
     _editor.addListener(_notifyFromOwnedController);
     _library.addListener(_notifyFromOwnedController);
@@ -93,7 +91,6 @@ class ScoreNotifier extends ChangeNotifier {
   final EditorController _editor;
   final ScoreLibraryController _library;
   final bool _ownsControllers;
-  late WorkspaceSession _observedWorkspace;
   bool _isDisposed = false;
   int _ownedControllerNotificationSuppressionDepth = 0;
 
@@ -400,7 +397,6 @@ class ScoreNotifier extends ChangeNotifier {
 
     if (!identical(workspaceBefore, _session.workspace)) {
       _resetEditorForScore();
-      _observedWorkspace = _session.workspace;
     }
     notifyListeners();
     if (failure != null) {
@@ -420,10 +416,6 @@ class ScoreNotifier extends ChangeNotifier {
   void _notifyFromOwnedController() {
     if (_isDisposed || _ownedControllerNotificationSuppressionDepth > 0) {
       return;
-    }
-    if (!identical(_observedWorkspace, _session.workspace)) {
-      _observedWorkspace = _session.workspace;
-      _resetEditorForScore();
     }
     notifyListeners();
   }

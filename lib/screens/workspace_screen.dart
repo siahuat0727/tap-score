@@ -336,44 +336,40 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                 );
                 return Stack(
                   children: [
-                    Consumer4<
+                    Consumer3<
                       EditableScoreSession,
-                      EditorController,
                       PlaybackController,
                       ScoreLibraryController
                     >(
-                      builder:
-                          (context, session, editor, playback, library, _) {
-                            return Column(
-                              children: [
-                                WorkspaceTopBar(
-                                  key: const ValueKey('workspace-top-bar'),
-                                  mode: startupState.mode,
-                                  layoutProfile: layoutProfile,
-                                  showsEditorActions:
-                                      startupState.ready &&
-                                      startupState.mode ==
-                                          WorkspaceMode.compose,
-                                  isInteractive: startupState.ready,
-                                  hasUnsavedChanges: session.hasUnsavedChanges,
-                                  onGoHome: widget.onGoHome ?? () {},
-                                  onSelectMode: _switchMode,
-                                  onSave: _showSaveDialog,
-                                  onExport: _exportCurrentScore,
-                                ),
-                                Expanded(
-                                  child: _buildWorkspaceBody(
-                                    session,
-                                    editor,
-                                    playback,
-                                    library,
-                                    layoutProfile,
-                                    startupState,
-                                  ),
-                                ),
-                              ],
-                            );
-                          },
+                      builder: (context, session, playback, library, _) {
+                        return Column(
+                          children: [
+                            WorkspaceTopBar(
+                              key: const ValueKey('workspace-top-bar'),
+                              mode: startupState.mode,
+                              layoutProfile: layoutProfile,
+                              showsEditorActions:
+                                  startupState.ready &&
+                                  startupState.mode == WorkspaceMode.compose,
+                              isInteractive: startupState.ready,
+                              hasUnsavedChanges: session.hasUnsavedChanges,
+                              onGoHome: widget.onGoHome ?? () {},
+                              onSelectMode: _switchMode,
+                              onSave: _showSaveDialog,
+                              onExport: _exportCurrentScore,
+                            ),
+                            Expanded(
+                              child: _buildWorkspaceBody(
+                                session,
+                                playback,
+                                library,
+                                layoutProfile,
+                                startupState,
+                              ),
+                            ),
+                          ],
+                        );
+                      },
                     ),
                     if (startupState.showsOverlay)
                       Positioned.fill(
@@ -411,7 +407,6 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
 
   Widget _buildWorkspaceBody(
     EditableScoreSession session,
-    EditorController editor,
     PlaybackController playback,
     ScoreLibraryController library,
     WorkspaceLayoutProfile layoutProfile,

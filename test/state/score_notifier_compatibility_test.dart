@@ -62,6 +62,25 @@ void main() {
   );
 
   test(
+    'saved score metadata updates keep editor state when no score was replaced',
+    () async {
+      final repository = _ShortScoreLoadRepository();
+      final notifier = ScoreNotifier(workspaceRepository: repository);
+      addTearDown(notifier.dispose);
+
+      await notifier.loadInitialWorkspace();
+      notifier.selectNote(1);
+
+      await notifier.saveCurrentScore('Saved');
+
+      expect(notifier.selectedIndex, 1);
+      expect(notifier.cursorIndex, 2);
+      expect(notifier.selectedNote?.midi, 62);
+      expect(notifier.currentScoreLabel, 'Saved');
+    },
+  );
+
+  test(
     'thrown library loads still notify suppressed playback state changes',
     () async {
       final repository = _ShortScoreLoadRepository();
@@ -185,8 +204,19 @@ class _ShortScoreLoadRepository extends WorkspaceRepository {
     required Score editedScore,
     required String name,
     bool createNew = false,
-  }) {
-    throw UnimplementedError();
+  }) async {
+    final savedScore = SavedScoreEntry(
+      id: 'saved',
+      name: name,
+      updatedAt: DateTime.utc(2026, 5, 20),
+      score: editedScore.copy(),
+    );
+    return WorkspaceSession(
+      editorScore: editedScore.copy(),
+      document: WorkspaceDocument.saved(savedScore),
+      savedScores: [savedScore, _shortScore],
+      presetScores: workspace.presetScores,
+    );
   }
 
   @override
