@@ -633,6 +633,13 @@ void main() {
     expect(saveRect.bottom, lessThan(scoreRect.top));
   });
 
+  test('workspace screen uses split controllers directly', () {
+    final source = File('lib/screens/workspace_screen.dart').readAsStringSync();
+
+    expect(source, isNot(contains("import '../state/score_notifier.dart';")));
+    expect(source, isNot(contains('ScoreNotifier')));
+  });
+
   testWidgets(
     'compose mode keeps mode switching in the top bar, not the toolbar',
     (WidgetTester tester) async {
