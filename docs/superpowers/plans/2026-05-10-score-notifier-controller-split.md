@@ -789,7 +789,7 @@ git commit -m "refactor: introduce editor controller"
 - Create: `lib/state/score_library_controller.dart`
 - Modify and rename: `test/state/score_notifier_library_test.dart` to `test/state/score_library_controller_test.dart`
 
-- [ ] **Step 1: Rename library tests and update harness**
+- [x] **Step 1: Rename library tests and update harness**
 
 Run:
 
@@ -891,7 +891,7 @@ Then replace:
 - `notifier.score` with `session.score`
 - document/catalog/message getters with `library` when the data is library-owned and with `session` when the data is score/workspace-owned.
 
-- [ ] **Step 2: Run renamed tests to verify failures**
+- [x] **Step 2: Run renamed tests to verify failures**
 
 Run:
 
@@ -901,7 +901,7 @@ flutter test test/state/score_library_controller_test.dart
 
 Expected: fails because `ScoreLibraryController` does not exist.
 
-- [ ] **Step 3: Implement ScoreLibraryController**
+- [x] **Step 3: Implement ScoreLibraryController**
 
 Create `lib/state/score_library_controller.dart`:
 
@@ -995,7 +995,7 @@ void dispose() {
 }
 ```
 
-- [ ] **Step 4: Run library tests**
+- [x] **Step 4: Run library tests**
 
 Run:
 
@@ -1005,7 +1005,7 @@ flutter test test/state/score_library_controller_test.dart
 
 Expected: pass after all old `notifier` references have been routed to `library` or `session`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add lib/state/score_library_controller.dart test/state/score_library_controller_test.dart
