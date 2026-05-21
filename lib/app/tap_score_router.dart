@@ -8,6 +8,10 @@ import '../services/audio_service.dart';
 import '../services/preset_score_repository.dart';
 import '../services/score_library_repository.dart';
 import '../services/score_transfer_service.dart';
+import '../state/editable_score_session.dart';
+import '../state/editor_controller.dart';
+import '../state/playback_controller.dart';
+import '../state/score_library_controller.dart';
 import '../state/score_notifier.dart';
 import '../workspace/workspace_repository.dart';
 import 'workspace_launch_config.dart';
@@ -236,9 +240,8 @@ class TapScoreRouterDelegate extends RouterDelegate<Object>
       ),
       TapScoreWorkspaceRouteState(:final launchConfig) => MaterialPage<void>(
         key: ValueKey('tap-score-workspace-page-$_workspaceSession'),
-        child: ChangeNotifierProvider(
-          create: (_) =>
-              ScoreNotifier(workspaceRepository: _workspaceRepository),
+        child: _WorkspaceControllerScope(
+          workspaceRepository: _workspaceRepository,
           child: WorkspaceScreen(
             launchConfig: launchConfig,
             scoreTransferService: scoreTransferService,
@@ -258,6 +261,50 @@ class TapScoreRouterDelegate extends RouterDelegate<Object>
           showHome();
         }
       },
+    );
+  }
+}
+
+class _WorkspaceControllerScope extends StatelessWidget {
+  const _WorkspaceControllerScope({
+    required this.workspaceRepository,
+    required this.child,
+  });
+
+  final WorkspaceRepository workspaceRepository;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => EditableScoreSession()),
+        ChangeNotifierProvider(
+          create: (context) =>
+              PlaybackController(session: context.read<EditableScoreSession>()),
+        ),
+        ChangeNotifierProvider(
+          create: (context) => EditorController(
+            session: context.read<EditableScoreSession>(),
+            notePreview: context.read<PlaybackController>(),
+          ),
+        ),
+        ChangeNotifierProvider(
+          create: (context) => ScoreLibraryController(
+            session: context.read<EditableScoreSession>(),
+            playback: context.read<PlaybackController>(),
+            workspaceRepository: workspaceRepository,
+          ),
+        ),
+        ChangeNotifierProvider(
+          create: (context) => ScoreNotifier.compatibility(
+            session: context.read<EditableScoreSession>(),
+            playback: context.read<PlaybackController>(),
+            library: context.read<ScoreLibraryController>(),
+          ),
+        ),
+      ],
+      child: child,
     );
   }
 }

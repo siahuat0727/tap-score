@@ -12,6 +12,7 @@ import '../services/audio_service.dart';
 import '../services/preset_score_repository.dart';
 import '../services/score_library_repository.dart';
 import '../workspace/workspace_repository.dart';
+import '../workspace/workspace_session.dart';
 import 'editable_score_session.dart';
 import 'editor_controller.dart' show SelectionKind;
 import 'playback_controller.dart' show AudioStatus, PlaybackController;
@@ -50,6 +51,20 @@ class ScoreNotifier extends ChangeNotifier {
       session: session,
       playback: playback,
       library: library,
+      ownsControllers: true,
+    );
+  }
+
+  factory ScoreNotifier.compatibility({
+    required EditableScoreSession session,
+    required PlaybackController playback,
+    required ScoreLibraryController library,
+  }) {
+    return ScoreNotifier._(
+      session: session,
+      playback: playback,
+      library: library,
+      ownsControllers: false,
     );
   }
 
@@ -57,9 +72,12 @@ class ScoreNotifier extends ChangeNotifier {
     required EditableScoreSession session,
     required PlaybackController playback,
     required ScoreLibraryController library,
+    required bool ownsControllers,
   }) : _session = session,
        _playback = playback,
-       _library = library {
+       _library = library,
+       _ownsControllers = ownsControllers {
+    _observedWorkspace = _session.workspace;
     _playback.addListener(_notifyFromOwnedController);
     _library.addListener(_notifyFromOwnedController);
   }
@@ -67,8 +85,16 @@ class ScoreNotifier extends ChangeNotifier {
   final EditableScoreSession _session;
   final PlaybackController _playback;
   final ScoreLibraryController _library;
+  final bool _ownsControllers;
+  late WorkspaceSession _observedWorkspace;
   bool _isDisposed = false;
   int _ownedControllerNotificationSuppressionDepth = 0;
+
+  EditableScoreSession get session => _session;
+
+  PlaybackController get playbackController => _playback;
+
+  ScoreLibraryController get scoreLibraryController => _library;
 
   Score get score => _session.score;
 
@@ -1169,6 +1195,7 @@ class ScoreNotifier extends ChangeNotifier {
 
     if (!identical(workspaceBefore, _session.workspace)) {
       _resetEditorForScore();
+      _observedWorkspace = _session.workspace;
     }
     notifyListeners();
     if (failure != null) {
@@ -1205,6 +1232,10 @@ class ScoreNotifier extends ChangeNotifier {
     if (_isDisposed || _ownedControllerNotificationSuppressionDepth > 0) {
       return;
     }
+    if (!identical(_observedWorkspace, _session.workspace)) {
+      _observedWorkspace = _session.workspace;
+      _resetEditorForScore();
+    }
     notifyListeners();
   }
 
@@ -1213,9 +1244,11 @@ class ScoreNotifier extends ChangeNotifier {
     _isDisposed = true;
     _playback.removeListener(_notifyFromOwnedController);
     _library.removeListener(_notifyFromOwnedController);
-    _library.dispose();
-    _playback.dispose();
-    _session.dispose();
+    if (_ownsControllers) {
+      _library.dispose();
+      _playback.dispose();
+      _session.dispose();
+    }
     super.dispose();
   }
 }

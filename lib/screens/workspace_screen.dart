@@ -9,6 +9,10 @@ import '../app/workspace_launch_config.dart';
 import '../input/editor_shortcuts.dart';
 import '../services/audio_service.dart';
 import '../services/score_transfer_service.dart';
+import '../state/editable_score_session.dart';
+import '../state/editor_controller.dart';
+import '../state/playback_controller.dart';
+import '../state/score_library_controller.dart';
 import '../state/score_notifier.dart';
 import '../theme/app_colors.dart';
 import '../workspace/workspace_layout_profile.dart';
@@ -65,7 +69,10 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       return;
     }
     _startupController = WorkspaceStartupController(
-      scoreNotifier: context.read<ScoreNotifier>(),
+      session: context.read<EditableScoreSession>(),
+      editorController: context.read<EditorController>(),
+      playbackController: context.read<PlaybackController>(),
+      scoreLibraryController: context.read<ScoreLibraryController>(),
       launchConfig: widget.launchConfig,
       requestFocus: _focusNode.requestFocus,
       onRouteSync: widget.onRouteSync,

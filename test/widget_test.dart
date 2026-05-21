@@ -19,7 +19,11 @@ import 'package:tap_score/services/audio_service.dart';
 import 'package:tap_score/services/preset_score_repository.dart';
 import 'package:tap_score/services/score_library_repository.dart';
 import 'package:tap_score/services/score_transfer_service.dart';
+import 'package:tap_score/state/editable_score_session.dart';
+import 'package:tap_score/state/editor_controller.dart';
+import 'package:tap_score/state/playback_controller.dart';
 import 'package:tap_score/state/rhythm_test_notifier.dart';
+import 'package:tap_score/state/score_library_controller.dart';
 import 'package:tap_score/state/score_notifier.dart';
 import 'package:tap_score/theme/app_colors.dart';
 import 'package:tap_score/widgets/duration_selector.dart';
@@ -119,8 +123,25 @@ Widget _buildWorkspace(
   AudioService? rhythmTestAudioService,
   TargetPlatform? platform,
 }) {
-  return ChangeNotifierProvider.value(
-    value: notifier,
+  return MultiProvider(
+    providers: [
+      ChangeNotifierProvider<EditableScoreSession>.value(
+        value: notifier.session,
+      ),
+      ChangeNotifierProvider<PlaybackController>.value(
+        value: notifier.playbackController,
+      ),
+      ChangeNotifierProvider(
+        create: (_) => EditorController(
+          session: notifier.session,
+          notePreview: notifier.playbackController,
+        ),
+      ),
+      ChangeNotifierProvider<ScoreLibraryController>.value(
+        value: notifier.scoreLibraryController,
+      ),
+      ChangeNotifierProvider<ScoreNotifier>.value(value: notifier),
+    ],
     child: MaterialApp(
       theme: _themeForPlatform(platform),
       home: WorkspaceScreen(
@@ -198,6 +219,10 @@ void main() {
   ) async {
     final context = await _openBlankWorkspace(tester);
     final notifier = Provider.of<ScoreNotifier>(context, listen: false);
+    final session = Provider.of<EditableScoreSession>(context, listen: false);
+    final editor = Provider.of<EditorController>(context, listen: false);
+    final playback = Provider.of<PlaybackController>(context, listen: false);
+    final library = Provider.of<ScoreLibraryController>(context, listen: false);
 
     expect(find.byType(WorkspaceScreen), findsOneWidget);
     expect(find.byKey(const ValueKey('workspace-top-bar')), findsOneWidget);
@@ -209,6 +234,13 @@ void main() {
     );
     expect(notifier.score.notes, isEmpty);
     expect(notifier.activePresetId, isNull);
+    expect(session.score.notes, isEmpty);
+    expect(editor.cursorIndex, 0);
+    expect(playback.isPlaying, isFalse);
+    expect(library.initialWorkspaceLoadComplete, isTrue);
+    expect(notifier.session, same(session));
+    expect(notifier.playbackController, same(playback));
+    expect(notifier.scoreLibraryController, same(library));
   });
 
   testWidgets(
