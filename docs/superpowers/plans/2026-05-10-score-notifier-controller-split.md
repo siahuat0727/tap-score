@@ -1214,7 +1214,7 @@ git commit -m "refactor: wire workspace controllers"
 - Modify: `lib/screens/workspace_screen.dart`
 - Modify: relevant workspace tests in `test/widget_test.dart`
 
-- [ ] **Step 1: Update imports and startup construction**
+- [x] **Step 1: Update imports and startup construction**
 
 In `lib/screens/workspace_screen.dart`, remove:
 
@@ -1246,7 +1246,7 @@ _startupController = WorkspaceStartupController(
 );
 ```
 
-- [ ] **Step 2: Replace screen-level reads**
+- [x] **Step 2: Replace screen-level reads**
 
 Use these replacements:
 
@@ -1275,7 +1275,7 @@ final ScoreLibraryController libraryController;
 
 Inside the dialog, replace `widget.notifier.activeSavedScore` and `widget.notifier.saveCurrentScore` with `widget.libraryController.activeSavedScore` and `widget.libraryController.saveCurrentScore`.
 
-- [ ] **Step 3: Update compose toolbar signatures**
+- [x] **Step 3: Update compose toolbar signatures**
 
 Change helper signatures:
 
@@ -1292,7 +1292,7 @@ Widget _buildWorkspaceBody(
 
 Use the same dependency split for `_buildComposeBody`, `_buildRhythmTestBody`, `_ComposeDock`, and `_ComposeToolbarLayout`.
 
-- [ ] **Step 4: Run workspace screen tests**
+- [x] **Step 4: Run workspace screen tests**
 
 Run:
 
@@ -1302,7 +1302,7 @@ flutter test test/widget_test.dart --plain-name "workspace"
 
 Expected: pass after all `ScoreNotifier` references are removed from `WorkspaceScreen`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add lib/screens/workspace_screen.dart test/widget_test.dart
