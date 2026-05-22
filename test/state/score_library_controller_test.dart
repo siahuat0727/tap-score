@@ -11,6 +11,7 @@ import 'package:tap_score/services/audio_service.dart';
 import 'package:tap_score/services/preset_score_repository.dart';
 import 'package:tap_score/services/score_library_repository.dart';
 import 'package:tap_score/state/editable_score_session.dart';
+import 'package:tap_score/state/editor_controller.dart';
 import 'package:tap_score/state/playback_controller.dart';
 import 'package:tap_score/state/score_library_controller.dart';
 import 'package:tap_score/workspace/workspace_repository.dart';
@@ -274,6 +275,113 @@ void main() {
     expect(harness.library.activePresetId, 'preset-1');
     expect(harness.library.savedScores, isEmpty);
     expect(harness.library.currentScoreLabel, 'Triplet Study');
+  });
+
+  test('public score replacement paths reset attached editor state', () async {
+    final scenarios =
+        <
+          ({
+            String name,
+            _LibraryHarness Function() buildHarness,
+            Future<void> Function(_LibraryHarness harness) prepare,
+            Future<void> Function(_LibraryHarness harness) replace,
+          })
+        >[
+          (
+            name: 'initial workspace load',
+            buildHarness: () => _LibraryHarness(
+              scoreLibraryRepository: _MemoryScoreLibraryRepository(
+                ScoreLibrarySnapshot(
+                  draft: Score(notes: const [Note(midi: 64)]),
+                  savedScores: const [],
+                ),
+              ),
+              presetScoreRepository: _MemoryPresetScoreRepository(),
+            ),
+            prepare: (_) async {},
+            replace: (harness) => harness.library.loadInitialWorkspace(),
+          ),
+          (
+            name: 'draft restore',
+            buildHarness: () => _LibraryHarness(
+              scoreLibraryRepository: _MemoryScoreLibraryRepository(
+                ScoreLibrarySnapshot(
+                  draft: Score(notes: const [Note(midi: 65)]),
+                  savedScores: const [],
+                ),
+              ),
+              presetScoreRepository: _MemoryPresetScoreRepository(),
+            ),
+            prepare: (harness) => harness.library.loadInitialWorkspace(),
+            replace: (harness) => harness.library.restoreDraft(),
+          ),
+          (
+            name: 'saved score load',
+            buildHarness: () => _LibraryHarness(
+              scoreLibraryRepository: _MemoryScoreLibraryRepository(
+                ScoreLibrarySnapshot(
+                  draft: Score(),
+                  savedScores: [
+                    SavedScoreEntry(
+                      id: 'saved-1',
+                      name: 'Saved Piece',
+                      updatedAt: DateTime.utc(2026, 3, 23, 12),
+                      score: Score(notes: const [Note(midi: 67)]),
+                    ),
+                  ],
+                ),
+              ),
+              presetScoreRepository: _MemoryPresetScoreRepository(),
+            ),
+            prepare: (harness) => harness.library.loadInitialWorkspace(),
+            replace: (harness) => harness.library.loadSavedScore('saved-1'),
+          ),
+          (
+            name: 'preset score load',
+            buildHarness: () => _LibraryHarness(
+              scoreLibraryRepository: _MemoryScoreLibraryRepository(),
+              presetScoreRepository: _MemoryPresetScoreRepository(
+                presets: [
+                  PresetScoreEntry(
+                    id: 'preset-1',
+                    name: 'Preset Piece',
+                    assetPath: 'assets/presets/preset_piece.json',
+                    score: Score(notes: const [Note(midi: 69)]),
+                  ),
+                ],
+              ),
+            ),
+            prepare: (harness) => harness.library.loadInitialWorkspace(),
+            replace: (harness) => harness.library.loadPresetScore('preset-1'),
+          ),
+          (
+            name: 'document import',
+            buildHarness: () => _LibraryHarness(
+              scoreLibraryRepository: _MemoryScoreLibraryRepository(),
+              presetScoreRepository: _MemoryPresetScoreRepository(),
+            ),
+            prepare: (harness) => harness.library.loadInitialWorkspace(),
+            replace: (harness) => harness.library.importScoreDocument(
+              PortableScoreDocument(
+                version: PortableScoreDocument.currentVersion,
+                name: 'Imported Piece',
+                score: Score(notes: const [Note(midi: 71)]),
+              ),
+            ),
+          ),
+        ];
+
+    for (final scenario in scenarios) {
+      final harness = scenario.buildHarness();
+      addTearDown(harness.dispose);
+
+      await scenario.prepare(harness);
+      _dirtyEditorForReplacement(harness);
+
+      await scenario.replace(harness);
+
+      _expectEditorResetAfterReplacement(harness, reason: scenario.name);
+    }
   });
 
   test(
@@ -603,6 +711,7 @@ class _LibraryHarness {
       session: session,
       audioService: audioService ?? _FakeAudioService(),
     );
+    editor = EditorController(session: session, notePreview: playback);
     library = ScoreLibraryController(
       session: session,
       playback: playback,
@@ -612,6 +721,7 @@ class _LibraryHarness {
 
   final EditableScoreSession session;
   late final PlaybackController playback;
+  late final EditorController editor;
   late final ScoreLibraryController library;
   final DefaultWorkspaceRepository workspaceRepository;
 
@@ -626,10 +736,52 @@ class _LibraryHarness {
   }
 
   void dispose() {
+    editor.dispose();
     library.dispose();
     playback.dispose();
     session.dispose();
   }
+}
+
+void _dirtyEditorForReplacement(_LibraryHarness harness) {
+  final editor = harness.editor;
+  editor.setDuration(NoteDuration.half);
+  editor.toggleDottedMode();
+  editor.toggleSlurMode();
+  editor.toggleTripletMode();
+  harness.session.score.notes
+    ..clear()
+    ..addAll(const [
+      Note(midi: 60, duration: NoteDuration.quarter),
+      Note(midi: 62, duration: NoteDuration.quarter),
+    ]);
+  editor.selectNote(1);
+
+  expect(editor.selectionKind, SelectionKind.note);
+  expect(editor.selectedIndex, 1);
+  expect(editor.currentDuration, NoteDuration.half);
+  expect(editor.dottedMode, isTrue);
+  expect(editor.slurMode, isTrue);
+  expect(editor.tripletMode, isTrue);
+}
+
+void _expectEditorResetAfterReplacement(
+  _LibraryHarness harness, {
+  required String reason,
+}) {
+  final editor = harness.editor;
+  expect(editor.selectionKind, isNull, reason: reason);
+  expect(editor.selectedIndex, isNull, reason: reason);
+  expect(editor.selectedNote, isNull, reason: reason);
+  expect(
+    editor.cursorIndex,
+    harness.session.score.notes.length,
+    reason: reason,
+  );
+  expect(editor.currentDuration, NoteDuration.quarter, reason: reason);
+  expect(editor.dottedMode, isFalse, reason: reason);
+  expect(editor.slurMode, isFalse, reason: reason);
+  expect(editor.tripletMode, isFalse, reason: reason);
 }
 
 class _MemoryScoreLibraryRepository implements ScoreLibraryRepository {
