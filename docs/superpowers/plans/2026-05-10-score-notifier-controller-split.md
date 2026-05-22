@@ -1564,7 +1564,7 @@ git commit -m "test: migrate workspace harnesses to controllers"
 - Create: `test/tooling/no_score_notifier_usage_test.dart`
 - Modify: any remaining file reported by `rg "score_notifier|ScoreNotifier" lib test`
 
-- [ ] **Step 1: Add failing guard test**
+- [x] **Step 1: Add failing guard test**
 
 Create `test/tooling/no_score_notifier_usage_test.dart`:
 
@@ -1602,7 +1602,7 @@ void main() {
 }
 ```
 
-- [ ] **Step 2: Run guard test and inspect offenders**
+- [x] **Step 2: Run guard test and inspect offenders**
 
 Run:
 
@@ -1613,7 +1613,7 @@ rg -n "score_notifier|ScoreNotifier" lib test
 
 Expected: guard fails and `rg` lists remaining references.
 
-- [ ] **Step 3: Remove remaining references**
+- [x] **Step 3: Remove remaining references**
 
 For every `rg` hit:
 
@@ -1630,7 +1630,7 @@ Then delete the old file:
 git rm lib/state/score_notifier.dart
 ```
 
-- [ ] **Step 4: Run guard and focused state tests**
+- [x] **Step 4: Run guard and focused state tests**
 
 Run:
 
@@ -1640,7 +1640,7 @@ flutter test test/tooling/no_score_notifier_usage_test.dart test/state/editable_
 
 Expected: pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add test/tooling/no_score_notifier_usage_test.dart
