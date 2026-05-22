@@ -1655,7 +1655,7 @@ git commit -m "refactor: remove score notifier"
 **Files:**
 - No planned source changes unless verification exposes a concrete defect.
 
-- [ ] **Step 1: Run analyzer**
+- [x] **Step 1: Run analyzer**
 
 Run:
 
@@ -1665,7 +1665,7 @@ flutter analyze
 
 Expected: no analyzer errors.
 
-- [ ] **Step 2: Run all automated tests**
+- [x] **Step 2: Run all automated tests**
 
 Run:
 
@@ -1675,7 +1675,7 @@ flutter test
 
 Expected: all tests pass.
 
-- [ ] **Step 3: Run web app for manual smoke testing**
+- [x] **Step 3: Run web app for manual smoke testing**
 
 Run:
 
@@ -1696,7 +1696,7 @@ Manual checks:
 - switch to rhythm test with a non-empty score
 - return to editor and confirm playback still works
 
-- [ ] **Step 4: Commit verification fixes if any**
+- [x] **Step 4: Commit verification fixes if any**
 
 If verification required code fixes:
 
