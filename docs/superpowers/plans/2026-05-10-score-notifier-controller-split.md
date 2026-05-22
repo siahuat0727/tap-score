@@ -1455,7 +1455,7 @@ git commit -m "refactor: migrate score widgets to controllers"
 - Modify: `test/app/navigation_flow_test.dart`
 - Modify: any test listed by `rg "ScoreNotifier" test`
 
-- [ ] **Step 1: Replace broad test harness constructors**
+- [x] **Step 1: Replace broad test harness constructors**
 
 In `test/widget_test.dart`, replace helpers that return or accept `ScoreNotifier` with harness objects:
 
@@ -1520,7 +1520,7 @@ Widget wrap(Widget child) {
 }
 ```
 
-- [ ] **Step 2: Update navigation flow tests**
+- [x] **Step 2: Update navigation flow tests**
 
 In `test/app/navigation_flow_test.dart`, replace provider reads:
 
@@ -1538,7 +1538,7 @@ final library = Provider.of<ScoreLibraryController>(context, listen: false);
 
 Route assertions about score contents through `session.score`, editor actions through `editor`, and save/load/library assertions through `library`.
 
-- [ ] **Step 3: Run broad tests**
+- [x] **Step 3: Run broad tests**
 
 Run:
 
@@ -1548,7 +1548,7 @@ flutter test test/widget_test.dart test/app/navigation_flow_test.dart
 
 Expected: pass after all broad harnesses use the new providers.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add test/widget_test.dart test/app/navigation_flow_test.dart
