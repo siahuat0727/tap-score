@@ -12,7 +12,6 @@ import '../state/editable_score_session.dart';
 import '../state/editor_controller.dart';
 import '../state/playback_controller.dart';
 import '../state/score_library_controller.dart';
-import '../state/score_notifier.dart';
 import '../workspace/workspace_repository.dart';
 import 'workspace_launch_config.dart';
 
@@ -294,14 +293,6 @@ class _WorkspaceControllerScope extends StatelessWidget {
             session: context.read<EditableScoreSession>(),
             playback: context.read<PlaybackController>(),
             workspaceRepository: workspaceRepository,
-          ),
-        ),
-        ChangeNotifierProvider(
-          create: (context) => ScoreNotifier.compatibility(
-            session: context.read<EditableScoreSession>(),
-            playback: context.read<PlaybackController>(),
-            editor: context.read<EditorController>(),
-            library: context.read<ScoreLibraryController>(),
           ),
         ),
       ],
