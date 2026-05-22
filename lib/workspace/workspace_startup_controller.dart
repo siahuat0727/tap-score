@@ -7,7 +7,6 @@ import '../app/score_seed_config.dart';
 import '../app/workspace_launch_config.dart';
 import '../services/audio_service.dart';
 import '../state/editable_score_session.dart';
-import '../state/editor_controller.dart';
 import '../state/playback_controller.dart';
 import '../state/rhythm_test_notifier.dart';
 import '../state/score_library_controller.dart';
@@ -210,7 +209,6 @@ String audioLabelForPhase(
 class WorkspaceStartupController extends ChangeNotifier {
   WorkspaceStartupController({
     required EditableScoreSession session,
-    required EditorController editorController,
     required PlaybackController playbackController,
     required ScoreLibraryController scoreLibraryController,
     required WorkspaceLaunchConfig launchConfig,
@@ -219,7 +217,6 @@ class WorkspaceStartupController extends ChangeNotifier {
     AudioService? rhythmTestAudioService,
     Duration rhythmTestAudioTimeout = const Duration(seconds: 12),
   }) : _session = session,
-       _editorController = editorController,
        _playbackController = playbackController,
        _scoreLibraryController = scoreLibraryController,
        _launchConfig = launchConfig,
@@ -230,7 +227,6 @@ class WorkspaceStartupController extends ChangeNotifier {
        _state = WorkspaceStartupState.initial(launchConfig);
 
   final EditableScoreSession _session;
-  final EditorController _editorController;
   final PlaybackController _playbackController;
   final ScoreLibraryController _scoreLibraryController;
   final WorkspaceLaunchConfig _launchConfig;
@@ -278,7 +274,6 @@ class WorkspaceStartupController extends ChangeNotifier {
       return;
     }
 
-    _editorController.resetForScore();
     _configureBodyAfterWorkspaceLoad();
     if (!_isActivePass(pass)) {
       return;

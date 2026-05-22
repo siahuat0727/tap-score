@@ -3,6 +3,17 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('usage detector catches lowercase score_notifier references', () {
+    expect(
+      _containsScoreNotifierUsage("import 'legacy/score_notifier.dart';"),
+      isTrue,
+    );
+    expect(
+      _containsScoreNotifierUsage('final key = "score_notifier";'),
+      isTrue,
+    );
+  });
+
   test('ScoreNotifier is not used by app or tests', () {
     expect(File('lib/state/score_notifier.dart').existsSync(), isFalse);
 
@@ -21,8 +32,7 @@ void main() {
           continue;
         }
         final contents = entity.readAsStringSync();
-        if (contents.contains('ScoreNotifier') ||
-            contents.contains('score_notifier.dart')) {
+        if (_containsScoreNotifierUsage(contents)) {
           offenders.add(entity.path);
         }
       }
@@ -30,4 +40,9 @@ void main() {
 
     expect(offenders, isEmpty);
   });
+}
+
+bool _containsScoreNotifierUsage(String contents) {
+  return contents.contains('ScoreNotifier') ||
+      contents.contains('score_notifier');
 }

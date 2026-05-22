@@ -19,6 +19,7 @@ class EditableScoreSession extends ChangeNotifier {
   late WorkspaceSession _workspace;
   bool _hasUnsavedChanges = false;
   final List<VoidCallback> _scoreChangedListeners = [];
+  final List<VoidCallback> _scoreReplacedListeners = [];
 
   WorkspaceSession get workspace => _workspace;
 
@@ -64,6 +65,14 @@ class EditableScoreSession extends ChangeNotifier {
     _scoreChangedListeners.remove(listener);
   }
 
+  void addScoreReplacedListener(VoidCallback listener) {
+    _scoreReplacedListeners.add(listener);
+  }
+
+  void removeScoreReplacedListener(VoidCallback listener) {
+    _scoreReplacedListeners.remove(listener);
+  }
+
   void replaceWorkspace(
     WorkspaceSession workspace, {
     required bool replaceScore,
@@ -90,6 +99,9 @@ class EditableScoreSession extends ChangeNotifier {
     score.clef = source.clef;
     score.keySignature = source.keySignature;
     _hasUnsavedChanges = _computeHasUnsavedChanges(score);
+    for (final listener in List<VoidCallback>.from(_scoreReplacedListeners)) {
+      listener();
+    }
     if (notify) {
       notifyListeners();
     }
@@ -110,6 +122,7 @@ class EditableScoreSession extends ChangeNotifier {
   @override
   void dispose() {
     _scoreChangedListeners.clear();
+    _scoreReplacedListeners.clear();
     super.dispose();
   }
 }

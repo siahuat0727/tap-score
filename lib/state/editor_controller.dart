@@ -20,6 +20,7 @@ class EditorController extends ChangeNotifier {
     required PlaybackController notePreview,
   }) : _session = session,
        _notePreview = notePreview {
+    _session.addScoreReplacedListener(_handleScoreReplaced);
     _syncNextTripletGroupId();
   }
 
@@ -193,6 +194,10 @@ class EditorController extends ChangeNotifier {
     _tripletMode = false;
     _syncNextTripletGroupId();
     notifyListeners();
+  }
+
+  void _handleScoreReplaced() {
+    resetForScore();
   }
 
   /// Set the active duration for future input, or edit the selected note/rest.
@@ -998,5 +1003,11 @@ class EditorController extends ChangeNotifier {
       }
     }
     _nextTripletGroupId = maxTripletGroupId + 1;
+  }
+
+  @override
+  void dispose() {
+    _session.removeScoreReplacedListener(_handleScoreReplaced);
+    super.dispose();
   }
 }

@@ -69,7 +69,6 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     }
     _startupController = WorkspaceStartupController(
       session: context.read<EditableScoreSession>(),
-      editorController: context.read<EditorController>(),
       playbackController: context.read<PlaybackController>(),
       scoreLibraryController: context.read<ScoreLibraryController>(),
       launchConfig: widget.launchConfig,

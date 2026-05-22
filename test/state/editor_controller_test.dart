@@ -3,6 +3,7 @@ import 'package:tap_score/input/editor_shortcuts.dart';
 import 'package:tap_score/models/enums.dart';
 import 'package:tap_score/models/key_signature.dart';
 import 'package:tap_score/models/note.dart';
+import 'package:tap_score/models/score.dart';
 import 'package:tap_score/services/audio_service.dart';
 import 'package:tap_score/state/editable_score_session.dart';
 import 'package:tap_score/state/editor_controller.dart';
@@ -103,6 +104,36 @@ void main() {
     expect(sessionNotifications, 0);
     expect(editorNotifications, 1);
     expect(harness.session.hasUnsavedChanges, isFalse);
+  });
+
+  test('score replacement resets editor selection and input state', () {
+    final harness = buildEditorHarness();
+    addTearDown(harness.dispose);
+    final editor = harness.editor;
+    final session = harness.session;
+
+    editor.setDuration(NoteDuration.half);
+    editor.toggleDottedMode();
+    editor.toggleSlurMode();
+    editor.toggleTripletMode();
+    session.score.notes.addAll([
+      const Note(midi: 60, duration: NoteDuration.quarter),
+      const Note(midi: 62, duration: NoteDuration.quarter),
+    ]);
+    editor.selectNote(1);
+
+    session.replaceScore(
+      Score(notes: const [Note(midi: 67, duration: NoteDuration.quarter)]),
+    );
+
+    expect(editor.selectionKind, isNull);
+    expect(editor.selectedIndex, isNull);
+    expect(editor.selectedNote, isNull);
+    expect(editor.cursorIndex, 1);
+    expect(editor.currentDuration, NoteDuration.quarter);
+    expect(editor.dottedMode, isFalse);
+    expect(editor.slurMode, isFalse);
+    expect(editor.tripletMode, isFalse);
   });
 
   test('inserting a pitched note previews that midi', () {
