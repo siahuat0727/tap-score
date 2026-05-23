@@ -10,7 +10,8 @@ import 'package:tap_score/screens/workspace_screen.dart';
 import 'package:tap_score/services/audio_service.dart';
 import 'package:tap_score/services/preset_score_repository.dart';
 import 'package:tap_score/services/score_library_repository.dart';
-import 'package:tap_score/state/score_notifier.dart';
+import 'package:tap_score/state/editable_score_session.dart';
+import 'package:tap_score/state/score_library_controller.dart';
 import 'package:webview_flutter_platform_interface/webview_flutter_platform_interface.dart';
 
 import '../helpers/fake_webview_platform.dart';
@@ -43,9 +44,10 @@ void main() {
     expect(find.byKey(const ValueKey('workspace-home-button')), findsOneWidget);
 
     final context = tester.element(find.byType(WorkspaceScreen));
-    final notifier = Provider.of<ScoreNotifier>(context, listen: false);
-    expect(notifier.activePresetId, isNull);
-    expect(notifier.score.notes, isEmpty);
+    final session = Provider.of<EditableScoreSession>(context, listen: false);
+    final library = Provider.of<ScoreLibraryController>(context, listen: false);
+    expect(library.activePresetId, isNull);
+    expect(session.score.notes, isEmpty);
   });
 
   testWidgets('practice opens the same workspace in rhythm test', (
@@ -68,9 +70,9 @@ void main() {
     expect(find.text('Choose Another Preset'), findsNothing);
 
     final context = tester.element(find.byType(WorkspaceScreen));
-    final notifier = Provider.of<ScoreNotifier>(context, listen: false);
-    expect(notifier.activePresetId, 'preset-1');
-    expect(notifier.currentScoreLabel, 'Triplet Study');
+    final library = Provider.of<ScoreLibraryController>(context, listen: false);
+    expect(library.activePresetId, 'preset-1');
+    expect(library.currentScoreLabel, 'Triplet Study');
   });
 
   testWidgets('mode switch works both directions and keeps the same preset', (
@@ -93,9 +95,9 @@ void main() {
     expect(find.byKey(const ValueKey('rhythm-test-primary')), findsNothing);
 
     final context = tester.element(find.byType(WorkspaceScreen));
-    final notifier = Provider.of<ScoreNotifier>(context, listen: false);
-    expect(notifier.activePresetId, 'preset-1');
-    expect(notifier.currentScoreLabel, 'Triplet Study');
+    final library = Provider.of<ScoreLibraryController>(context, listen: false);
+    expect(library.activePresetId, 'preset-1');
+    expect(library.currentScoreLabel, 'Triplet Study');
 
     await tester.tap(find.byKey(const ValueKey('workspace-mode-rhythm-test')));
     await _pumpWorkspaceInteractive(tester);

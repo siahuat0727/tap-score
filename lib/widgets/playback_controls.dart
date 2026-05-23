@@ -1,18 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../state/score_notifier.dart';
+import '../state/editable_score_session.dart';
+import '../state/editor_controller.dart';
 import '../theme/app_colors.dart';
 import 'signature_pickers.dart';
 
 class ComposeTempoChip extends StatelessWidget {
-  const ComposeTempoChip({required this.bpm, required this.enabled, super.key});
+  const ComposeTempoChip({required this.enabled, super.key});
 
-  final double bpm;
   final bool enabled;
 
   @override
   Widget build(BuildContext context) {
+    final bpm = context.select<EditableScoreSession, double>(
+      (session) => session.score.bpm,
+    );
     return CapsuleActionButton(
       onTap: enabled ? () => _showTempoSheet(context) : null,
       icon: Icons.speed_rounded,
@@ -21,71 +24,78 @@ class ComposeTempoChip extends StatelessWidget {
   }
 
   void _showTempoSheet(BuildContext context) {
+    final session = context.read<EditableScoreSession>();
+    final editor = context.read<EditorController>();
     showModalBottomSheet<void>(
       context: context,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (ctx) {
+      builder: (ctx) => _TempoSheet(session: session, editor: editor),
+    );
+  }
+}
+
+class _TempoSheet extends StatelessWidget {
+  const _TempoSheet({required this.session, required this.editor});
+
+  final EditableScoreSession session;
+  final EditorController editor;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: session,
+      builder: (context, _) {
         return Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-          child: Consumer<ScoreNotifier>(
-            builder: (context, notifier, _) {
-              return Column(
-                mainAxisSize: MainAxisSize.min,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                '♩ = ${session.score.bpm.round()}',
+                style: const TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textMedium,
+                ),
+              ),
+              const SizedBox(height: 16),
+              SliderTheme(
+                data: SliderTheme.of(context).copyWith(
+                  activeTrackColor: AppColors.sliderActive,
+                  inactiveTrackColor: AppColors.sliderInactive,
+                  thumbColor: AppColors.sliderActive,
+                  overlayColor: AppColors.sliderActive.withAlpha(51),
+                  trackHeight: 4,
+                  thumbShape: const RoundSliderThumbShape(
+                    enabledThumbRadius: 10,
+                  ),
+                ),
+                child: Slider(
+                  value: session.score.bpm,
+                  min: 40,
+                  max: 240,
+                  divisions: 200,
+                  label: '${session.score.bpm.round()} BPM',
+                  onChanged: editor.setTempo,
+                ),
+              ),
+              const SizedBox(height: 4),
+              const Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    '♩ = ${notifier.score.bpm.round()}',
-                    style: const TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.textMedium,
-                    ),
+                    '40',
+                    style: TextStyle(fontSize: 12, color: AppColors.textMuted),
                   ),
-                  const SizedBox(height: 16),
-                  SliderTheme(
-                    data: SliderTheme.of(context).copyWith(
-                      activeTrackColor: AppColors.sliderActive,
-                      inactiveTrackColor: AppColors.sliderInactive,
-                      thumbColor: AppColors.sliderActive,
-                      overlayColor: AppColors.sliderActive.withAlpha(51),
-                      trackHeight: 4,
-                      thumbShape: const RoundSliderThumbShape(
-                        enabledThumbRadius: 10,
-                      ),
-                    ),
-                    child: Slider(
-                      value: notifier.score.bpm,
-                      min: 40,
-                      max: 240,
-                      divisions: 200,
-                      label: '${notifier.score.bpm.round()} BPM',
-                      onChanged: notifier.setTempo,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  const Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        '40',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: AppColors.textMuted,
-                        ),
-                      ),
-                      Text(
-                        '240',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: AppColors.textMuted,
-                        ),
-                      ),
-                    ],
+                  Text(
+                    '240',
+                    style: TextStyle(fontSize: 12, color: AppColors.textMuted),
                   ),
                 ],
-              );
-            },
+              ),
+            ],
           ),
         );
       },
@@ -123,7 +133,11 @@ class ComposeTimeSigChip extends StatelessWidget {
   Widget build(BuildContext context) {
     return CapsuleActionButton(
       onTap: () {
-        showTimeSigPicker(context, context.read<ScoreNotifier>());
+        showTimeSigPicker(
+          context,
+          session: context.read<EditableScoreSession>(),
+          editor: context.read<EditorController>(),
+        );
       },
       icon: Icons.music_note_rounded,
       label: '$beatsPerMeasure/$beatUnit',
@@ -140,7 +154,11 @@ class ComposeKeySigChip extends StatelessWidget {
   Widget build(BuildContext context) {
     return CapsuleActionButton(
       onTap: () {
-        showKeySigPicker(context, context.read<ScoreNotifier>());
+        showKeySigPicker(
+          context,
+          session: context.read<EditableScoreSession>(),
+          editor: context.read<EditorController>(),
+        );
       },
       icon: Icons.queue_music_rounded,
       label: label,

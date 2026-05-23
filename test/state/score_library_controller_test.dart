@@ -10,7 +10,11 @@ import 'package:tap_score/models/score_library.dart';
 import 'package:tap_score/services/audio_service.dart';
 import 'package:tap_score/services/preset_score_repository.dart';
 import 'package:tap_score/services/score_library_repository.dart';
-import 'package:tap_score/state/score_notifier.dart';
+import 'package:tap_score/state/editable_score_session.dart';
+import 'package:tap_score/state/editor_controller.dart';
+import 'package:tap_score/state/playback_controller.dart';
+import 'package:tap_score/state/score_library_controller.dart';
+import 'package:tap_score/workspace/workspace_repository.dart';
 
 void main() {
   test(
@@ -36,20 +40,19 @@ void main() {
           activeScoreId: 'saved-1',
         ),
       );
-      final notifier = ScoreNotifier(
-        audioService: _FakeAudioService(),
+      final harness = _LibraryHarness(
         scoreLibraryRepository: repository,
         presetScoreRepository: _MemoryPresetScoreRepository(),
       );
-      addTearDown(notifier.dispose);
+      addTearDown(harness.dispose);
 
-      await notifier.loadInitialWorkspace();
+      await harness.library.loadInitialWorkspace();
 
-      expect(notifier.score.notes.single.midi, 65);
-      expect(notifier.score.bpm, 88);
-      expect(notifier.activeScoreId, 'saved-1');
-      expect(notifier.currentScoreLabel, 'Warmup');
-      expect(notifier.hasUnsavedChanges, isFalse);
+      expect(harness.session.score.notes.single.midi, 65);
+      expect(harness.session.score.bpm, 88);
+      expect(harness.library.activeScoreId, 'saved-1');
+      expect(harness.library.currentScoreLabel, 'Warmup');
+      expect(harness.library.hasUnsavedChanges, isFalse);
     },
   );
 
@@ -57,39 +60,38 @@ void main() {
     'save as new stores multiple named scores and load restores each',
     () async {
       final repository = _MemoryScoreLibraryRepository();
-      final notifier = ScoreNotifier(
-        audioService: _FakeAudioService(),
+      final harness = _LibraryHarness(
         scoreLibraryRepository: repository,
         presetScoreRepository: _MemoryPresetScoreRepository(),
       );
-      addTearDown(notifier.dispose);
+      addTearDown(harness.dispose);
 
-      await notifier.loadInitialWorkspace();
+      await harness.library.loadInitialWorkspace();
 
-      notifier.insertPitchedNote(60);
-      await notifier.saveCurrentScore('First');
+      harness.insertPitchedNote(60);
+      await harness.library.saveCurrentScore('First');
 
-      notifier.setTempo(144);
-      await notifier.saveCurrentScore('Second', createNew: true);
+      harness.setTempo(144);
+      await harness.library.saveCurrentScore('Second', createNew: true);
 
-      expect(notifier.savedScores, hasLength(2));
-      final first = notifier.savedScores.firstWhere(
+      expect(harness.library.savedScores, hasLength(2));
+      final first = harness.library.savedScores.firstWhere(
         (entry) => entry.name == 'First',
       );
-      final second = notifier.savedScores.firstWhere(
+      final second = harness.library.savedScores.firstWhere(
         (entry) => entry.name == 'Second',
       );
       expect(first.id, isNot(second.id));
 
-      await notifier.loadSavedScore(first.id);
-      expect(notifier.score.bpm, 120);
-      expect(notifier.activeScoreId, first.id);
-      expect(notifier.currentScoreLabel, 'First');
+      await harness.library.loadSavedScore(first.id);
+      expect(harness.session.score.bpm, 120);
+      expect(harness.library.activeScoreId, first.id);
+      expect(harness.library.currentScoreLabel, 'First');
 
-      await notifier.loadSavedScore(second.id);
-      expect(notifier.score.bpm, 144);
-      expect(notifier.activeScoreId, second.id);
-      expect(notifier.currentScoreLabel, 'Second');
+      await harness.library.loadSavedScore(second.id);
+      expect(harness.session.score.bpm, 144);
+      expect(harness.library.activeScoreId, second.id);
+      expect(harness.library.currentScoreLabel, 'Second');
     },
   );
 
@@ -114,52 +116,90 @@ void main() {
         activeScoreId: 'saved-1',
       ),
     );
-    final notifier = ScoreNotifier(
-      audioService: _FakeAudioService(),
+    final harness = _LibraryHarness(
       scoreLibraryRepository: repository,
       presetScoreRepository: _MemoryPresetScoreRepository(),
     );
-    addTearDown(notifier.dispose);
+    addTearDown(harness.dispose);
 
-    await notifier.loadInitialWorkspace();
+    await harness.library.loadInitialWorkspace();
 
-    expect(notifier.referenceBpm, 88);
+    expect(harness.session.referenceBpm, 88);
 
-    notifier.setTempo(120);
+    harness.setTempo(120);
 
-    expect(notifier.score.bpm, 120);
-    expect(notifier.referenceBpm, 88);
+    expect(harness.session.score.bpm, 120);
+    expect(harness.session.referenceBpm, 88);
+  });
+
+  test('score changes notify library listeners for unsaved state', () async {
+    final harness = _LibraryHarness(
+      scoreLibraryRepository: _MemoryScoreLibraryRepository(),
+      presetScoreRepository: _MemoryPresetScoreRepository(),
+    );
+    addTearDown(harness.dispose);
+
+    await harness.library.loadInitialWorkspace();
+
+    var listenerCalls = 0;
+    harness.library.addListener(() {
+      listenerCalls += 1;
+    });
+
+    harness.insertPitchedNote(64);
+
+    expect(listenerCalls, 1);
+    expect(harness.library.hasUnsavedChanges, isTrue);
+  });
+
+  test('loadInitialWorkspace does not notify after dispose', () async {
+    final repository = _ControlledLoadScoreLibraryRepository();
+    final harness = _LibraryHarness(
+      scoreLibraryRepository: repository,
+      presetScoreRepository: _MemoryPresetScoreRepository(),
+    );
+
+    final load = harness.library.loadInitialWorkspace();
+    await Future<void>.delayed(Duration.zero);
+
+    harness.dispose();
+    repository.completeLoad(
+      ScoreLibrarySnapshot(
+        draft: Score(notes: const [Note(midi: 60)]),
+        savedScores: const [],
+      ),
+    );
+
+    await load;
   });
 
   test(
     'delete clears the active saved reference when removing the current score',
     () async {
       final repository = _MemoryScoreLibraryRepository();
-      final notifier = ScoreNotifier(
-        audioService: _FakeAudioService(),
+      final harness = _LibraryHarness(
         scoreLibraryRepository: repository,
         presetScoreRepository: _MemoryPresetScoreRepository(),
       );
-      addTearDown(notifier.dispose);
+      addTearDown(harness.dispose);
 
-      await notifier.loadInitialWorkspace();
+      await harness.library.loadInitialWorkspace();
 
-      notifier.insertPitchedNote(72);
-      await notifier.saveCurrentScore('Solo');
-      final savedId = notifier.activeScoreId!;
+      harness.insertPitchedNote(72);
+      await harness.library.saveCurrentScore('Solo');
+      final savedId = harness.library.activeScoreId!;
 
-      await notifier.deleteSavedScore(savedId);
+      await harness.library.deleteSavedScore(savedId);
 
-      expect(notifier.savedScores, isEmpty);
-      expect(notifier.activeScoreId, isNull);
-      expect(notifier.currentScoreLabel, 'Draft');
-      expect(notifier.hasUnsavedChanges, isFalse);
+      expect(harness.library.savedScores, isEmpty);
+      expect(harness.library.activeScoreId, isNull);
+      expect(harness.library.currentScoreLabel, 'Draft');
+      expect(harness.library.hasUnsavedChanges, isFalse);
     },
   );
 
   test('loadInitialWorkspace loads presets alongside saved scores', () async {
-    final notifier = ScoreNotifier(
-      audioService: _FakeAudioService(),
+    final harness = _LibraryHarness(
       scoreLibraryRepository: _MemoryScoreLibraryRepository(),
       presetScoreRepository: _MemoryPresetScoreRepository(
         presets: [
@@ -172,27 +212,26 @@ void main() {
         ],
       ),
     );
-    addTearDown(notifier.dispose);
+    addTearDown(harness.dispose);
 
-    await notifier.loadInitialWorkspace();
+    await harness.library.loadInitialWorkspace();
 
-    expect(notifier.presetScores, hasLength(1));
-    expect(notifier.presetScores.single.name, 'Warmup');
+    expect(harness.library.presetScores, hasLength(1));
+    expect(harness.library.presetScores.single.name, 'Warmup');
   });
 
   test(
     'imported documents become draft without an active saved score',
     () async {
       final repository = _MemoryScoreLibraryRepository();
-      final notifier = ScoreNotifier(
-        audioService: _FakeAudioService(),
+      final harness = _LibraryHarness(
         scoreLibraryRepository: repository,
         presetScoreRepository: _MemoryPresetScoreRepository(),
       );
-      addTearDown(notifier.dispose);
+      addTearDown(harness.dispose);
 
-      await notifier.loadInitialWorkspace();
-      await notifier.importScoreDocument(
+      await harness.library.loadInitialWorkspace();
+      await harness.library.importScoreDocument(
         PortableScoreDocument(
           version: PortableScoreDocument.currentVersion,
           name: 'Imported Etude',
@@ -203,16 +242,15 @@ void main() {
         ),
       );
 
-      expect(notifier.activeScoreId, isNull);
-      expect(notifier.currentScoreLabel, 'Imported Etude');
-      expect(notifier.hasUnsavedChanges, isFalse);
+      expect(harness.library.activeScoreId, isNull);
+      expect(harness.library.currentScoreLabel, 'Imported Etude');
+      expect(harness.library.hasUnsavedChanges, isFalse);
       expect(repository.snapshot?.draft.bpm, 72);
     },
   );
 
   test('loading a preset does not add it to saved scores', () async {
-    final notifier = ScoreNotifier(
-      audioService: _FakeAudioService(),
+    final harness = _LibraryHarness(
       scoreLibraryRepository: _MemoryScoreLibraryRepository(),
       presetScoreRepository: _MemoryPresetScoreRepository(
         presets: [
@@ -228,15 +266,122 @@ void main() {
         ],
       ),
     );
-    addTearDown(notifier.dispose);
+    addTearDown(harness.dispose);
 
-    await notifier.loadInitialWorkspace();
-    await notifier.loadPresetScore('preset-1');
+    await harness.library.loadInitialWorkspace();
+    await harness.library.loadPresetScore('preset-1');
 
-    expect(notifier.activeScoreId, isNull);
-    expect(notifier.activePresetId, 'preset-1');
-    expect(notifier.savedScores, isEmpty);
-    expect(notifier.currentScoreLabel, 'Triplet Study');
+    expect(harness.library.activeScoreId, isNull);
+    expect(harness.library.activePresetId, 'preset-1');
+    expect(harness.library.savedScores, isEmpty);
+    expect(harness.library.currentScoreLabel, 'Triplet Study');
+  });
+
+  test('public score replacement paths reset attached editor state', () async {
+    final scenarios =
+        <
+          ({
+            String name,
+            _LibraryHarness Function() buildHarness,
+            Future<void> Function(_LibraryHarness harness) prepare,
+            Future<void> Function(_LibraryHarness harness) replace,
+          })
+        >[
+          (
+            name: 'initial workspace load',
+            buildHarness: () => _LibraryHarness(
+              scoreLibraryRepository: _MemoryScoreLibraryRepository(
+                ScoreLibrarySnapshot(
+                  draft: Score(notes: const [Note(midi: 64)]),
+                  savedScores: const [],
+                ),
+              ),
+              presetScoreRepository: _MemoryPresetScoreRepository(),
+            ),
+            prepare: (_) async {},
+            replace: (harness) => harness.library.loadInitialWorkspace(),
+          ),
+          (
+            name: 'draft restore',
+            buildHarness: () => _LibraryHarness(
+              scoreLibraryRepository: _MemoryScoreLibraryRepository(
+                ScoreLibrarySnapshot(
+                  draft: Score(notes: const [Note(midi: 65)]),
+                  savedScores: const [],
+                ),
+              ),
+              presetScoreRepository: _MemoryPresetScoreRepository(),
+            ),
+            prepare: (harness) => harness.library.loadInitialWorkspace(),
+            replace: (harness) => harness.library.restoreDraft(),
+          ),
+          (
+            name: 'saved score load',
+            buildHarness: () => _LibraryHarness(
+              scoreLibraryRepository: _MemoryScoreLibraryRepository(
+                ScoreLibrarySnapshot(
+                  draft: Score(),
+                  savedScores: [
+                    SavedScoreEntry(
+                      id: 'saved-1',
+                      name: 'Saved Piece',
+                      updatedAt: DateTime.utc(2026, 3, 23, 12),
+                      score: Score(notes: const [Note(midi: 67)]),
+                    ),
+                  ],
+                ),
+              ),
+              presetScoreRepository: _MemoryPresetScoreRepository(),
+            ),
+            prepare: (harness) => harness.library.loadInitialWorkspace(),
+            replace: (harness) => harness.library.loadSavedScore('saved-1'),
+          ),
+          (
+            name: 'preset score load',
+            buildHarness: () => _LibraryHarness(
+              scoreLibraryRepository: _MemoryScoreLibraryRepository(),
+              presetScoreRepository: _MemoryPresetScoreRepository(
+                presets: [
+                  PresetScoreEntry(
+                    id: 'preset-1',
+                    name: 'Preset Piece',
+                    assetPath: 'assets/presets/preset_piece.json',
+                    score: Score(notes: const [Note(midi: 69)]),
+                  ),
+                ],
+              ),
+            ),
+            prepare: (harness) => harness.library.loadInitialWorkspace(),
+            replace: (harness) => harness.library.loadPresetScore('preset-1'),
+          ),
+          (
+            name: 'document import',
+            buildHarness: () => _LibraryHarness(
+              scoreLibraryRepository: _MemoryScoreLibraryRepository(),
+              presetScoreRepository: _MemoryPresetScoreRepository(),
+            ),
+            prepare: (harness) => harness.library.loadInitialWorkspace(),
+            replace: (harness) => harness.library.importScoreDocument(
+              PortableScoreDocument(
+                version: PortableScoreDocument.currentVersion,
+                name: 'Imported Piece',
+                score: Score(notes: const [Note(midi: 71)]),
+              ),
+            ),
+          ),
+        ];
+
+    for (final scenario in scenarios) {
+      final harness = scenario.buildHarness();
+      addTearDown(harness.dispose);
+
+      await scenario.prepare(harness);
+      _dirtyEditorForReplacement(harness);
+
+      await scenario.replace(harness);
+
+      _expectEditorResetAfterReplacement(harness, reason: scenario.name);
+    }
   });
 
   test(
@@ -261,22 +406,22 @@ void main() {
         ),
       );
       final audioService = _FakeAudioService();
-      final notifier = ScoreNotifier(
+      final harness = _LibraryHarness(
         audioService: audioService,
         scoreLibraryRepository: repository,
         presetScoreRepository: _MemoryPresetScoreRepository(),
       );
-      addTearDown(notifier.dispose);
+      addTearDown(harness.dispose);
 
-      await notifier.loadInitialWorkspace(
+      await harness.library.loadInitialWorkspace(
         initialScoreConfig: const ScoreSeedConfig.blank(),
       );
 
-      expect(notifier.score.notes, isEmpty);
-      expect(notifier.activeScoreId, isNull);
-      expect(notifier.activePresetId, isNull);
-      expect(notifier.savedScores, hasLength(1));
-      expect(notifier.currentScoreLabel, 'Draft');
+      expect(harness.session.score.notes, isEmpty);
+      expect(harness.library.activeScoreId, isNull);
+      expect(harness.library.activePresetId, isNull);
+      expect(harness.library.savedScores, hasLength(1));
+      expect(harness.library.currentScoreLabel, 'Draft');
       expect(audioService.preloadCalls, 0);
       expect(repository.snapshot?.draft.notes, isEmpty);
     },
@@ -294,33 +439,31 @@ void main() {
           savedScores: const [],
         ),
       );
-      final notifier = ScoreNotifier(
-        audioService: _FakeAudioService(),
+      final harness = _LibraryHarness(
         scoreLibraryRepository: repository,
         presetScoreRepository: _MemoryPresetScoreRepository(),
       );
-      addTearDown(notifier.dispose);
+      addTearDown(harness.dispose);
 
-      await notifier.loadInitialWorkspace(
+      await harness.library.loadInitialWorkspace(
         initialScoreConfig: const ScoreSeedConfig.blank(),
       );
       await Future<void>.delayed(Duration.zero);
 
-      expect(notifier.score.notes, isEmpty);
-      expect(notifier.currentScoreLabel, 'Draft');
+      expect(harness.session.score.notes, isEmpty);
+      expect(harness.library.currentScoreLabel, 'Draft');
       expect(
-        notifier.libraryMessage,
+        harness.library.libraryMessage,
         'Failed to write the local score library.',
       );
-      expect(notifier.libraryMessageIsError, isTrue);
+      expect(harness.library.libraryMessageIsError, isTrue);
     },
   );
 
   test(
     'blank launch falls back to local state when preset loading fails',
     () async {
-      final notifier = ScoreNotifier(
-        audioService: _FakeAudioService(),
+      final harness = _LibraryHarness(
         scoreLibraryRepository: _MemoryScoreLibraryRepository(
           ScoreLibrarySnapshot(
             draft: Score(
@@ -343,15 +486,18 @@ void main() {
         ),
         presetScoreRepository: _ThrowingPresetScoreRepository(),
       );
-      addTearDown(notifier.dispose);
+      addTearDown(harness.dispose);
 
-      await notifier.loadInitialWorkspace();
+      await harness.library.loadInitialWorkspace();
 
-      expect(notifier.score.notes.single.midi, 65);
-      expect(notifier.activeScoreId, 'saved-1');
-      expect(notifier.currentScoreLabel, 'Warmup');
-      expect(notifier.libraryMessage, 'Failed to load preset score manifest.');
-      expect(notifier.libraryMessageIsError, isTrue);
+      expect(harness.session.score.notes.single.midi, 65);
+      expect(harness.library.activeScoreId, 'saved-1');
+      expect(harness.library.currentScoreLabel, 'Warmup');
+      expect(
+        harness.library.libraryMessage,
+        'Failed to load preset score manifest.',
+      );
+      expect(harness.library.libraryMessageIsError, isTrue);
     },
   );
 
@@ -380,7 +526,7 @@ void main() {
         notes: const [Note(midi: 67, duration: NoteDuration.quarter)],
         bpm: 96,
       );
-      final notifier = ScoreNotifier(
+      final harness = _LibraryHarness(
         audioService: audioService,
         scoreLibraryRepository: repository,
         presetScoreRepository: _MemoryPresetScoreRepository(
@@ -394,18 +540,18 @@ void main() {
           ],
         ),
       );
-      addTearDown(notifier.dispose);
+      addTearDown(harness.dispose);
 
-      await notifier.loadInitialWorkspace(
+      await harness.library.loadInitialWorkspace(
         initialScoreConfig: const ScoreSeedConfig.preset('preset-1'),
       );
 
-      expect(notifier.score.notes, hasLength(1));
-      expect(notifier.score.notes.single.midi, 67);
-      expect(notifier.activeScoreId, isNull);
-      expect(notifier.activePresetId, 'preset-1');
-      expect(notifier.savedScores, hasLength(1));
-      expect(notifier.currentScoreLabel, 'Triplet Study');
+      expect(harness.session.score.notes, hasLength(1));
+      expect(harness.session.score.notes.single.midi, 67);
+      expect(harness.library.activeScoreId, isNull);
+      expect(harness.library.activePresetId, 'preset-1');
+      expect(harness.library.savedScores, hasLength(1));
+      expect(harness.library.currentScoreLabel, 'Triplet Study');
       expect(audioService.preloadCalls, 0);
       expect(repository.snapshot?.draft.notes.single.midi, 67);
     },
@@ -427,45 +573,43 @@ void main() {
           ),
         ),
       ]);
-      final notifier = ScoreNotifier(
-        audioService: _FakeAudioService(),
+      final harness = _LibraryHarness(
         scoreLibraryRepository: repository,
         presetScoreRepository: _MemoryPresetScoreRepository(),
       );
-      addTearDown(notifier.dispose);
+      addTearDown(harness.dispose);
 
-      await notifier.loadInitialWorkspace();
+      await harness.library.loadInitialWorkspace();
 
       expect(repository.loadCalls, 1);
-      expect(notifier.initialWorkspaceLoadComplete, isTrue);
-      expect(notifier.initialWorkspaceLoadSucceeded, isFalse);
-      expect(notifier.libraryMessage, 'First load failed.');
-      expect(notifier.libraryMessageIsError, isTrue);
+      expect(harness.library.initialWorkspaceLoadComplete, isTrue);
+      expect(harness.library.initialWorkspaceLoadSucceeded, isFalse);
+      expect(harness.library.libraryMessage, 'First load failed.');
+      expect(harness.library.libraryMessageIsError, isTrue);
 
-      await notifier.loadInitialWorkspace();
+      await harness.library.loadInitialWorkspace();
 
       expect(repository.loadCalls, 2);
-      expect(notifier.initialWorkspaceLoadComplete, isTrue);
-      expect(notifier.initialWorkspaceLoadSucceeded, isTrue);
-      expect(notifier.score.notes.single.midi, 69);
-      expect(notifier.libraryMessage, isNull);
-      expect(notifier.libraryMessageIsError, isFalse);
+      expect(harness.library.initialWorkspaceLoadComplete, isTrue);
+      expect(harness.library.initialWorkspaceLoadSucceeded, isTrue);
+      expect(harness.session.score.notes.single.midi, 69);
+      expect(harness.library.libraryMessage, isNull);
+      expect(harness.library.libraryMessageIsError, isFalse);
     },
   );
 
   test('loadInitialWorkspace cancels pending draft saves', () async {
     final repository = _CountingSaveScoreLibraryRepository();
-    final notifier = ScoreNotifier(
-      audioService: _FakeAudioService(),
+    final harness = _LibraryHarness(
       scoreLibraryRepository: repository,
       presetScoreRepository: _MemoryPresetScoreRepository(),
     );
-    addTearDown(notifier.dispose);
+    addTearDown(harness.dispose);
 
-    await notifier.loadInitialWorkspace();
+    await harness.library.loadInitialWorkspace();
 
-    notifier.insertPitchedNote(60);
-    await notifier.loadInitialWorkspace();
+    harness.insertPitchedNote(60);
+    await harness.library.loadInitialWorkspace();
     await Future<void>.delayed(const Duration(milliseconds: 300));
 
     expect(repository.saveCalls, 0);
@@ -482,20 +626,19 @@ void main() {
           const ScoreLibraryStorageException('Second load failed.'),
         ),
       ]);
-      final notifier = ScoreNotifier(
-        audioService: _FakeAudioService(),
+      final harness = _LibraryHarness(
         scoreLibraryRepository: repository,
         presetScoreRepository: _MemoryPresetScoreRepository(),
       );
-      addTearDown(notifier.dispose);
+      addTearDown(harness.dispose);
 
-      final firstLoad = notifier.loadInitialWorkspace(
+      final firstLoad = harness.library.loadInitialWorkspace(
         initialScoreConfig: const ScoreSeedConfig.blank(),
       );
       await repository.waitForPendingSave();
 
-      await notifier.loadInitialWorkspace();
-      expect(notifier.libraryMessage, 'Second load failed.');
+      await harness.library.loadInitialWorkspace();
+      expect(harness.library.libraryMessage, 'Second load failed.');
 
       repository.pendingSave!.completeError(
         const ScoreLibraryStorageException('Stale write failed.'),
@@ -503,8 +646,8 @@ void main() {
       await Future<void>.delayed(Duration.zero);
       await firstLoad;
 
-      expect(notifier.libraryMessage, 'Second load failed.');
-      expect(notifier.libraryMessageIsError, isTrue);
+      expect(harness.library.libraryMessage, 'Second load failed.');
+      expect(harness.library.libraryMessageIsError, isTrue);
     },
   );
 
@@ -512,8 +655,7 @@ void main() {
     'newer initial persist cannot be overwritten by stale initial persist',
     () async {
       final repository = _QueuedSaveScoreLibraryRepository();
-      final notifier = ScoreNotifier(
-        audioService: _FakeAudioService(),
+      final harness = _LibraryHarness(
         scoreLibraryRepository: repository,
         presetScoreRepository: _MemoryPresetScoreRepository(
           presets: [
@@ -528,14 +670,14 @@ void main() {
           ],
         ),
       );
-      addTearDown(notifier.dispose);
+      addTearDown(harness.dispose);
 
-      final firstLoad = notifier.loadInitialWorkspace(
+      final firstLoad = harness.library.loadInitialWorkspace(
         initialScoreConfig: const ScoreSeedConfig.blank(),
       );
       await repository.waitForPendingSaveCount(1);
 
-      final secondLoad = notifier.loadInitialWorkspace(
+      final secondLoad = harness.library.loadInitialWorkspace(
         initialScoreConfig: const ScoreSeedConfig.preset('preset-1'),
       );
 
@@ -555,6 +697,93 @@ void main() {
   );
 }
 
+class _LibraryHarness {
+  _LibraryHarness({
+    _FakeAudioService? audioService,
+    required ScoreLibraryRepository scoreLibraryRepository,
+    required PresetScoreRepository presetScoreRepository,
+  }) : session = EditableScoreSession(),
+       workspaceRepository = DefaultWorkspaceRepository(
+         scoreLibraryRepository: scoreLibraryRepository,
+         presetScoreRepository: presetScoreRepository,
+       ) {
+    playback = PlaybackController(
+      session: session,
+      audioService: audioService ?? _FakeAudioService(),
+    );
+    editor = EditorController(session: session, notePreview: playback);
+    library = ScoreLibraryController(
+      session: session,
+      playback: playback,
+      workspaceRepository: workspaceRepository,
+    );
+  }
+
+  final EditableScoreSession session;
+  late final PlaybackController playback;
+  late final EditorController editor;
+  late final ScoreLibraryController library;
+  final DefaultWorkspaceRepository workspaceRepository;
+
+  void insertPitchedNote(int midi) {
+    session.score.addNote(Note(midi: midi, duration: NoteDuration.quarter));
+    session.markScoreChanged();
+  }
+
+  void setTempo(double bpm) {
+    session.score.bpm = bpm;
+    session.markScoreChanged();
+  }
+
+  void dispose() {
+    editor.dispose();
+    library.dispose();
+    playback.dispose();
+    session.dispose();
+  }
+}
+
+void _dirtyEditorForReplacement(_LibraryHarness harness) {
+  final editor = harness.editor;
+  editor.setDuration(NoteDuration.half);
+  editor.toggleDottedMode();
+  editor.toggleSlurMode();
+  editor.toggleTripletMode();
+  harness.session.score.notes
+    ..clear()
+    ..addAll(const [
+      Note(midi: 60, duration: NoteDuration.quarter),
+      Note(midi: 62, duration: NoteDuration.quarter),
+    ]);
+  editor.selectNote(1);
+
+  expect(editor.selectionKind, SelectionKind.note);
+  expect(editor.selectedIndex, 1);
+  expect(editor.currentDuration, NoteDuration.half);
+  expect(editor.dottedMode, isTrue);
+  expect(editor.slurMode, isTrue);
+  expect(editor.tripletMode, isTrue);
+}
+
+void _expectEditorResetAfterReplacement(
+  _LibraryHarness harness, {
+  required String reason,
+}) {
+  final editor = harness.editor;
+  expect(editor.selectionKind, isNull, reason: reason);
+  expect(editor.selectedIndex, isNull, reason: reason);
+  expect(editor.selectedNote, isNull, reason: reason);
+  expect(
+    editor.cursorIndex,
+    harness.session.score.notes.length,
+    reason: reason,
+  );
+  expect(editor.currentDuration, NoteDuration.quarter, reason: reason);
+  expect(editor.dottedMode, isFalse, reason: reason);
+  expect(editor.slurMode, isFalse, reason: reason);
+  expect(editor.tripletMode, isFalse, reason: reason);
+}
+
 class _MemoryScoreLibraryRepository implements ScoreLibraryRepository {
   _MemoryScoreLibraryRepository([this.snapshot]);
 
@@ -566,6 +795,26 @@ class _MemoryScoreLibraryRepository implements ScoreLibraryRepository {
   @override
   Future<void> saveSnapshot(ScoreLibrarySnapshot nextSnapshot) async {
     snapshot = nextSnapshot;
+  }
+}
+
+class _ControlledLoadScoreLibraryRepository implements ScoreLibraryRepository {
+  final Completer<ScoreLibrarySnapshot?> _loadCompleter =
+      Completer<ScoreLibrarySnapshot?>();
+  ScoreLibrarySnapshot? snapshot;
+
+  @override
+  Future<ScoreLibrarySnapshot?> loadSnapshot() {
+    return _loadCompleter.future;
+  }
+
+  @override
+  Future<void> saveSnapshot(ScoreLibrarySnapshot nextSnapshot) async {
+    snapshot = nextSnapshot;
+  }
+
+  void completeLoad(ScoreLibrarySnapshot? snapshot) {
+    _loadCompleter.complete(snapshot);
   }
 }
 

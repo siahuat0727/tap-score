@@ -19,8 +19,11 @@ import 'package:tap_score/services/audio_service.dart';
 import 'package:tap_score/services/preset_score_repository.dart';
 import 'package:tap_score/services/score_library_repository.dart';
 import 'package:tap_score/services/score_transfer_service.dart';
+import 'package:tap_score/state/editable_score_session.dart';
+import 'package:tap_score/state/editor_controller.dart';
+import 'package:tap_score/state/playback_controller.dart';
 import 'package:tap_score/state/rhythm_test_notifier.dart';
-import 'package:tap_score/state/score_notifier.dart';
+import 'package:tap_score/state/score_library_controller.dart';
 import 'package:tap_score/theme/app_colors.dart';
 import 'package:tap_score/widgets/duration_selector.dart';
 import 'package:tap_score/widgets/piano_keyboard.dart';
@@ -71,10 +74,57 @@ Widget _buildScaffoldShell(Widget child, {TargetPlatform? platform}) {
   );
 }
 
-Widget _buildModifierAlignmentGolden() {
-  return ChangeNotifierProvider(
-    create: (_) => ScoreNotifier(),
-    child: MaterialApp(
+class WorkspaceControllerHarness {
+  WorkspaceControllerHarness({
+    WorkspaceRepository? workspaceRepository,
+    AudioService? audioService,
+  }) {
+    session = EditableScoreSession();
+    playback = PlaybackController(
+      session: session,
+      audioService: audioService ?? AudioService(testMode: true),
+    );
+    editor = EditorController(session: session, notePreview: playback);
+    library = ScoreLibraryController(
+      session: session,
+      playback: playback,
+      workspaceRepository:
+          workspaceRepository ??
+          DefaultWorkspaceRepository(
+            scoreLibraryRepository: _WidgetMemoryScoreLibraryRepository(),
+            presetScoreRepository: _WidgetPresetScoreRepository(const []),
+          ),
+    );
+  }
+
+  late final EditableScoreSession session;
+  late final PlaybackController playback;
+  late final EditorController editor;
+  late final ScoreLibraryController library;
+
+  Widget wrap(Widget child) {
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider<EditableScoreSession>.value(value: session),
+        ChangeNotifierProvider<PlaybackController>.value(value: playback),
+        ChangeNotifierProvider<EditorController>.value(value: editor),
+        ChangeNotifierProvider<ScoreLibraryController>.value(value: library),
+      ],
+      child: child,
+    );
+  }
+
+  void dispose() {
+    library.dispose();
+    editor.dispose();
+    playback.dispose();
+    session.dispose();
+  }
+}
+
+Widget _buildModifierAlignmentGolden(WorkspaceControllerHarness harness) {
+  return harness.wrap(
+    MaterialApp(
       theme: _themeForPlatform(TargetPlatform.macOS),
       home: Material(
         color: const Color(0xFFFBF6EE),
@@ -114,14 +164,13 @@ TapScoreApp _buildTestApp({
 }
 
 Widget _buildWorkspace(
-  ScoreNotifier notifier, {
+  WorkspaceControllerHarness harness, {
   WorkspaceLaunchConfig launchConfig = const WorkspaceLaunchConfig.blank(),
   AudioService? rhythmTestAudioService,
   TargetPlatform? platform,
 }) {
-  return ChangeNotifierProvider.value(
-    value: notifier,
-    child: MaterialApp(
+  return harness.wrap(
+    MaterialApp(
       theme: _themeForPlatform(platform),
       home: WorkspaceScreen(
         launchConfig: launchConfig,
@@ -157,11 +206,11 @@ Future<void> _pumpWorkspaceReady(WidgetTester tester) async {
   }
 }
 
-ScoreNotifier _buildInitializedWorkspaceNotifier({
+WorkspaceControllerHarness _buildInitializedWorkspaceHarness({
   Score? score,
   AudioService? audioService,
 }) {
-  return ScoreNotifier(
+  return WorkspaceControllerHarness(
     audioService: audioService,
     workspaceRepository: _ImmediateWorkspaceRepository(
       _workspaceLoadResult(score: score ?? Score()),
@@ -197,7 +246,10 @@ void main() {
     WidgetTester tester,
   ) async {
     final context = await _openBlankWorkspace(tester);
-    final notifier = Provider.of<ScoreNotifier>(context, listen: false);
+    final session = Provider.of<EditableScoreSession>(context, listen: false);
+    final editor = Provider.of<EditorController>(context, listen: false);
+    final playback = Provider.of<PlaybackController>(context, listen: false);
+    final library = Provider.of<ScoreLibraryController>(context, listen: false);
 
     expect(find.byType(WorkspaceScreen), findsOneWidget);
     expect(find.byKey(const ValueKey('workspace-top-bar')), findsOneWidget);
@@ -207,8 +259,16 @@ void main() {
       find.byKey(const ValueKey('workspace-mode-compose')),
       findsOneWidget,
     );
-    expect(notifier.score.notes, isEmpty);
-    expect(notifier.activePresetId, isNull);
+    expect(session.score.notes, isEmpty);
+    expect(library.activePresetId, isNull);
+    expect(editor.cursorIndex, 0);
+    expect(playback.isPlaying, isFalse);
+    expect(library.initialWorkspaceLoadComplete, isTrue);
+
+    editor.insertPitchedNote(60);
+
+    expect(session.score.notes.single.midi, 60);
+    expect(editor.cursorIndex, 1);
   });
 
   testWidgets(
@@ -260,14 +320,14 @@ void main() {
     (WidgetTester tester) async {
       FakeWebViewPlatform.autoDispatchReady = false;
       final loadGate = Completer<WorkspaceLoadResult>();
-      final notifier = ScoreNotifier(
+      final harness = WorkspaceControllerHarness(
         workspaceRepository: _DelayedWorkspaceRepository(loadGate.future),
       );
-      addTearDown(notifier.dispose);
+      addTearDown(harness.dispose);
 
       await tester.pumpWidget(
         _buildWorkspace(
-          notifier,
+          harness,
           launchConfig: const WorkspaceLaunchConfig.restore(
             initialMode: WorkspaceMode.compose,
           ),
@@ -326,12 +386,12 @@ void main() {
         ),
       ),
     ]);
-    final notifier = ScoreNotifier(workspaceRepository: repository);
-    addTearDown(notifier.dispose);
+    final harness = WorkspaceControllerHarness(workspaceRepository: repository);
+    addTearDown(harness.dispose);
 
     await tester.pumpWidget(
       _buildWorkspace(
-        notifier,
+        harness,
         launchConfig: const WorkspaceLaunchConfig.restore(
           initialMode: WorkspaceMode.compose,
         ),
@@ -414,9 +474,12 @@ void main() {
       expect(find.byKey(const ValueKey('rhythm-test-primary')), findsOneWidget);
 
       final context = tester.element(find.byType(WorkspaceScreen));
-      final notifier = Provider.of<ScoreNotifier>(context, listen: false);
-      expect(notifier.activePresetId, 'triplet_study');
-      expect(notifier.currentScoreLabel, 'Triplet Study');
+      final library = Provider.of<ScoreLibraryController>(
+        context,
+        listen: false,
+      );
+      expect(library.activePresetId, 'triplet_study');
+      expect(library.currentScoreLabel, 'Triplet Study');
 
       FakeWebViewPlatform.dispatchPendingReadyMessages();
       await _pumpWorkspaceReady(tester);
@@ -436,7 +499,7 @@ void main() {
   testWidgets(
     'practice startup shows rhythm-test preparation after workspace load',
     (WidgetTester tester) async {
-      final notifier = ScoreNotifier(
+      final harness = WorkspaceControllerHarness(
         workspaceRepository: _ImmediateWorkspaceRepository(
           _workspaceLoadResult(
             score: Score(
@@ -447,11 +510,11 @@ void main() {
         ),
       );
       final audioGate = Completer<bool>();
-      addTearDown(notifier.dispose);
+      addTearDown(harness.dispose);
 
       await tester.pumpWidget(
         _buildWorkspace(
-          notifier,
+          harness,
           launchConfig: WorkspaceLaunchConfig.preset(
             'triplet-study',
             initialMode: WorkspaceMode.rhythmTest,
@@ -486,7 +549,7 @@ void main() {
   testWidgets('practice startup retries audio once before succeeding', (
     WidgetTester tester,
   ) async {
-    final notifier = ScoreNotifier(
+    final harness = WorkspaceControllerHarness(
       workspaceRepository: _ImmediateWorkspaceRepository(
         _workspaceLoadResult(
           score: Score(
@@ -500,11 +563,11 @@ void main() {
       Future<bool>.value(false),
       secondAttempt.future,
     ]);
-    addTearDown(notifier.dispose);
+    addTearDown(harness.dispose);
 
     await tester.pumpWidget(
       _buildWorkspace(
-        notifier,
+        harness,
         launchConfig: const WorkspaceLaunchConfig.restore(
           initialMode: WorkspaceMode.rhythmTest,
         ),
@@ -527,7 +590,7 @@ void main() {
   testWidgets(
     'practice startup exposes manual retry after two failed attempts',
     (WidgetTester tester) async {
-      final notifier = ScoreNotifier(
+      final harness = WorkspaceControllerHarness(
         workspaceRepository: _ImmediateWorkspaceRepository(
           _workspaceLoadResult(
             score: Score(
@@ -541,11 +604,11 @@ void main() {
         Future<bool>.value(false),
         Future<bool>.value(true),
       ]);
-      addTearDown(notifier.dispose);
+      addTearDown(harness.dispose);
 
       await tester.pumpWidget(
         _buildWorkspace(
-          notifier,
+          harness,
           launchConfig: const WorkspaceLaunchConfig.restore(
             initialMode: WorkspaceMode.rhythmTest,
           ),
@@ -575,12 +638,12 @@ void main() {
   testWidgets('workspace keeps file actions in the top bar only', (
     WidgetTester tester,
   ) async {
-    final notifier = _buildInitializedWorkspaceNotifier();
-    addTearDown(notifier.dispose);
+    final harness = _buildInitializedWorkspaceHarness();
+    addTearDown(harness.dispose);
 
     await tester.pumpWidget(
       _buildWorkspace(
-        notifier,
+        harness,
         rhythmTestAudioService: AudioService(testMode: true),
       ),
     );
@@ -601,15 +664,24 @@ void main() {
     expect(saveRect.bottom, lessThan(scoreRect.top));
   });
 
+  test('workspace screen uses split controllers directly', () {
+    final source = File('lib/screens/workspace_screen.dart').readAsStringSync();
+
+    expect(source, contains('EditableScoreSession'));
+    expect(source, contains('EditorController'));
+    expect(source, contains('PlaybackController'));
+    expect(source, contains('ScoreLibraryController'));
+  });
+
   testWidgets(
     'compose mode keeps mode switching in the top bar, not the toolbar',
     (WidgetTester tester) async {
-      final notifier = _buildInitializedWorkspaceNotifier();
-      addTearDown(notifier.dispose);
+      final harness = _buildInitializedWorkspaceHarness();
+      addTearDown(harness.dispose);
 
       await tester.pumpWidget(
         _buildWorkspace(
-          notifier,
+          harness,
           rhythmTestAudioService: AudioService(testMode: true),
         ),
       );
@@ -653,7 +725,7 @@ void main() {
   testWidgets('editor keeps the score readable in compact Chrome viewport', (
     WidgetTester tester,
   ) async {
-    final notifier = ScoreNotifier(
+    final harness = WorkspaceControllerHarness(
       workspaceRepository: _ImmediateWorkspaceRepository(
         _namedWorkspaceLoadResult(
           name: 'Basic 4/4',
@@ -668,7 +740,7 @@ void main() {
         ),
       ),
     );
-    addTearDown(notifier.dispose);
+    addTearDown(harness.dispose);
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(749, 589);
     addTearDown(tester.view.resetPhysicalSize);
@@ -676,7 +748,7 @@ void main() {
 
     await tester.pumpWidget(
       _buildWorkspace(
-        notifier,
+        harness,
         rhythmTestAudioService: AudioService(testMode: true),
       ),
     );
@@ -695,7 +767,7 @@ void main() {
   testWidgets(
     'editor preserves score-first layout in compact mobile viewport',
     (WidgetTester tester) async {
-      final notifier = ScoreNotifier(
+      final harness = WorkspaceControllerHarness(
         workspaceRepository: _ImmediateWorkspaceRepository(
           _namedWorkspaceLoadResult(
             name: 'Compact Etude',
@@ -708,7 +780,7 @@ void main() {
           ),
         ),
       );
-      addTearDown(notifier.dispose);
+      addTearDown(harness.dispose);
       tester.view.devicePixelRatio = 1;
       tester.view.physicalSize = const Size(390, 700);
       addTearDown(tester.view.resetPhysicalSize);
@@ -716,7 +788,7 @@ void main() {
 
       await tester.pumpWidget(
         _buildWorkspace(
-          notifier,
+          harness,
           rhythmTestAudioService: AudioService(testMode: true),
         ),
       );
@@ -737,8 +809,8 @@ void main() {
   testWidgets('compose dock stays reachable in a short viewport', (
     WidgetTester tester,
   ) async {
-    final notifier = _buildInitializedWorkspaceNotifier(score: Score());
-    addTearDown(notifier.dispose);
+    final harness = _buildInitializedWorkspaceHarness(score: Score());
+    addTearDown(harness.dispose);
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(390, 320);
     addTearDown(tester.view.resetPhysicalSize);
@@ -746,7 +818,7 @@ void main() {
 
     await tester.pumpWidget(
       _buildWorkspace(
-        notifier,
+        harness,
         rhythmTestAudioService: AudioService(testMode: true),
       ),
     );
@@ -770,15 +842,15 @@ void main() {
   testWidgets('blank compose workspace shows in-surface empty overlay', (
     WidgetTester tester,
   ) async {
-    final notifier = _buildInitializedWorkspaceNotifier(score: Score());
-    addTearDown(notifier.dispose);
+    final harness = _buildInitializedWorkspaceHarness(score: Score());
+    addTearDown(harness.dispose);
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(1280, 960);
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
     await tester.pumpWidget(
-      _buildWorkspace(notifier, platform: TargetPlatform.macOS),
+      _buildWorkspace(harness, platform: TargetPlatform.macOS),
     );
     await _pumpWorkspaceReady(tester);
 
@@ -790,11 +862,11 @@ void main() {
   testWidgets('empty overlay stays inside the score surface', (
     WidgetTester tester,
   ) async {
-    final notifier = _buildInitializedWorkspaceNotifier(score: Score());
-    addTearDown(notifier.dispose);
+    final harness = _buildInitializedWorkspaceHarness(score: Score());
+    addTearDown(harness.dispose);
 
     await tester.pumpWidget(
-      _buildWorkspace(notifier, platform: TargetPlatform.iOS),
+      _buildWorkspace(harness, platform: TargetPlatform.iOS),
     );
     await _pumpWorkspaceReady(tester);
 
@@ -812,15 +884,15 @@ void main() {
   testWidgets(
     'compose empty overlay disappears after the first inserted note',
     (WidgetTester tester) async {
-      final notifier = _buildInitializedWorkspaceNotifier(score: Score());
-      addTearDown(notifier.dispose);
+      final harness = _buildInitializedWorkspaceHarness(score: Score());
+      addTearDown(harness.dispose);
       tester.view.devicePixelRatio = 1;
       tester.view.physicalSize = const Size(1280, 960);
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
 
       await tester.pumpWidget(
-        _buildWorkspace(notifier, platform: TargetPlatform.macOS),
+        _buildWorkspace(harness, platform: TargetPlatform.macOS),
       );
       await _pumpWorkspaceReady(tester);
 
@@ -832,7 +904,7 @@ void main() {
       final emptyScoreHeight = tester
           .getSize(find.byKey(const ValueKey('score-view-surface')))
           .height;
-      notifier.insertPitchedNote(60);
+      harness.editor.insertPitchedNote(60);
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
 
@@ -848,15 +920,15 @@ void main() {
   testWidgets('phone workspace stacks top bar into two rows', (
     WidgetTester tester,
   ) async {
-    final notifier = _buildInitializedWorkspaceNotifier(score: Score());
-    addTearDown(notifier.dispose);
+    final harness = _buildInitializedWorkspaceHarness(score: Score());
+    addTearDown(harness.dispose);
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(390, 844);
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
     await tester.pumpWidget(
-      _buildWorkspace(notifier, platform: TargetPlatform.android),
+      _buildWorkspace(harness, platform: TargetPlatform.android),
     );
     await _pumpWorkspaceReady(tester);
 
@@ -873,15 +945,15 @@ void main() {
   testWidgets('wide workspace keeps top bar actions on one row', (
     WidgetTester tester,
   ) async {
-    final notifier = _buildInitializedWorkspaceNotifier(score: Score());
-    addTearDown(notifier.dispose);
+    final harness = _buildInitializedWorkspaceHarness(score: Score());
+    addTearDown(harness.dispose);
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(1280, 960);
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
     await tester.pumpWidget(
-      _buildWorkspace(notifier, platform: TargetPlatform.macOS),
+      _buildWorkspace(harness, platform: TargetPlatform.macOS),
     );
     await _pumpWorkspaceReady(tester);
 
@@ -898,14 +970,11 @@ void main() {
   testWidgets('modifier tools use the same baseline-aligned glyph slot', (
     WidgetTester tester,
   ) async {
-    final notifier = ScoreNotifier();
-    addTearDown(notifier.dispose);
+    final harness = WorkspaceControllerHarness();
+    addTearDown(harness.dispose);
 
     await tester.pumpWidget(
-      ChangeNotifierProvider.value(
-        value: notifier,
-        child: MaterialApp(home: Scaffold(body: _buildDurationSelector())),
-      ),
+      harness.wrap(MaterialApp(home: Scaffold(body: _buildDurationSelector()))),
     );
     await tester.pump();
 
@@ -938,7 +1007,10 @@ void main() {
   testWidgets('modifier buttons keep a shared baseline alignment', (
     WidgetTester tester,
   ) async {
-    await tester.pumpWidget(_buildModifierAlignmentGolden());
+    final harness = WorkspaceControllerHarness();
+    addTearDown(harness.dispose);
+
+    await tester.pumpWidget(_buildModifierAlignmentGolden(harness));
     await tester.pumpAndSettle();
 
     await expectLater(
@@ -950,12 +1022,12 @@ void main() {
   testWidgets('library toast floats without shifting toolbar layout', (
     WidgetTester tester,
   ) async {
-    final notifier = _buildInitializedWorkspaceNotifier();
-    addTearDown(notifier.dispose);
+    final harness = _buildInitializedWorkspaceHarness();
+    addTearDown(harness.dispose);
 
     await tester.pumpWidget(
       _buildWorkspace(
-        notifier,
+        harness,
         rhythmTestAudioService: AudioService(testMode: true),
       ),
     );
@@ -965,7 +1037,7 @@ void main() {
       find.byKey(const ValueKey('compose-toolbar')),
     );
 
-    notifier.showLibraryMessage('Loaded "Etude".', isError: false);
+    harness.library.showLibraryMessage('Loaded "Etude".', isError: false);
     await tester.pump();
 
     final after = tester.getRect(find.byKey(const ValueKey('compose-toolbar')));
@@ -985,12 +1057,12 @@ void main() {
   testWidgets('save button emphasizes unsaved changes', (
     WidgetTester tester,
   ) async {
-    final notifier = _buildInitializedWorkspaceNotifier();
-    addTearDown(notifier.dispose);
+    final harness = _buildInitializedWorkspaceHarness();
+    addTearDown(harness.dispose);
 
     await tester.pumpWidget(
       _buildWorkspace(
-        notifier,
+        harness,
         rhythmTestAudioService: AudioService(testMode: true),
       ),
     );
@@ -1003,7 +1075,7 @@ void main() {
       AppColors.surfaceBorder,
     );
 
-    notifier.setTempo(notifier.score.bpm + 1);
+    harness.editor.setTempo(harness.session.score.bpm + 1);
     await tester.pump(const Duration(milliseconds: 200));
 
     expect(
@@ -1019,8 +1091,8 @@ void main() {
   testWidgets('compose screen stays stable on a compact-width viewport', (
     WidgetTester tester,
   ) async {
-    final notifier = _buildInitializedWorkspaceNotifier();
-    addTearDown(notifier.dispose);
+    final harness = _buildInitializedWorkspaceHarness();
+    addTearDown(harness.dispose);
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(390, 960);
     addTearDown(tester.view.resetPhysicalSize);
@@ -1028,7 +1100,7 @@ void main() {
 
     await tester.pumpWidget(
       _buildWorkspace(
-        notifier,
+        harness,
         rhythmTestAudioService: AudioService(testMode: true),
       ),
     );
@@ -1054,8 +1126,8 @@ void main() {
   testWidgets('top-bar actions stay aligned on a wide viewport', (
     WidgetTester tester,
   ) async {
-    final notifier = _buildInitializedWorkspaceNotifier();
-    addTearDown(notifier.dispose);
+    final harness = _buildInitializedWorkspaceHarness();
+    addTearDown(harness.dispose);
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(1280, 960);
     addTearDown(tester.view.resetPhysicalSize);
@@ -1063,7 +1135,7 @@ void main() {
 
     await tester.pumpWidget(
       _buildWorkspace(
-        notifier,
+        harness,
         rhythmTestAudioService: AudioService(testMode: true),
       ),
     );
@@ -1087,7 +1159,7 @@ void main() {
   testWidgets('workspace mode switch works both directions', (
     WidgetTester tester,
   ) async {
-    final notifier = ScoreNotifier(
+    final harness = WorkspaceControllerHarness(
       workspaceRepository: _ImmediateWorkspaceRepository(
         _workspaceLoadResult(
           score: Score(
@@ -1096,11 +1168,11 @@ void main() {
         ),
       ),
     );
-    addTearDown(notifier.dispose);
+    addTearDown(harness.dispose);
 
     await tester.pumpWidget(
       _buildWorkspace(
-        notifier,
+        harness,
         rhythmTestAudioService: AudioService(testMode: true),
       ),
     );
@@ -1143,7 +1215,7 @@ void main() {
   testWidgets('rhythm test stays within a compact viewport', (
     WidgetTester tester,
   ) async {
-    final notifier = ScoreNotifier(
+    final harness = WorkspaceControllerHarness(
       workspaceRepository: _ImmediateWorkspaceRepository(
         _workspaceLoadResult(
           score: Score(
@@ -1152,7 +1224,7 @@ void main() {
         ),
       ),
     );
-    addTearDown(notifier.dispose);
+    addTearDown(harness.dispose);
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(390, 700);
     addTearDown(tester.view.resetPhysicalSize);
@@ -1160,7 +1232,7 @@ void main() {
 
     await tester.pumpWidget(
       _buildWorkspace(
-        notifier,
+        harness,
         rhythmTestAudioService: AudioService(testMode: true),
       ),
     );
@@ -1186,7 +1258,7 @@ void main() {
   testWidgets('rhythm test parameter buttons support fine adjustment', (
     WidgetTester tester,
   ) async {
-    final notifier = ScoreNotifier(
+    final harness = WorkspaceControllerHarness(
       workspaceRepository: _ImmediateWorkspaceRepository(
         _workspaceLoadResult(
           score: Score(
@@ -1195,11 +1267,11 @@ void main() {
         ),
       ),
     );
-    addTearDown(notifier.dispose);
+    addTearDown(harness.dispose);
 
     await tester.pumpWidget(
       _buildWorkspace(
-        notifier,
+        harness,
         rhythmTestAudioService: AudioService(testMode: true),
       ),
     );
@@ -1233,13 +1305,12 @@ void main() {
   testWidgets('duration selector shows rest first and mapped shortcuts', (
     WidgetTester tester,
   ) async {
-    final notifier = ScoreNotifier();
-    addTearDown(notifier.dispose);
+    final harness = WorkspaceControllerHarness();
+    addTearDown(harness.dispose);
 
     await tester.pumpWidget(
-      ChangeNotifierProvider.value(
-        value: notifier,
-        child: _buildScaffoldShell(
+      harness.wrap(
+        _buildScaffoldShell(
           _buildDurationSelector(),
           platform: TargetPlatform.macOS,
         ),
@@ -1256,7 +1327,7 @@ void main() {
     expect(find.text('8'), findsOneWidget);
     expect(find.text('9'), findsOneWidget);
 
-    notifier.handleRestAction();
+    harness.editor.handleRestAction();
     await tester.pump();
 
     expect(
@@ -1272,13 +1343,12 @@ void main() {
   testWidgets('duration selector hides shortcut badges on touch-first', (
     WidgetTester tester,
   ) async {
-    final notifier = ScoreNotifier();
-    addTearDown(notifier.dispose);
+    final harness = WorkspaceControllerHarness();
+    addTearDown(harness.dispose);
 
     await tester.pumpWidget(
-      ChangeNotifierProvider.value(
-        value: notifier,
-        child: _buildScaffoldShell(
+      harness.wrap(
+        _buildScaffoldShell(
           _buildDurationSelector(),
           platform: TargetPlatform.android,
         ),
@@ -1296,15 +1366,13 @@ void main() {
   testWidgets('duration selector reflects the selected rest timing state', (
     WidgetTester tester,
   ) async {
-    final notifier = ScoreNotifier();
-    notifier.score.addNote(const Note.rest(duration: NoteDuration.half));
-    notifier.selectNote(0);
+    final harness = WorkspaceControllerHarness();
+    addTearDown(harness.dispose);
+    harness.session.score.addNote(const Note.rest(duration: NoteDuration.half));
+    harness.editor.selectNote(0);
 
     await tester.pumpWidget(
-      ChangeNotifierProvider.value(
-        value: notifier,
-        child: MaterialApp(home: Scaffold(body: _buildDurationSelector())),
-      ),
+      harness.wrap(MaterialApp(home: Scaffold(body: _buildDurationSelector()))),
     );
 
     expect(
@@ -1388,7 +1456,8 @@ void main() {
     await _pumpWorkspaceReady(tester);
 
     final context = tester.element(find.byType(WorkspaceScreen));
-    final notifier = Provider.of<ScoreNotifier>(context, listen: false);
+    final session = Provider.of<EditableScoreSession>(context, listen: false);
+    final library = Provider.of<ScoreLibraryController>(context, listen: false);
 
     expect(find.byType(WorkspaceScreen), findsOneWidget);
     expect(
@@ -1397,31 +1466,29 @@ void main() {
     );
     expect(find.byKey(const ValueKey('save-score-button')), findsOneWidget);
     expect(find.byKey(const ValueKey('export-score-button')), findsOneWidget);
-    expect(notifier.score.notes.single.midi, 72);
-    expect(notifier.currentScoreLabel, 'Imported Groove');
-    expect(notifier.activePresetId, isNull);
+    expect(session.score.notes.single.midi, 72);
+    expect(library.currentScoreLabel, 'Imported Groove');
+    expect(library.activePresetId, isNull);
   });
 
   testWidgets('duration selector edits the selected note duration', (
     WidgetTester tester,
   ) async {
-    final notifier = ScoreNotifier();
-    notifier.score.addNote(
+    final harness = WorkspaceControllerHarness();
+    addTearDown(harness.dispose);
+    harness.session.score.addNote(
       const Note(midi: 60, duration: NoteDuration.quarter),
     );
-    notifier.selectNote(0);
+    harness.editor.selectNote(0);
 
     await tester.pumpWidget(
-      ChangeNotifierProvider.value(
-        value: notifier,
-        child: MaterialApp(home: Scaffold(body: _buildDurationSelector())),
-      ),
+      harness.wrap(MaterialApp(home: Scaffold(body: _buildDurationSelector()))),
     );
 
     await tester.tap(find.byKey(const ValueKey('duration-half')));
     await tester.pump();
 
-    expect(notifier.score.notes.single.duration, NoteDuration.half);
+    expect(harness.session.score.notes.single.duration, NoteDuration.half);
     expect(
       _borderColor(_buttonDecoration(tester, const ValueKey('duration-half'))),
       const Color(0xFF2196F3),
@@ -1433,19 +1500,17 @@ void main() {
   testWidgets('duration selector highlights a selected valid triplet', (
     WidgetTester tester,
   ) async {
-    final notifier = ScoreNotifier();
-    notifier.score.notes.addAll([
+    final harness = WorkspaceControllerHarness();
+    addTearDown(harness.dispose);
+    harness.session.score.notes.addAll([
       const Note(midi: 60, duration: NoteDuration.quarter, tripletGroupId: 3),
       const Note(midi: 62, duration: NoteDuration.quarter, tripletGroupId: 3),
       const Note(midi: 64, duration: NoteDuration.quarter, tripletGroupId: 3),
     ]);
-    notifier.selectNote(1);
+    harness.editor.selectNote(1);
 
     await tester.pumpWidget(
-      ChangeNotifierProvider.value(
-        value: notifier,
-        child: MaterialApp(home: Scaffold(body: _buildDurationSelector())),
-      ),
+      harness.wrap(MaterialApp(home: Scaffold(body: _buildDurationSelector()))),
     );
 
     expect(
@@ -1459,19 +1524,17 @@ void main() {
   testWidgets('duration selector disables invalid triplet actions', (
     WidgetTester tester,
   ) async {
-    final notifier = ScoreNotifier();
-    notifier.score.notes.addAll([
+    final harness = WorkspaceControllerHarness();
+    addTearDown(harness.dispose);
+    harness.session.score.notes.addAll([
       const Note(midi: 60, duration: NoteDuration.quarter),
       const Note(midi: 62, duration: NoteDuration.half),
       const Note(midi: 64, duration: NoteDuration.quarter),
     ]);
-    notifier.selectNote(0);
+    harness.editor.selectNote(0);
 
     await tester.pumpWidget(
-      ChangeNotifierProvider.value(
-        value: notifier,
-        child: MaterialApp(home: Scaffold(body: _buildDurationSelector())),
-      ),
+      harness.wrap(MaterialApp(home: Scaffold(body: _buildDurationSelector()))),
     );
 
     expect(
@@ -1480,7 +1543,7 @@ void main() {
     );
 
     expect(
-      notifier.score.notes.every((note) => note.tripletGroupId == null),
+      harness.session.score.notes.every((note) => note.tripletGroupId == null),
       isTrue,
     );
 
@@ -1490,18 +1553,18 @@ void main() {
   testWidgets(
     'duration selector disables duration changes for non-final triplet notes',
     (WidgetTester tester) async {
-      final notifier = ScoreNotifier();
-      notifier.score.notes.addAll([
+      final harness = WorkspaceControllerHarness();
+      addTearDown(harness.dispose);
+      harness.session.score.notes.addAll([
         const Note(midi: 60, duration: NoteDuration.eighth, tripletGroupId: 3),
         const Note(midi: 62, duration: NoteDuration.eighth, tripletGroupId: 3),
         const Note(midi: 64, duration: NoteDuration.eighth, tripletGroupId: 3),
       ]);
-      notifier.selectNote(1);
+      harness.editor.selectNote(1);
 
       await tester.pumpWidget(
-        ChangeNotifierProvider.value(
-          value: notifier,
-          child: MaterialApp(home: Scaffold(body: _buildDurationSelector())),
+        harness.wrap(
+          MaterialApp(home: Scaffold(body: _buildDurationSelector())),
         ),
       );
 
@@ -1519,18 +1582,16 @@ void main() {
   testWidgets('duration selector disables slur on a selected rest', (
     WidgetTester tester,
   ) async {
-    final notifier = ScoreNotifier();
-    notifier.score.notes.addAll([
+    final harness = WorkspaceControllerHarness();
+    addTearDown(harness.dispose);
+    harness.session.score.notes.addAll([
       const Note.rest(duration: NoteDuration.quarter),
       const Note(midi: 62, duration: NoteDuration.quarter),
     ]);
-    notifier.selectNote(0);
+    harness.editor.selectNote(0);
 
     await tester.pumpWidget(
-      ChangeNotifierProvider.value(
-        value: notifier,
-        child: MaterialApp(home: Scaffold(body: _buildDurationSelector())),
-      ),
+      harness.wrap(MaterialApp(home: Scaffold(body: _buildDurationSelector()))),
     );
 
     expect(_buttonInkWell(tester, const ValueKey('slur-tool')).onTap, isNull);
@@ -1539,17 +1600,15 @@ void main() {
   testWidgets('duration selector enables delete in end-input mode', (
     WidgetTester tester,
   ) async {
-    final notifier = ScoreNotifier();
-    notifier.score.addNote(
+    final harness = WorkspaceControllerHarness();
+    addTearDown(harness.dispose);
+    harness.session.score.addNote(
       const Note(midi: 60, duration: NoteDuration.quarter),
     );
-    notifier.selectNote(null);
+    harness.editor.selectNote(null);
 
     await tester.pumpWidget(
-      ChangeNotifierProvider.value(
-        value: notifier,
-        child: MaterialApp(home: Scaffold(body: _buildDurationSelector())),
-      ),
+      harness.wrap(MaterialApp(home: Scaffold(body: _buildDurationSelector()))),
     );
 
     expect(
@@ -1561,10 +1620,12 @@ void main() {
   testWidgets('piano keyboard shows expanded hints and shift zones', (
     WidgetTester tester,
   ) async {
+    final harness = WorkspaceControllerHarness();
+    addTearDown(harness.dispose);
+
     await tester.pumpWidget(
-      ChangeNotifierProvider(
-        create: (_) => ScoreNotifier(),
-        child: _buildScaffoldShell(
+      harness.wrap(
+        _buildScaffoldShell(
           const PianoKeyboard(),
           platform: TargetPlatform.macOS,
         ),
@@ -1587,13 +1648,12 @@ void main() {
   testWidgets('piano keyboard hides shortcut hints on touch-first', (
     WidgetTester tester,
   ) async {
-    final notifier = ScoreNotifier();
-    addTearDown(notifier.dispose);
+    final harness = WorkspaceControllerHarness();
+    addTearDown(harness.dispose);
 
     await tester.pumpWidget(
-      ChangeNotifierProvider.value(
-        value: notifier,
-        child: _buildScaffoldShell(
+      harness.wrap(
+        _buildScaffoldShell(
           const PianoKeyboard(),
           platform: TargetPlatform.android,
         ),
@@ -1617,14 +1677,12 @@ void main() {
   testWidgets(
     'keyboard mode toggle is compact and key-signature labels show actual pitch',
     (WidgetTester tester) async {
-      final notifier = ScoreNotifier();
-      notifier.setKeySignature(KeySignature.gMajor);
+      final harness = WorkspaceControllerHarness();
+      addTearDown(harness.dispose);
+      harness.editor.setKeySignature(KeySignature.gMajor);
 
       await tester.pumpWidget(
-        ChangeNotifierProvider.value(
-          value: notifier,
-          child: const MaterialApp(home: Scaffold(body: PianoKeyboard())),
-        ),
+        harness.wrap(const MaterialApp(home: Scaffold(body: PianoKeyboard()))),
       );
 
       final toggleRect = tester.getRect(
@@ -1646,22 +1704,20 @@ void main() {
   testWidgets('piano keyboard toggle and arrow controls update shared state', (
     WidgetTester tester,
   ) async {
-    final notifier = ScoreNotifier();
-    notifier.score.addNote(
+    final harness = WorkspaceControllerHarness();
+    addTearDown(harness.dispose);
+    harness.session.score.addNote(
       const Note(midi: 60, duration: NoteDuration.quarter),
     );
-    notifier.selectKeySig();
+    harness.editor.selectKeySig();
 
     await tester.pumpWidget(
-      ChangeNotifierProvider.value(
-        value: notifier,
-        child: const MaterialApp(home: Scaffold(body: PianoKeyboard())),
-      ),
+      harness.wrap(const MaterialApp(home: Scaffold(body: PianoKeyboard()))),
     );
 
     await tester.tap(find.byKey(const ValueKey('keyboard-mode-toggle')));
     await tester.pump();
-    expect(notifier.keyboardInputMode.name, 'chromatic');
+    expect(harness.editor.keyboardInputMode.name, 'chromatic');
     expect(find.text('Chromatic'), findsOneWidget);
     expect(
       find.descendant(
@@ -1673,47 +1729,45 @@ void main() {
 
     _buttonInkWell(tester, const ValueKey('keyboard-nav-right')).onTap?.call();
     await tester.pump();
-    expect(notifier.selectionKind, SelectionKind.timeSig);
+    expect(harness.editor.selectionKind, SelectionKind.timeSig);
 
     _buttonInkWell(tester, const ValueKey('keyboard-nav-left')).onTap?.call();
     await tester.pump();
-    expect(notifier.selectionKind, SelectionKind.keySig);
+    expect(harness.editor.selectionKind, SelectionKind.keySig);
 
     _buttonInkWell(tester, const ValueKey('keyboard-nav-left')).onTap?.call();
     await tester.pump();
-    expect(notifier.selectionKind, SelectionKind.clef);
+    expect(harness.editor.selectionKind, SelectionKind.clef);
 
     _buttonInkWell(tester, const ValueKey('keyboard-nav-right')).onTap?.call();
     await tester.pump();
-    expect(notifier.selectionKind, SelectionKind.keySig);
+    expect(harness.editor.selectionKind, SelectionKind.keySig);
 
     _buttonInkWell(tester, const ValueKey('keyboard-nav-right')).onTap?.call();
     await tester.pump();
-    expect(notifier.selectionKind, SelectionKind.timeSig);
+    expect(harness.editor.selectionKind, SelectionKind.timeSig);
 
     _buttonInkWell(tester, const ValueKey('keyboard-nav-down')).onTap?.call();
     await tester.pump();
-    expect(notifier.score.beatsPerMeasure, 3);
+    expect(harness.session.score.beatsPerMeasure, 3);
   });
 
   testWidgets('piano taps use real keys instead of q shift hints', (
     WidgetTester tester,
   ) async {
-    final notifier = ScoreNotifier();
+    final harness = WorkspaceControllerHarness();
+    addTearDown(harness.dispose);
 
     await tester.pumpWidget(
-      ChangeNotifierProvider.value(
-        value: notifier,
-        child: const MaterialApp(home: Scaffold(body: PianoKeyboard())),
-      ),
+      harness.wrap(const MaterialApp(home: Scaffold(body: PianoKeyboard()))),
     );
 
     await tester.tap(find.byKey(const ValueKey('piano-white-45')));
     await tester.pump();
 
-    expect(notifier.keyboardOctaveShift, 0);
-    expect(notifier.score.notes, hasLength(1));
-    expect(notifier.score.notes.single.midi, 45);
+    expect(harness.editor.keyboardOctaveShift, 0);
+    expect(harness.session.score.notes, hasLength(1));
+    expect(harness.session.score.notes.single.midi, 45);
 
     await tester.pump(const Duration(milliseconds: 600));
   });
@@ -1721,13 +1775,11 @@ void main() {
   testWidgets('key-signature mode disables direct taps on black keys', (
     WidgetTester tester,
   ) async {
-    final notifier = ScoreNotifier();
+    final harness = WorkspaceControllerHarness();
+    addTearDown(harness.dispose);
 
     await tester.pumpWidget(
-      ChangeNotifierProvider.value(
-        value: notifier,
-        child: const MaterialApp(home: Scaffold(body: PianoKeyboard())),
-      ),
+      harness.wrap(const MaterialApp(home: Scaffold(body: PianoKeyboard()))),
     );
 
     await tester.tap(
@@ -1736,27 +1788,25 @@ void main() {
     );
     await tester.pump();
 
-    expect(notifier.score.notes, isEmpty);
+    expect(harness.session.score.notes, isEmpty);
   });
 
   testWidgets('chromatic mode allows direct taps on black keys', (
     WidgetTester tester,
   ) async {
-    final notifier = ScoreNotifier();
-    notifier.toggleKeyboardInputMode();
+    final harness = WorkspaceControllerHarness();
+    addTearDown(harness.dispose);
+    harness.editor.toggleKeyboardInputMode();
 
     await tester.pumpWidget(
-      ChangeNotifierProvider.value(
-        value: notifier,
-        child: const MaterialApp(home: Scaffold(body: PianoKeyboard())),
-      ),
+      harness.wrap(const MaterialApp(home: Scaffold(body: PianoKeyboard()))),
     );
 
     await tester.tap(find.byKey(const ValueKey('piano-black-61')));
     await tester.pump();
 
-    expect(notifier.score.notes, hasLength(1));
-    expect(notifier.score.notes.single.midi, 61);
+    expect(harness.session.score.notes, hasLength(1));
+    expect(harness.session.score.notes.single.midi, 61);
 
     await tester.pump(const Duration(milliseconds: 600));
   });
@@ -1765,26 +1815,27 @@ void main() {
     WidgetTester tester,
   ) async {
     final context = await _openBlankWorkspace(tester);
-    final notifier = Provider.of<ScoreNotifier>(context, listen: false);
+    final session = Provider.of<EditableScoreSession>(context, listen: false);
+    final editor = Provider.of<EditorController>(context, listen: false);
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.backquote);
     await tester.pump();
-    expect(notifier.restMode, isTrue);
+    expect(editor.restMode, isTrue);
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.digit1);
     await tester.pump();
 
-    expect(notifier.restMode, isFalse);
-    expect(notifier.score.notes, hasLength(1));
-    expect(notifier.score.notes.single.isRest, isTrue);
-    expect(notifier.score.notes.single.duration.name, 'whole');
+    expect(editor.restMode, isFalse);
+    expect(session.score.notes, hasLength(1));
+    expect(session.score.notes.single.isRest, isTrue);
+    expect(session.score.notes.single.duration.name, 'whole');
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.keyD);
     await tester.pump();
 
-    expect(notifier.score.notes, hasLength(2));
-    expect(notifier.score.notes.last.isRest, isFalse);
-    expect(notifier.score.notes.last.midi, 60);
+    expect(session.score.notes, hasLength(2));
+    expect(session.score.notes.last.isRest, isFalse);
+    expect(session.score.notes.last.midi, 60);
 
     await tester.pump(const Duration(milliseconds: 600));
   });
@@ -1792,7 +1843,7 @@ void main() {
   testWidgets('compose mode space behavior is unchanged', (
     WidgetTester tester,
   ) async {
-    final notifier = ScoreNotifier(
+    final harness = WorkspaceControllerHarness(
       audioService: AudioService(testMode: true),
       workspaceRepository: _ImmediateWorkspaceRepository(
         _workspaceLoadResult(
@@ -1802,11 +1853,11 @@ void main() {
         ),
       ),
     );
-    addTearDown(notifier.dispose);
+    addTearDown(harness.dispose);
 
     await tester.pumpWidget(
       _buildWorkspace(
-        notifier,
+        harness,
         rhythmTestAudioService: AudioService(testMode: true),
       ),
     );
@@ -1814,18 +1865,18 @@ void main() {
 
     await tester.sendKeyEvent(LogicalKeyboardKey.space);
     await tester.pump();
-    expect(notifier.isPlaying, isTrue);
+    expect(harness.playback.isPlaying, isTrue);
 
     await tester.sendKeyEvent(LogicalKeyboardKey.space);
     await tester.pump();
-    expect(notifier.isPlaying, isFalse);
+    expect(harness.playback.isPlaying, isFalse);
     await tester.pump(const Duration(milliseconds: 20));
   });
 
   testWidgets('rhythm test space triggers primary action without repeat spam', (
     WidgetTester tester,
   ) async {
-    final notifier = ScoreNotifier(
+    final harness = WorkspaceControllerHarness(
       audioService: AudioService(testMode: true),
       workspaceRepository: _ImmediateWorkspaceRepository(
         _workspaceLoadResult(
@@ -1835,11 +1886,11 @@ void main() {
         ),
       ),
     );
-    addTearDown(notifier.dispose);
+    addTearDown(harness.dispose);
 
     await tester.pumpWidget(
       _buildWorkspace(
-        notifier,
+        harness,
         rhythmTestAudioService: AudioService(testMode: true),
         platform: TargetPlatform.macOS,
       ),
@@ -1884,25 +1935,26 @@ void main() {
     'keyboard shortcuts support thirty-second notes, slurs, and end delete',
     (WidgetTester tester) async {
       final context = await _openBlankWorkspace(tester);
-      final notifier = Provider.of<ScoreNotifier>(context, listen: false);
+      final session = Provider.of<EditableScoreSession>(context, listen: false);
+      final editor = Provider.of<EditorController>(context, listen: false);
 
       await tester.sendKeyDownEvent(LogicalKeyboardKey.digit6);
       await tester.pump();
-      expect(notifier.currentDuration, NoteDuration.thirtySecond);
+      expect(editor.currentDuration, NoteDuration.thirtySecond);
 
       await tester.sendKeyDownEvent(LogicalKeyboardKey.digit8);
       await tester.pump();
-      expect(notifier.slurMode, isTrue);
+      expect(editor.slurMode, isTrue);
 
       await tester.sendKeyDownEvent(LogicalKeyboardKey.keyD);
       await tester.pump();
-      expect(notifier.score.notes.single.duration, NoteDuration.thirtySecond);
-      expect(notifier.score.notes.single.slurToNext, isTrue);
-      expect(notifier.slurMode, isFalse);
+      expect(session.score.notes.single.duration, NoteDuration.thirtySecond);
+      expect(session.score.notes.single.slurToNext, isTrue);
+      expect(editor.slurMode, isFalse);
 
       await tester.sendKeyDownEvent(LogicalKeyboardKey.delete);
       await tester.pump();
-      expect(notifier.score.notes, isEmpty);
+      expect(session.score.notes, isEmpty);
 
       await tester.pump(const Duration(milliseconds: 600));
     },
@@ -1912,37 +1964,38 @@ void main() {
     WidgetTester tester,
   ) async {
     final context = await _openBlankWorkspace(tester);
-    final notifier = Provider.of<ScoreNotifier>(context, listen: false);
+    final session = Provider.of<EditableScoreSession>(context, listen: false);
+    final editor = Provider.of<EditorController>(context, listen: false);
 
     await tester.sendKeyEvent(LogicalKeyboardKey.keyQ);
     await tester.pump();
-    expect(notifier.keyboardOctaveShift, -1);
+    expect(editor.keyboardOctaveShift, -1);
 
     await tester.sendKeyEvent(LogicalKeyboardKey.keyD);
     await tester.pump();
-    expect(notifier.score.notes.single.midi, 48);
+    expect(session.score.notes.single.midi, 48);
 
-    notifier.score.notes.clear();
-    notifier.moveCursor(0);
+    session.score.notes.clear();
+    editor.moveCursor(0);
     await tester.sendKeyEvent(LogicalKeyboardKey.bracketRight);
     await tester.pump();
-    expect(notifier.keyboardOctaveShift, 0);
+    expect(editor.keyboardOctaveShift, 0);
 
-    notifier.setKeySignature(KeySignature.gMajor);
+    editor.setKeySignature(KeySignature.gMajor);
     await tester.sendKeyEvent(LogicalKeyboardKey.keyH);
     await tester.pump();
-    expect(notifier.score.notes.single.midi, 66);
+    expect(session.score.notes.single.midi, 66);
 
-    notifier.score.notes.clear();
-    notifier.moveCursor(0);
+    session.score.notes.clear();
+    editor.moveCursor(0);
 
     await tester.sendKeyEvent(LogicalKeyboardKey.keyE);
     await tester.pump();
-    expect(notifier.keyboardInputMode.name, 'chromatic');
+    expect(editor.keyboardInputMode.name, 'chromatic');
 
     await tester.sendKeyEvent(LogicalKeyboardKey.keyH);
     await tester.pump();
-    expect(notifier.score.notes.single.midi, 65);
+    expect(session.score.notes.single.midi, 65);
 
     await tester.pump(const Duration(milliseconds: 600));
   });
@@ -1951,27 +2004,28 @@ void main() {
     WidgetTester tester,
   ) async {
     final context = await _openBlankWorkspace(tester);
-    final notifier = Provider.of<ScoreNotifier>(context, listen: false);
+    final session = Provider.of<EditableScoreSession>(context, listen: false);
+    final editor = Provider.of<EditorController>(context, listen: false);
 
-    notifier.setClef(Clef.bass);
+    editor.setClef(Clef.bass);
     await tester.pump();
-    expect(notifier.keyboardOctaveShift, 0);
-
-    await tester.sendKeyEvent(LogicalKeyboardKey.bracketRight);
-    await tester.pump();
-    expect(notifier.keyboardOctaveShift, 1);
+    expect(editor.keyboardOctaveShift, 0);
 
     await tester.sendKeyEvent(LogicalKeyboardKey.bracketRight);
     await tester.pump();
-    expect(notifier.keyboardOctaveShift, 2);
+    expect(editor.keyboardOctaveShift, 1);
 
     await tester.sendKeyEvent(LogicalKeyboardKey.bracketRight);
     await tester.pump();
-    expect(notifier.keyboardOctaveShift, 2);
+    expect(editor.keyboardOctaveShift, 2);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.bracketRight);
+    await tester.pump();
+    expect(editor.keyboardOctaveShift, 2);
 
     await tester.sendKeyEvent(LogicalKeyboardKey.keyD);
     await tester.pump();
-    expect(notifier.score.notes.single.midi, 72);
+    expect(session.score.notes.single.midi, 72);
 
     await tester.pump(const Duration(milliseconds: 600));
   });
@@ -1979,7 +2033,7 @@ void main() {
   testWidgets(
     'keyboard shortcuts still resolve a, s, and apostrophe after exiting rhythm test',
     (WidgetTester tester) async {
-      final notifier = ScoreNotifier(
+      final harness = WorkspaceControllerHarness(
         workspaceRepository: _ImmediateWorkspaceRepository(
           _workspaceLoadResult(
             score: Score(
@@ -1988,11 +2042,11 @@ void main() {
           ),
         ),
       );
-      addTearDown(notifier.dispose);
+      addTearDown(harness.dispose);
 
       await tester.pumpWidget(
         _buildWorkspace(
-          notifier,
+          harness,
           rhythmTestAudioService: AudioService(testMode: true),
         ),
       );
@@ -2006,7 +2060,7 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('workspace-mode-compose')));
       await _pumpWorkspaceReady(tester);
 
-      notifier.selectNote(null);
+      harness.editor.selectNote(null);
       await tester.pump();
 
       await tester.sendKeyDownEvent(LogicalKeyboardKey.keyA, character: 'a');
@@ -2016,7 +2070,7 @@ void main() {
       await tester.sendKeyDownEvent(LogicalKeyboardKey.quote, character: '\'');
       await tester.pump();
 
-      expect(notifier.score.notes.map((note) => note.midi).toList(), [
+      expect(harness.session.score.notes.map((note) => note.midi).toList(), [
         60,
         57,
         59,

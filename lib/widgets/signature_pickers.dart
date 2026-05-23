@@ -3,11 +3,16 @@ import 'package:flutter/material.dart';
 import '../models/enums.dart';
 import '../models/key_signature.dart';
 import '../models/score.dart';
-import '../state/score_notifier.dart';
+import '../state/editable_score_session.dart';
+import '../state/editor_controller.dart';
 import '../theme/app_colors.dart';
 
 /// Shows a bottom-sheet picker for selecting a clef.
-void showClefPicker(BuildContext context, ScoreNotifier notifier) {
+void showClefPicker(
+  BuildContext context, {
+  required EditableScoreSession session,
+  required EditorController editor,
+}) {
   showModalBottomSheet<void>(
     context: context,
     shape: const RoundedRectangleBorder(
@@ -31,10 +36,10 @@ void showClefPicker(BuildContext context, ScoreNotifier notifier) {
               spacing: 10,
               runSpacing: 10,
               children: Clef.values.map((clef) {
-                final isCurrent = notifier.score.clef == clef;
+                final isCurrent = session.score.clef == clef;
                 return GestureDetector(
                   onTap: () {
-                    notifier.setClef(clef);
+                    editor.setClef(clef);
                     Navigator.pop(ctx);
                   },
                   child: Container(
@@ -72,7 +77,11 @@ void showClefPicker(BuildContext context, ScoreNotifier notifier) {
 }
 
 /// Shows a bottom-sheet picker for selecting a time signature.
-void showTimeSigPicker(BuildContext context, ScoreNotifier notifier) {
+void showTimeSigPicker(
+  BuildContext context, {
+  required EditableScoreSession session,
+  required EditorController editor,
+}) {
   showModalBottomSheet<void>(
     context: context,
     shape: const RoundedRectangleBorder(
@@ -98,11 +107,11 @@ void showTimeSigPicker(BuildContext context, ScoreNotifier notifier) {
               children: commonTimeSignatures.map((sig) {
                 final (beats, unit) = sig;
                 final isCurrent =
-                    notifier.score.beatsPerMeasure == beats &&
-                    notifier.score.beatUnit == unit;
+                    session.score.beatsPerMeasure == beats &&
+                    session.score.beatUnit == unit;
                 return GestureDetector(
                   onTap: () {
-                    notifier.setTimeSignature(beats, unit);
+                    editor.setTimeSignature(beats, unit);
                     Navigator.pop(ctx);
                   },
                   child: Container(
@@ -166,7 +175,11 @@ void showTimeSigPicker(BuildContext context, ScoreNotifier notifier) {
 }
 
 /// Shows a bottom-sheet picker for selecting a key signature.
-void showKeySigPicker(BuildContext context, ScoreNotifier notifier) {
+void showKeySigPicker(
+  BuildContext context, {
+  required EditableScoreSession session,
+  required EditorController editor,
+}) {
   showModalBottomSheet<void>(
     context: context,
     shape: const RoundedRectangleBorder(
@@ -190,10 +203,10 @@ void showKeySigPicker(BuildContext context, ScoreNotifier notifier) {
               spacing: 8,
               runSpacing: 8,
               children: KeySignature.values.map((key) {
-                final isCurrent = notifier.score.keySignature == key;
+                final isCurrent = session.score.keySignature == key;
                 return GestureDetector(
                   onTap: () {
-                    notifier.setKeySignature(key);
+                    editor.setKeySignature(key);
                     Navigator.pop(ctx);
                   },
                   child: Container(

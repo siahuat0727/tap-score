@@ -6,8 +6,10 @@ import 'package:flutter/widgets.dart' show VoidCallback;
 import '../app/score_seed_config.dart';
 import '../app/workspace_launch_config.dart';
 import '../services/audio_service.dart';
+import '../state/editable_score_session.dart';
+import '../state/playback_controller.dart';
 import '../state/rhythm_test_notifier.dart';
-import '../state/score_notifier.dart';
+import '../state/score_library_controller.dart';
 
 typedef WorkspaceRouteSync =
     void Function(WorkspaceMode mode, String? shareablePresetId);
@@ -206,13 +208,17 @@ String audioLabelForPhase(
 
 class WorkspaceStartupController extends ChangeNotifier {
   WorkspaceStartupController({
-    required ScoreNotifier scoreNotifier,
+    required EditableScoreSession session,
+    required PlaybackController playbackController,
+    required ScoreLibraryController scoreLibraryController,
     required WorkspaceLaunchConfig launchConfig,
     required VoidCallback requestFocus,
     required WorkspaceRouteSync? onRouteSync,
     AudioService? rhythmTestAudioService,
     Duration rhythmTestAudioTimeout = const Duration(seconds: 12),
-  }) : _scoreNotifier = scoreNotifier,
+  }) : _session = session,
+       _playbackController = playbackController,
+       _scoreLibraryController = scoreLibraryController,
        _launchConfig = launchConfig,
        _requestFocus = requestFocus,
        _onRouteSync = onRouteSync,
@@ -220,7 +226,9 @@ class WorkspaceStartupController extends ChangeNotifier {
        _rhythmTestAudioTimeout = rhythmTestAudioTimeout,
        _state = WorkspaceStartupState.initial(launchConfig);
 
-  final ScoreNotifier _scoreNotifier;
+  final EditableScoreSession _session;
+  final PlaybackController _playbackController;
+  final ScoreLibraryController _scoreLibraryController;
   final WorkspaceLaunchConfig _launchConfig;
   final VoidCallback _requestFocus;
   final WorkspaceRouteSync? _onRouteSync;
@@ -249,18 +257,19 @@ class WorkspaceStartupController extends ChangeNotifier {
       ),
     );
 
-    await _scoreNotifier.loadInitialWorkspace(
+    await _scoreLibraryController.loadInitialWorkspace(
       initialScoreConfig: _launchConfig.seedConfig,
     );
     if (!_isActivePass(pass)) {
       return;
     }
 
-    if (!_scoreNotifier.initialWorkspaceLoadSucceeded) {
+    if (!_scoreLibraryController.initialWorkspaceLoadSucceeded) {
       _failStartup(
         kind: WorkspaceStartupFailureKind.workspace,
         message:
-            _scoreNotifier.libraryMessage ?? 'Failed to load the workspace.',
+            _scoreLibraryController.libraryMessage ??
+            'Failed to load the workspace.',
       );
       return;
     }
@@ -312,7 +321,7 @@ class WorkspaceStartupController extends ChangeNotifier {
 
     _configureRhythmTestBody(nextMode: WorkspaceMode.rhythmTest);
     final requiresAudio =
-        _rhythmTestNotifier != null && _scoreNotifier.score.notes.isNotEmpty;
+        _rhythmTestNotifier != null && _session.score.notes.isNotEmpty;
     final requiresRenderer = requiresAudio;
     final pass = ++_startupPass;
     _setState(
@@ -381,16 +390,16 @@ class WorkspaceStartupController extends ChangeNotifier {
       return;
     }
 
-    _scoreNotifier.stop();
-    if (_scoreNotifier.score.notes.isEmpty) {
+    _playbackController.stop();
+    if (_session.score.notes.isEmpty) {
       _disposeRhythmTestNotifier();
       return;
     }
 
     final previousNotifier = _rhythmTestNotifier;
     _rhythmTestNotifier = RhythmTestNotifier(
-      score: _scoreNotifier.score,
-      referenceBpm: _scoreNotifier.referenceBpm,
+      score: _session.score,
+      referenceBpm: _session.referenceBpm,
       audioService: _rhythmTestAudioService,
     );
     previousNotifier?.dispose();
@@ -400,14 +409,14 @@ class WorkspaceStartupController extends ChangeNotifier {
     if (_state.mode == WorkspaceMode.compose) {
       return true;
     }
-    return _rhythmTestNotifier != null && _scoreNotifier.score.notes.isNotEmpty;
+    return _rhythmTestNotifier != null && _session.score.notes.isNotEmpty;
   }
 
   bool _requiresRhythmTestAudioGate() {
     if (_state.mode != WorkspaceMode.rhythmTest) {
       return false;
     }
-    return _rhythmTestNotifier != null && _scoreNotifier.score.notes.isNotEmpty;
+    return _rhythmTestNotifier != null && _session.score.notes.isNotEmpty;
   }
 
   Future<void> _prepareRhythmTestAudio({
@@ -514,10 +523,10 @@ class WorkspaceStartupController extends ChangeNotifier {
   }
 
   String? _shareablePresetId() {
-    if (_scoreNotifier.hasUnsavedChanges) {
+    if (_session.hasUnsavedChanges) {
       return null;
     }
-    return _scoreNotifier.activePresetId;
+    return _session.activePresetId;
   }
 
   void _syncRoute() {

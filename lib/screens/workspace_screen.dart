@@ -9,7 +9,10 @@ import '../app/workspace_launch_config.dart';
 import '../input/editor_shortcuts.dart';
 import '../services/audio_service.dart';
 import '../services/score_transfer_service.dart';
-import '../state/score_notifier.dart';
+import '../state/editable_score_session.dart';
+import '../state/editor_controller.dart';
+import '../state/playback_controller.dart';
+import '../state/score_library_controller.dart';
 import '../theme/app_colors.dart';
 import '../workspace/workspace_layout_profile.dart';
 import '../workspace/workspace_startup_controller.dart';
@@ -65,7 +68,9 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       return;
     }
     _startupController = WorkspaceStartupController(
-      scoreNotifier: context.read<ScoreNotifier>(),
+      session: context.read<EditableScoreSession>(),
+      playbackController: context.read<PlaybackController>(),
+      scoreLibraryController: context.read<ScoreLibraryController>(),
       launchConfig: widget.launchConfig,
       requestFocus: _focusNode.requestFocus,
       onRouteSync: widget.onRouteSync,
@@ -160,22 +165,21 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   }
 
   Future<void> _showSaveDialog() async {
-    final notifier = context.read<ScoreNotifier>();
+    final libraryController = context.read<ScoreLibraryController>();
     await showDialog<void>(
       context: context,
-      builder: (_) => _SaveScoreDialog(notifier: notifier),
+      builder: (_) => _SaveScoreDialog(libraryController: libraryController),
     );
   }
 
   void _handleRhythmTempoChanged(double bpm) {
-    final scoreNotifier = context.read<ScoreNotifier>();
-    scoreNotifier.setTempo(bpm);
+    context.read<EditorController>().setTempo(bpm);
     _startupController.rhythmTestNotifier?.setTempo(bpm);
   }
 
   Future<void> _exportCurrentScore(BuildContext buttonContext) async {
-    final notifier = context.read<ScoreNotifier>();
-    final document = notifier.buildPortableDocument();
+    final libraryController = context.read<ScoreLibraryController>();
+    final document = libraryController.buildPortableDocument();
     final fileName = _buildExportFileName(document.name);
     final box = buttonContext.findRenderObject() as RenderBox?;
     final origin = box == null
@@ -191,11 +195,14 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       if (!mounted) {
         return;
       }
-      notifier.showLibraryMessage('Exported "$fileName".', isError: false);
+      libraryController.showLibraryMessage(
+        'Exported "$fileName".',
+        isError: false,
+      );
     } on ScoreTransferException catch (error) {
-      notifier.showLibraryMessage(error.message, isError: true);
+      libraryController.showLibraryMessage(error.message, isError: true);
     } catch (_) {
-      notifier.showLibraryMessage(
+      libraryController.showLibraryMessage(
         'Failed to export the current score.',
         isError: true,
       );
@@ -223,11 +230,11 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
 
     if (startupState.mode == WorkspaceMode.compose) {
       if (key == ' ' || code == 'Space') {
-        final notifier = context.read<ScoreNotifier>();
-        if (notifier.isPlaying) {
-          notifier.stop();
+        final playback = context.read<PlaybackController>();
+        if (playback.isPlaying) {
+          playback.stop();
         } else {
-          notifier.play();
+          unawaited(playback.play());
         }
         return true;
       }
@@ -262,48 +269,50 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
       return KeyEventResult.ignored;
     }
-    final notifier = context.read<ScoreNotifier>();
+    final session = context.read<EditableScoreSession>();
+    final editor = context.read<EditorController>();
+    final playback = context.read<PlaybackController>();
     final key = event.logicalKey;
     if (key == LogicalKeyboardKey.space) {
-      if (notifier.isPlaying) {
-        notifier.stop();
+      if (playback.isPlaying) {
+        playback.stop();
       } else {
-        notifier.play();
+        unawaited(playback.play());
       }
       return KeyEventResult.handled;
     }
     if (key == LogicalKeyboardKey.arrowLeft) {
-      notifier.moveSelectionLeft();
+      editor.moveSelectionLeft();
       return KeyEventResult.handled;
     }
     if (key == LogicalKeyboardKey.arrowRight) {
-      notifier.moveSelectionRight();
+      editor.moveSelectionRight();
       return KeyEventResult.handled;
     }
     if (key == LogicalKeyboardKey.arrowUp) {
-      notifier.adjustSelection(1);
+      editor.adjustSelection(1);
       return KeyEventResult.handled;
     }
     if (key == LogicalKeyboardKey.arrowDown) {
-      notifier.adjustSelection(-1);
+      editor.adjustSelection(-1);
       return KeyEventResult.handled;
     }
     if (key == LogicalKeyboardKey.delete ||
         key == LogicalKeyboardKey.backspace) {
-      notifier.deleteSelected();
+      editor.deleteSelected();
       return KeyEventResult.handled;
     }
 
     final shortcut = resolveEditorShortcutEvent(
       EditorShortcutEvent(logicalKey: key, character: event.character),
-      inputMode: notifier.keyboardInputMode,
-      octaveShift: notifier.keyboardOctaveShift,
-      clef: notifier.score.clef,
+      inputMode: editor.keyboardInputMode,
+      octaveShift: editor.keyboardOctaveShift,
+      clef: session.score.clef,
     );
     if (shortcut == null) {
       return KeyEventResult.ignored;
     }
-    notifier.handleEditorShortcut(shortcut);
+    editor.handleEditorShortcut(shortcut);
     return KeyEventResult.handled;
   }
 
@@ -326,8 +335,12 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                 );
                 return Stack(
                   children: [
-                    Consumer<ScoreNotifier>(
-                      builder: (context, notifier, _) {
+                    Consumer3<
+                      EditableScoreSession,
+                      PlaybackController,
+                      ScoreLibraryController
+                    >(
+                      builder: (context, session, playback, library, _) {
                         return Column(
                           children: [
                             WorkspaceTopBar(
@@ -338,7 +351,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                                   startupState.ready &&
                                   startupState.mode == WorkspaceMode.compose,
                               isInteractive: startupState.ready,
-                              hasUnsavedChanges: notifier.hasUnsavedChanges,
+                              hasUnsavedChanges: session.hasUnsavedChanges,
                               onGoHome: widget.onGoHome ?? () {},
                               onSelectMode: _switchMode,
                               onSave: _showSaveDialog,
@@ -346,7 +359,9 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                             ),
                             Expanded(
                               child: _buildWorkspaceBody(
-                                notifier,
+                                session,
+                                playback,
+                                library,
                                 layoutProfile,
                                 startupState,
                               ),
@@ -390,7 +405,9 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   }
 
   Widget _buildWorkspaceBody(
-    ScoreNotifier notifier,
+    EditableScoreSession session,
+    PlaybackController playback,
+    ScoreLibraryController library,
     WorkspaceLayoutProfile layoutProfile,
     WorkspaceStartupState startupState,
   ) {
@@ -399,14 +416,15 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     }
 
     if (startupState.mode == WorkspaceMode.compose) {
-      return _buildComposeBody(notifier, layoutProfile, startupState);
+      return _buildComposeBody(session, playback, layoutProfile, startupState);
     }
 
-    return _buildRhythmTestBody(notifier, layoutProfile, startupState);
+    return _buildRhythmTestBody(session, library, layoutProfile, startupState);
   }
 
   Widget _buildComposeBody(
-    ScoreNotifier notifier,
+    EditableScoreSession session,
+    PlaybackController playback,
     WorkspaceLayoutProfile layoutProfile,
     WorkspaceStartupState startupState,
   ) {
@@ -432,7 +450,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                           _handleRendererReady(startupState.rendererSession),
                     ),
                   ),
-                  if (notifier.score.notes.isEmpty)
+                  if (session.score.notes.isEmpty)
                     const Positioned.fill(child: _ComposeEmptySurfaceOverlay()),
                 ],
               ),
@@ -441,7 +459,11 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
             if (bodyLayout.composeDockHeight > 0)
               SizedBox(
                 height: bodyLayout.composeDockHeight,
-                child: _ComposeDock(notifier: notifier, metrics: metrics),
+                child: _ComposeDock(
+                  session: session,
+                  playback: playback,
+                  metrics: metrics,
+                ),
               ),
           ],
         );
@@ -450,16 +472,17 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   }
 
   Widget _buildRhythmTestBody(
-    ScoreNotifier notifier,
+    EditableScoreSession session,
+    ScoreLibraryController library,
     WorkspaceLayoutProfile layoutProfile,
     WorkspaceStartupState startupState,
   ) {
     final rhythmTestNotifier = _startupController.rhythmTestNotifier;
-    if (rhythmTestNotifier == null || notifier.score.notes.isEmpty) {
+    if (rhythmTestNotifier == null || session.score.notes.isEmpty) {
       return _WorkspaceBodyMessage(
         title: 'Rhythm test unavailable',
         message:
-            notifier.libraryMessage ??
+            library.libraryMessage ??
             'Rhythm test needs at least one note in the current score.',
       );
     }
@@ -478,9 +501,14 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
 }
 
 class _ComposeDock extends StatelessWidget {
-  const _ComposeDock({required this.notifier, required this.metrics});
+  const _ComposeDock({
+    required this.session,
+    required this.playback,
+    required this.metrics,
+  });
 
-  final ScoreNotifier notifier;
+  final EditableScoreSession session;
+  final PlaybackController playback;
   final WorkspaceComposeMetrics metrics;
 
   @override
@@ -491,7 +519,11 @@ class _ComposeDock extends StatelessWidget {
         Container(
           key: const ValueKey('compose-toolbar'),
           color: AppColors.surfaceContainer,
-          child: _ComposeToolbarLayout(notifier: notifier, metrics: metrics),
+          child: _ComposeToolbarLayout(
+            session: session,
+            playback: playback,
+            metrics: metrics,
+          ),
         ),
         PianoKeyboard(layout: metrics.keyboardLayout),
       ],
@@ -504,9 +536,14 @@ class _ComposeDock extends StatelessWidget {
 }
 
 class _ComposeToolbarLayout extends StatelessWidget {
-  const _ComposeToolbarLayout({required this.notifier, required this.metrics});
+  const _ComposeToolbarLayout({
+    required this.session,
+    required this.playback,
+    required this.metrics,
+  });
 
-  final ScoreNotifier notifier;
+  final EditableScoreSession session;
+  final PlaybackController playback;
   final WorkspaceComposeMetrics metrics;
 
   @override
@@ -515,24 +552,24 @@ class _ComposeToolbarLayout extends StatelessWidget {
       builder: (context, constraints) {
         final playButton = ComposePlayButton(
           key: const ValueKey('compose-play-button'),
-          isPlaying: notifier.isPlaying,
-          enabled: notifier.score.notes.isNotEmpty,
+          isPlaying: playback.isPlaying,
+          enabled: session.score.notes.isNotEmpty,
           onTap: () {
-            if (notifier.isPlaying) {
-              notifier.stop();
+            if (playback.isPlaying) {
+              playback.stop();
             } else {
-              notifier.play();
+              unawaited(playback.play());
             }
           },
         );
 
+        final score = session.score;
         final infoChips = ToolbarInfoChips(
           key: const ValueKey('compose-info-chips'),
-          beatsPerMeasure: notifier.score.beatsPerMeasure,
-          beatUnit: notifier.score.beatUnit,
-          keyLabel: notifier.score.keySignature.vexflowKey,
-          bpm: notifier.score.bpm,
-          tempoEnabled: !notifier.isPlaying,
+          beatsPerMeasure: score.beatsPerMeasure,
+          beatUnit: score.beatUnit,
+          keyLabel: score.keySignature.vexflowKey,
+          tempoEnabled: !playback.isPlaying,
           spacing: metrics.infoChipSpacing,
           runSpacing: metrics.infoChipRunSpacing,
         );
@@ -731,9 +768,9 @@ class _ToolbarSection extends StatelessWidget {
 }
 
 class _SaveScoreDialog extends StatefulWidget {
-  const _SaveScoreDialog({required this.notifier});
+  const _SaveScoreDialog({required this.libraryController});
 
-  final ScoreNotifier notifier;
+  final ScoreLibraryController libraryController;
 
   @override
   State<_SaveScoreDialog> createState() => _SaveScoreDialogState();
@@ -744,13 +781,14 @@ class _SaveScoreDialogState extends State<_SaveScoreDialog> {
   String? _errorText;
   bool _isSaving = false;
 
-  bool get _hasActiveSavedScore => widget.notifier.activeSavedScore != null;
+  bool get _hasActiveSavedScore =>
+      widget.libraryController.activeSavedScore != null;
 
   @override
   void initState() {
     super.initState();
     _controller = TextEditingController(
-      text: widget.notifier.activeSavedScore?.name ?? '',
+      text: widget.libraryController.activeSavedScore?.name ?? '',
     );
   }
 
@@ -774,7 +812,10 @@ class _SaveScoreDialogState extends State<_SaveScoreDialog> {
       _isSaving = true;
     });
 
-    await widget.notifier.saveCurrentScore(trimmed, createNew: createNew);
+    await widget.libraryController.saveCurrentScore(
+      trimmed,
+      createNew: createNew,
+    );
     if (!mounted) {
       return;
     }
@@ -817,15 +858,15 @@ class _LibraryToastLayer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<ScoreNotifier>(
-      builder: (context, notifier, _) {
-        final libraryMessage = notifier.libraryMessage;
-        final audioErrorMessage = notifier.audioStatusIsError
-            ? notifier.audioStatusMessage
+    return Consumer2<ScoreLibraryController, PlaybackController>(
+      builder: (context, library, playback, _) {
+        final libraryMessage = library.libraryMessage;
+        final audioErrorMessage = playback.audioStatusIsError
+            ? playback.audioStatusMessage
             : null;
         final message = libraryMessage ?? audioErrorMessage;
         final isError = libraryMessage != null
-            ? notifier.libraryMessageIsError
+            ? library.libraryMessageIsError
             : audioErrorMessage != null;
 
         return Positioned.fill(
